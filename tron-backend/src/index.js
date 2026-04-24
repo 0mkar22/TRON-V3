@@ -1,0 +1,284 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const Redis = require('ioredis');
+const path = require('path');
+const axios = require('axios');
+
+// V3: Supabase Configuration
+const { supabase } = require('./config/supabase.js'); 
+const { getRepoConfigFromDB } = require('./config/db.js');
+
+// Adapters & Middleware
+const verifyGitHub = require('./middleware/verifyGitHub'); 
+const PMOrchestrator = require('./adapters/pm-orchestrator');
+
+// Routes
+const adminRoutes = require('./routes/admin');
+const webhookRoutes = require('./routes/webhook');
+const integrationRoutes = require('./routes/integrations.js'); 
+const redis = require('./config/redis');
+
+const app = express();
+app.use(cors());
+
+// Parse raw body for webhooks, JSON for everything else
+app.use(express.json({
+    verify: (req, res, buf) => { req.rawBody = buf; }
+}));
+
+const port = process.env.PORT || 3000;
+
+// ==========================================
+// INITIALIZE SERVICES
+// ==========================================
+redis.on('connect', () => console.log('📦 Connected to Redis Queue'));
+redis.on('error', (err) => console.error('Redis Connection Error:', err));
+
+// ==========================================
+// MOUNT ROUTES
+// ==========================================
+app.use('/api/integrations', integrationRoutes); 
+app.use('/api/admin', adminRoutes);
+app.use('/api/webhooks', webhookRoutes);
+
+// Serve the compiled React Dashboard 
+app.use('/dashboard', express.static(path.join(__dirname, '../dashboard/dist')));
+app.get(/^\/dashboard/, (req, res) => {
+    res.sendFile(path.join(__dirname, '../dashboard/dist/index.html'));
+});
+
+// 🌟 V3 Health Check: Verifies connection to PostgreSQL
+app.get('/health', async (req, res) => {
+    const { data, error } = await supabase.from('organizations').select('count').single();
+    if (error) {
+        return res.status(500).json({ status: 'unhealthy', database: 'disconnected', error: error.message });
+    }
+    res.json({ status: 'active', database: 'connected' });
+});
+
+
+// ==========================================
+// DAEMON & VS CODE API (V3 DB Powered)
+// ==========================================
+
+// 🌟 NEW: Fetch Discord Channels via Bot Token
+app.post('/api/discord/channels', async (req, res) => {
+    const { botToken } = req.body;
+    if (!botToken) return res.status(400).json({ error: 'Bot token required' });
+
+    try {
+        // 1. Find which server (guild) the bot is inside
+        const guildsRes = await axios.get('https://discord.com/api/v10/users/@me/guilds', {
+            headers: { Authorization: `Bot ${botToken}` }
+        });
+        
+        if (guildsRes.data.length === 0) {
+            return res.status(400).json({ error: "Bot is not in any Discord servers yet!" });
+        }
+        
+        const guildId = guildsRes.data[0].id; // Grab the first server it finds
+
+        // 2. Fetch all channels for that server
+        const channelsRes = await axios.get(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
+            headers: { Authorization: `Bot ${botToken}` }
+        });
+
+        // 3. Filter out voice channels (Type 0 is standard Text Channels)
+        const textChannels = channelsRes.data
+            .filter(c => c.type === 0)
+            .map(c => ({ id: c.id, name: c.name }));
+            
+        res.json({ channels: textChannels });
+    } catch (error) {
+        console.error("Discord API Error:", error.response?.data || error.message);
+        res.status(500).json({ error: "Invalid token or Discord API error." });
+    }
+});
+
+// 🌟 NEW: "Silent" route to create a ticket without starting a branch
+app.post('/api/create-task', async (req, res) => {
+    const { taskInput, repoName } = req.body;
+    
+    try {
+        const config = await getRepoConfigFromDB(repoName);
+
+        if (!config || !config.pm_tool || config.pm_tool.provider === "none") {
+             return res.status(400).json({ error: "No PM tool configured in database." });
+        }
+
+        const newTaskId = await PMOrchestrator.resolveTask(config.pm_tool, taskInput, config.mapping);
+        res.json({ resolvedId: newTaskId });
+    } catch (error) {
+        console.error("Task creation failed:", error);
+        res.status(500).json({ error: "Task creation failed." });
+    }
+});
+
+// 🌟 NEW: Start Task & Move Column
+app.post('/api/start-task', async (req, res) => {
+    const { taskInput, repoName, developer } = req.body;
+    
+    try {
+        const config = await getRepoConfigFromDB(repoName);
+        let resolvedTaskID = taskInput.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase(); 
+
+        if (config && config.pm_tool && config.pm_tool.provider !== "none") {
+            resolvedTaskID = await PMOrchestrator.resolveTask(config.pm_tool, taskInput, config.mapping);
+            
+            const inProgressId = config.mapping.branch_created || config.mapping.in_progress;
+            
+            if (inProgressId) {
+                console.log(`🚚 [API] Moving task [${resolvedTaskID}] to In Progress column...`);
+                await PMOrchestrator.updateTicketStatus(config.pm_tool, resolvedTaskID, inProgressId);
+            }
+        }
+
+        // Fire the Background Worker Event
+        await redis.lpush('tron:webhook_queue', JSON.stringify({
+            eventType: 'local_start',
+            payload: { taskId: resolvedTaskID, repository: { full_name: repoName } }
+        }));
+
+        res.json({ resolvedId: resolvedTaskID });
+
+    } catch (error) {
+        console.error("❌ API Start Task Error:", error);
+        res.status(500).json({ error: "Task resolution and movement failed." });
+    }
+});
+
+// 🌟 NEW: Fetch all active projects
+app.get('/api/projects', async (req, res) => {
+    const apiKey = req.headers['x-api-key'];
+    if (apiKey !== process.env.DAEMON_API_KEY) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    try {
+        const { data, error } = await supabase.from('repositories').select('repo_name');
+        if (error) throw error;
+        
+        const projectNames = data.map(p => p.repo_name);
+        res.status(200).json({ projects: projectNames });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch projects from DB." });
+    }
+});
+
+// 🌟 NEW: Fetch Tickets for Go Daemon
+app.get('/api/project/:encodedRepo/tickets', async (req, res) => {
+    const repo = decodeURIComponent(req.params.encodedRepo);
+    
+    try {
+        const config = await getRepoConfigFromDB(repo);
+        if (!config || config.pm_tool.provider === "none") {
+            return res.json({ tickets: [] });
+        }
+
+        const activeTickets = await PMOrchestrator.getTickets(config.pm_tool, config.mapping);
+        res.json({ tickets: activeTickets }); 
+    } catch (error) {
+        console.error("❌ Failed to fetch tickets:", error.message);
+        res.status(500).json({ error: "Failed to fetch tickets." });
+    }
+});
+
+
+// ==========================================
+// AI & WEBHOOK QUEUE
+// ==========================================
+
+// ✨ AI TASK SUGGESTIONS API
+app.post('/api/suggest-tasks', async (req, res) => {
+    const { codeDiff } = req.body;
+    
+    if (!codeDiff || codeDiff.trim().length === 0) {
+        return res.json({ suggestions: [] });
+    }
+
+    try {
+        const aiAdapter = require('./adapters/ai');
+        const suggestions = await aiAdapter.generateTaskSuggestions(codeDiff);
+        res.json({ suggestions });
+    } catch (error) {
+        console.error("❌ API Suggest Tasks Error:", error);
+        res.status(500).json({ error: "Failed to generate suggestions." });
+    }
+});
+
+// GITHUB WEBHOOK ENDPOINT
+app.post('/webhook', /* verifyGitHub, */ async (req, res) => {
+    res.status(200).send('Webhook received');
+
+    const eventType = req.headers['x-github-event'];
+    const deliveryId = req.headers['x-github-delivery'];
+    const payload = req.body;
+
+    const isNewDelivery = await redis.setnx(`delivery:${deliveryId}`, 'processed');
+    if (isNewDelivery === 0) return; 
+
+    await redis.expire(`delivery:${deliveryId}`, 172800);
+
+    if (eventType === 'pull_request') {
+        const action = payload.action;
+        if (!['opened', 'closed', 'reopened'].includes(action)) return;
+    }
+
+    console.log(`\n📥 Received Valid GitHub Event: [${eventType}] | Delivery ID: [${deliveryId}]`);
+
+    const queueJob = { deliveryId, eventType, payload };
+    await redis.lpush('tron:v3_secret_queue', JSON.stringify(queueJob));
+
+    console.log(`📤 Successfully pushed Delivery ID: [${deliveryId}] to Redis!`);
+});
+
+// 🌟 UPDATED: Link a GitHub Repository to a PM Tool & Save Comm Config
+app.post('/api/repositories', async (req, res) => {
+    // 🌟 Notice we extract communication_config here now!
+    const { orgId, repoName, pmProvider, pmProjectId, mapping, communication_config } = req.body; 
+    
+    try {
+        const { data, error } = await supabase
+            .from('repositories')
+            .upsert([{
+                org_id: orgId,
+                repo_name: repoName,
+                pm_provider: pmProvider,
+                pm_project_id: pmProjectId,
+                mapping: mapping,
+                communication_config: communication_config // 🌟 Added to DB!
+            }], { onConflict: 'repo_name' }); 
+
+        if (error) throw error;
+        
+        res.status(200).json({ message: "Repository linked successfully." });
+    } catch (error) {
+        console.error("❌ Failed to save repository config:", error.message);
+        res.status(500).json({ error: "Failed to save repository configuration." });
+    }
+});
+
+// 🌟 FETCH AI REVIEW FOR VS CODE
+app.get('/api/review/:taskId', async (req, res) => {
+    try {
+        const { taskId } = req.params;
+        const review = await redis.get(`ai_review:${taskId}`);
+        
+        if (!review) {
+            return res.status(404).json({ error: "No AI review found for this task yet." });
+        }
+        res.json({ review });
+    } catch (error) {
+        console.error("❌ Failed to fetch AI review:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+app.listen(port, () => {
+    console.log(`\n🌐 T.R.O.N. V3 Cloud Router listening at http://localhost:${port}`);
+});
+
+// 🛡️ THE FREE TIER HACK: Run the worker in the same process!
+console.log('🚀 Booting up the integrated Background Worker...');
+require('./worker');
