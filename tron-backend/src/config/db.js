@@ -1,11 +1,7 @@
 const { supabase } = require('./supabase');
 
-/**
- * Fetches repository config and the decrypted PM token from Supabase
- */
 async function getRepoConfigFromDB(repoFullName) {
     try {
-        // 1. Fetch the repository configuration
         const { data: repoConfig, error: repoError } = await supabase
             .from('repositories')
             .select('*')
@@ -14,7 +10,6 @@ async function getRepoConfigFromDB(repoFullName) {
 
         if (repoError || !repoConfig) return null;
 
-        // 2. Fetch the integration to get the secret_id
         const { data: integration, error: intError } = await supabase
             .from('integrations')
             .select('secret_id')
@@ -24,7 +19,6 @@ async function getRepoConfigFromDB(repoFullName) {
 
         let decryptedToken = null;
 
-        // 3. Extract the actual token from the Vault
         if (integration && !intError) {
             const { data: secret } = await supabase
                 .from('vault.decrypted_secrets')
@@ -35,7 +29,6 @@ async function getRepoConfigFromDB(repoFullName) {
             if (secret) decryptedToken = secret.decrypted_secret;
         }
 
-        // 4. Return it exactly how PMOrchestrator and worker.js expect it
         return {
             repo: repoConfig.repo_name,
             pm_tool: {
@@ -44,7 +37,6 @@ async function getRepoConfigFromDB(repoFullName) {
                 token: decryptedToken 
             },
             mapping: repoConfig.mapping || {},
-            // 🌟 THE FIX: Grab 'communication_config' from the DB!
             communication: repoConfig.communication_config || null
         };
 

@@ -4,7 +4,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
-const API_BASE_URL = 'http://localhost:3000'; 
+const API_BASE_URL = 'https://tron-v3.onrender.com'; 
 
 export class TaskTreeItem extends vscode.TreeItem {
     constructor(
@@ -48,14 +48,18 @@ export class TronProvider implements vscode.TreeDataProvider<TaskTreeItem> {
 
         try {
             const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders) return Promise.resolve([]);
+            if (!workspaceFolders) {
+                return Promise.resolve([]);
+            }
             const cwd = workspaceFolders[0].uri.fsPath;
 
             // Get Repo Name
             const { stdout } = await execAsync('git config --get remote.origin.url', { cwd });
             const remoteUrl = stdout.trim();
             const repoMatch = remoteUrl.match(/github\.com[:\/](.+?\.git|.+)/);
-            if (!repoMatch) return Promise.resolve([]);
+            if (!repoMatch) {
+                return Promise.resolve([]);
+            }
             const repoName = repoMatch[1].replace('.git', '');
 
             // Fetch Tickets

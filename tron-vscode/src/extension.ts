@@ -5,11 +5,7 @@ import { promisify } from 'util';
 import { TronProvider } from './tronProvider';
 
 const execAsync = promisify(exec);
-
-// 🌟 V3 UPGRADE 1: Point to your local V3 Router
-const API_BASE_URL = 'http://localhost:3000';
-
-// 🌟 V3 UPGRADE 2: Define your Daemon Key (Must match your backend .env)
+const API_BASE_URL = 'https://tron-v3.onrender.com'; // Pointing to Render
 const DAEMON_API_KEY = 'tron_v3_super_secret_key_123'; 
 
 interface TaskQuickPickItem extends vscode.QuickPickItem {
@@ -18,9 +14,6 @@ interface TaskQuickPickItem extends vscode.QuickPickItem {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('T.R.O.N. VS Code Extension is now active!');
-
-    // 🌟 V3 UPGRADE 3: Automatically attach the API key to EVERY request
     axios.defaults.headers.common['x-api-key'] = DAEMON_API_KEY;
 
     const tronProvider = new TronProvider();
@@ -31,15 +24,18 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage('T.R.O.N: Tasks Refreshed');
     });
 
-    // ==============================================
-    // 🌟 THE UPDATED START TASK WORKFLOW
-    // ==============================================
     let startTaskCmd = vscode.commands.registerCommand('tron.startTaskFromTree', async (task: any) => {
         try {
             const taskId = task.id || task.taskId;
-            if (!taskId) return;
+            if (!taskId) {
+                return;
+            }
 
             const taskTitle = task.title || task.rawTitle || `Task ${taskId}`;
+
+            if (!taskId) {
+                return;
+            }
 
             const userChoice = await vscode.window.showWarningMessage(
                 `Start working on "${taskTitle}"? \n\nThis will automatically stash your current work, create a new branch, and assign you on Basecamp.`,
@@ -48,11 +44,13 @@ export function activate(context: vscode.ExtensionContext) {
             );
 
             if (userChoice !== 'Yes, Start Task') {
-                return; 
+                return false;
             }
 
             const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders) return;
+            if (!workspaceFolders) {
+                return;
+            }
             const cwd = workspaceFolders[0].uri.fsPath;
 
             let gitUsername = 'dev';
@@ -60,13 +58,15 @@ export function activate(context: vscode.ExtensionContext) {
                 const { stdout: userOut } = await execAsync('git config user.name', { cwd });
                 gitUsername = userOut.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
             } catch (e) {
-                console.error("Could not fetch git username");
+                // Ignore silent fallback
             }
 
             const { stdout } = await execAsync('git config --get remote.origin.url', { cwd });
             const remoteUrl = stdout.trim();
             const repoMatch = remoteUrl.match(/github\.com[:\/](.+?\.git|.+)/);
-            if (!repoMatch) return;
+            if (!repoMatch) {
+                return;
+            }
             const repoName = repoMatch[1].replace('.git', '');
 
             vscode.window.showInformationMessage(`T.R.O.N: Syncing with Basecamp...`);
@@ -82,20 +82,11 @@ export function activate(context: vscode.ExtensionContext) {
                 vscode.window.showInformationMessage(`✅ T.R.O.N: Basecamp synchronized & assigned!`);
             } catch (apiError: any) {
                 vscode.window.showErrorMessage(`T.R.O.N Backend Error: Could not sync with Basecamp.`);
-                console.error("API Error details:", apiError);
                 return; 
-            }
-
-            try {
-                const { stdout: userOut } = await execAsync('git config user.name', { cwd });
-                gitUsername = userOut.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-            } catch (e) {
-                console.error("Could not fetch git username, defaulting to 'dev'");
             }
 
             const rawTitle = task.title || task.rawTitle || 'task';
             const formattedDesc = rawTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').substring(0, 40);
-
             const branchName = `${gitUsername}/${resolvedId}-${formattedDesc}`;
             
             vscode.window.showInformationMessage(`T.R.O.N: Safely moving you to ${branchName}...`);
@@ -108,7 +99,7 @@ export function activate(context: vscode.ExtensionContext) {
                     stashed = true;
                 }
             } catch (e) {
-                console.error("T.R.O.N: Error checking git status", e);
+                // Proceed safely
             }
 
             try {
@@ -117,10 +108,8 @@ export function activate(context: vscode.ExtensionContext) {
                 vscode.window.showInformationMessage(`✅ T.R.O.N: Resumed existing branch ${branchName}`);
             } catch (err) {
                 await execAsync(`git checkout -b ${branchName}`, { cwd });
-                
                 vscode.window.showInformationMessage(`⏳ T.R.O.N: Pushing branch to trigger backend automation...`);
                 await execAsync(`git push -u origin ${branchName}`, { cwd });
-                
                 vscode.window.showInformationMessage(`✅ T.R.O.N: Created and pushed new branch! Basecamp will auto-assign shortly.`);
             }
 
@@ -143,17 +132,23 @@ export function activate(context: vscode.ExtensionContext) {
     let createCmd = vscode.commands.registerCommand('tron.createTaskOnly', async () => {
         try {
             const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders) return;
+            if (!workspaceFolders) {
+                return false;
+            }
             const cwd = workspaceFolders[0].uri.fsPath;
 
             const { stdout } = await execAsync('git config --get remote.origin.url', { cwd });
             const remoteUrl = stdout.trim();
             const repoMatch = remoteUrl.match(/github\.com[:\/](.+?\.git|.+)/);
-            if (!repoMatch) return;
+            if (!repoMatch) {
+                return false;
+            }
             const repoName = repoMatch[1].replace('.git', '');
 
             const input = await vscode.window.showInputBox({ prompt: 'Enter new task name (Adds to "To Do"):' });
-            if (!input) return; 
+            if (!input) {
+                return false;
+            }
 
             vscode.window.showInformationMessage(`T.R.O.N: Adding task to Basecamp...`);
             
@@ -172,7 +167,9 @@ export function activate(context: vscode.ExtensionContext) {
 
     let viewReviewCmd = vscode.commands.registerCommand('tron.viewAIReview', async (task: any) => {
         const taskId = task.id || task.taskId; 
-        if (taskId === 'CREATE_NEW') return; 
+        if (taskId === 'CREATE_NEW') {
+                return false;
+            } 
 
         try {
             vscode.window.showInformationMessage(`T.R.O.N: Fetching AI Review...`);
@@ -199,7 +196,6 @@ export function activate(context: vscode.ExtensionContext) {
                             --card-border: var(--vscode-widget-border);
                             --text-muted: var(--vscode-descriptionForeground);
                         }
-
                         body { 
                             font-family: var(--vscode-font-family), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
                             padding: 32px 24px; 
@@ -209,7 +205,6 @@ export function activate(context: vscode.ExtensionContext) {
                             max-width: 900px;
                             margin: 0 auto;
                         }
-
                         .header {
                             display: flex;
                             align-items: center;
@@ -218,20 +213,17 @@ export function activate(context: vscode.ExtensionContext) {
                             padding-bottom: 16px;
                             border-bottom: 1px solid var(--vscode-panel-border);
                         }
-
                         .header-title {
                             display: flex;
                             align-items: center;
                             gap: 12px;
                         }
-
                         .header h2 { 
                             margin: 0;
                             font-size: 1.5rem;
                             font-weight: 600;
                             color: var(--vscode-editor-foreground);
                         }
-
                         .badge {
                             background-color: var(--vscode-badge-background);
                             color: var(--vscode-badge-foreground);
@@ -242,7 +234,6 @@ export function activate(context: vscode.ExtensionContext) {
                             letter-spacing: 0.5px;
                             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                         }
-
                         .review-card {
                             background: var(--card-bg);
                             border: 1px solid var(--card-border);
@@ -250,7 +241,6 @@ export function activate(context: vscode.ExtensionContext) {
                             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
                             overflow: hidden;
                         }
-
                         .review-card-header {
                             background: var(--vscode-editorGroupHeader-tabsBackground);
                             padding: 12px 20px;
@@ -263,7 +253,6 @@ export function activate(context: vscode.ExtensionContext) {
                             align-items: center;
                             gap: 8px;
                         }
-
                         pre { 
                             margin: 0;
                             padding: 24px; 
@@ -273,7 +262,6 @@ export function activate(context: vscode.ExtensionContext) {
                             font-size: 0.95rem;
                             color: var(--vscode-editor-foreground);
                         }
-
                         .logo-icon {
                             font-size: 1.8rem;
                         }
@@ -309,12 +297,16 @@ export function activate(context: vscode.ExtensionContext) {
     let quickPickCmd = vscode.commands.registerCommand('tron.selectTaskPopup', async () => {
         try {
             const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders) return false;
+            if (!workspaceFolders) {
+                return false;
+            }
             const cwd = workspaceFolders[0].uri.fsPath;
 
             const { stdout: remoteOut } = await execAsync('git config --get remote.origin.url', { cwd });
             const repoMatch = remoteOut.trim().match(/github\.com[:\/](.+?\.git|.+)/);
-            if (!repoMatch) return false;
+            if (!repoMatch) {
+                return false;
+            }
             const repoName = repoMatch[1].replace('.git', '');
 
             vscode.window.showInformationMessage('✨ T.R.O.N: Analyzing your uncommitted code...');
@@ -324,7 +316,7 @@ export function activate(context: vscode.ExtensionContext) {
                 const { stdout: diffOut } = await execAsync('git diff', { cwd });
                 codeDiff = diffOut.trim();
             } catch (e) {
-                console.error("Git diff failed", e);
+                // Proceed safely
             }
 
             const encodedRepo = encodeURIComponent(repoName);
@@ -376,7 +368,6 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
         } catch (error) {
-            console.error("Popup Error:", error);
             return false;
         }
     });
@@ -385,8 +376,12 @@ export function activate(context: vscode.ExtensionContext) {
     let isCheckingBranch = false; 
 
     vscode.workspace.onDidSaveTextDocument(async (document) => {
-        if (document.uri.scheme !== 'file') return;
-        if (hasPromptedForTask || isCheckingBranch) return;
+        if (document.uri.scheme !== 'file') {
+            return;
+        }
+        if (hasPromptedForTask || isCheckingBranch) {
+            return;
+        }
 
         isCheckingBranch = true; 
 
@@ -404,11 +399,9 @@ export function activate(context: vscode.ExtensionContext) {
             const branchRegex = /^([^/]+)\/(\d+)-(.+)$/;
             if (currentBranch === 'main' || currentBranch === 'master' || !branchRegex.test(currentBranch)) {
                 hasPromptedForTask = true; 
-
                 vscode.window.showInformationMessage(`T.R.O.N: Unlinked code changes detected. What are you working on?`);
                 
                 const didSelectTask = await vscode.commands.executeCommand('tron.selectTaskPopup');
-                
                 if (!didSelectTask) {
                     hasPromptedForTask = false;
                 }
