@@ -97,7 +97,7 @@ export default function RepositoriesPage() {
 
     try {
       // ⚠️ Replace with your Render URL if testing in prod
-      const response = await axios.post('http://localhost:3000/api/repositories', payload);
+      const response = await axios.post('https://tron-v3.onrender.com/api/repositories', payload);
       setStatus({ type: 'success', message: response.data.message });
       
       setFormData({ ...formData, repoName: '', pmProjectId: '', todoCol: '', branchCol: '', prCol: '', doneCol: '' });

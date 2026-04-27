@@ -506,7 +506,7 @@ app.post('/api/admin/basecamp-columns', async (req, res) => {
         });
 
         // 4. Look through the project "dock" to find the Card Table (Kanban) tool
-        const cardTableTool = projectRes.data.dock.find(tool => tool.name === 'card_table');
+        const cardTableTool = projectRes.data.dock.find(tool => tool.name === 'kanban_board');
         
         if (!cardTableTool) {
             return res.status(404).json({ error: "No Kanban Board (Card Table) found in this Basecamp project." });
