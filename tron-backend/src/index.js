@@ -352,32 +352,27 @@ app.get('/api/admin/basecamp-boards', async (req, res) => {
     }
 });
 
-// 🌟 NEW: Global Discord Status & Channel Fetcher (Supabase Vault Edition)
+// 🌟 UPDATED: Global Discord Status Fetcher
 app.get('/api/admin/discord-status', async (req, res) => {
     try {
-        // 1. Fetch the Discord secret_id from your existing table
-        // (Note: If your table is named 'org_integrations', change it here!)
+        // 1. Fetch the Discord secret_id
         const { data: integration, error: intError } = await supabase
             .from('integrations') 
             .select('secret_id')
             .eq('provider', 'discord')
             .single();
 
-        // If Discord isn't in the table yet, tell the frontend it's not connected
         if (intError || !integration || !integration.secret_id) {
             return res.json({ isConnected: false });
         }
 
-        // 2. Decrypt the actual token from Supabase Vault
-        // ⚠️ This requires your Supabase client to be using the SERVICE_ROLE_KEY!
-        const { data: secret, error: secError } = await supabase
-            .from('decrypted_secrets')
-            .select('decrypted_secret')
-            .eq('id', integration.secret_id)
-            .single();
+        // 2. 🌟 NEW: Use an RPC call to decrypt instead of querying the view
+        const { data: botToken, error: secError } = await supabase.rpc('get_decrypted_secret', {
+            p_secret_id: integration.secret_id
+        });
 
-        if (secError || !secret || !secret.decrypted_secret) {
-            console.error("❌ Failed to decrypt Discord token from Vault.");
+        if (secError || !botToken) {
+            console.error("❌ Failed to decrypt Discord token.");
             return res.json({ isConnected: false });
         }
 
