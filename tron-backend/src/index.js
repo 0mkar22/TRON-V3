@@ -285,30 +285,40 @@ app.get('/api/review/:taskId', async (req, res) => {
 // DASHBOARD & ADMIN ROUTES
 // ==========================================
 
-// 🌟 UPDATED: Mission Control - Fetch Redis Queue & AI Reviews (With Full Details)
+// 🌟 BULLETPROOF: Mission Control - Fetch Redis Queue & AI Reviews
 app.get('/api/admin/system-status', async (req, res) => {
     try {
-        // 1. Fetch the Active Webhook Queue
-        const queueItems = await redisClient.lrange('tron:v3_secret_queue', 0, -1);
-        const parsedQueue = queueItems.map(item => JSON.parse(item));
+        // ⚠️ Change 'redis' here to match whatever is at the top of your file!
+        const queueItems = await redis.lrange('tron:v3_secret_queue', 0, -1);
+        
+        // Safely parse the queue
+        const parsedQueue = queueItems.map(item => {
+            try { return JSON.parse(item); } 
+            catch (e) { return { eventType: 'Unknown', payload: { repository: { full_name: 'Corrupted Task' } } }; }
+        });
 
-        // 2. Fetch AI Review History Keys
-        const reviewKeys = await redisClient.keys('ai_review:*');
+        // Fetch AI Review History Keys
+        const reviewKeys = await redis.keys('ai_review:*');
         const reviews = [];
 
-        // 🌟 UPDATED: We now fetch the full data payload for the frontend modal!
         for (const key of reviewKeys) {
-            const dataString = await redisClient.get(key);
-            
-            if (dataString) {
-                const data = JSON.parse(dataString);
-                const taskId = key.split(':')[1];
+            try {
+                // ⚠️ Change 'redis' here to match whatever is at the top of your file!
+                const dataString = await redis.get(key);
                 
-                reviews.push({ 
-                    taskId: taskId, 
-                    key: key,
-                    details: data // <-- This is what feeds the new UI modal!
-                });
+                if (dataString) {
+                    const data = JSON.parse(dataString);
+                    const taskId = key.split(':')[1];
+                    
+                    reviews.push({ 
+                        taskId: taskId, 
+                        key: key,
+                        details: data 
+                    });
+                }
+            } catch (parseError) {
+                console.error(`⚠️ Skipping corrupted Redis key ${key}:`, parseError.message);
+                // We just skip the bad key instead of crashing the whole server!
             }
         }
 
