@@ -142,13 +142,16 @@ export default function Home() {
                                   </td>
                                   <td className="px-6 py-4 whitespace-nowrap">
                                       <div className="flex items-center">
-                                          {workflow.discord_channel_id ? (
-                                              <>
-                                                  <span className="text-xl mr-2">🎮</span>
-                                                  <span className="text-sm text-gray-700">Discord</span>
-                                              </>
+                                          {/* Check if the JSONB column exists AND has a channel_id inside it */}
+                                          {workflow.communication_config && workflow.communication_config.channel_id ? (
+                                          <>
+                                          <span className="text-xl mr-2">🎮</span>
+                                          <span className="text-sm text-gray-700 capitalize">
+                                          {workflow.communication_config.provider === 'discord_bot' ? 'Discord' : workflow.communication_config.provider}
+                                          </span>
+                                          </>
                                           ) : (
-                                              <span className="text-sm text-gray-400 italic">Muted</span>
+                                          <span className="text-sm text-gray-400 italic">Muted</span>
                                           )}
                                       </div>
                                   </td>
