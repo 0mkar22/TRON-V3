@@ -464,16 +464,22 @@ app.delete('/api/admin/discord-token', async (req, res) => {
     }
 });
 
-// 🌟 PRODUCTION EDITION: Fetch Real Basecamp Columns
+// 🌟 PRODUCTION EDITION (BULLETPROOF): Fetch Real Basecamp Columns
 app.post('/api/admin/basecamp-columns', async (req, res) => {
-    const { projectId } = req.body;
+    let { projectId } = req.body;
 
     if (!projectId) {
         return res.status(400).json({ error: "Project ID is required." });
     }
 
     try {
-        // 1. Fetch the encrypted Basecamp token from the database
+        // 1. SMART CLEANUP: In case you pasted a full URL or it has spaces, just extract the digits!
+        projectId = projectId.toString().match(/\d+/g)?.pop() || projectId.trim();
+        
+        let accountId = process.env.BASECAMP_ACCOUNT_ID || 'YOUR_ACCOUNT_ID_HERE'; 
+        accountId = accountId.toString().match(/\d+/g)?.pop() || accountId.trim();
+
+        // 2. Fetch the encrypted Basecamp token
         const { data: integration, error: intError } = await supabase
             .from('integrations') 
             .select('secret_id')
@@ -484,47 +490,47 @@ app.post('/api/admin/basecamp-columns', async (req, res) => {
             return res.status(400).json({ error: "Basecamp is not connected globally." });
         }
 
-        // 2. Decrypt the token
         const { data: bcToken, error: secError } = await supabase.rpc('get_decrypted_secret', {
             p_secret_id: integration.secret_id
         });
 
         if (secError || !bcToken) throw new Error("Failed to decrypt Basecamp token");
 
-        // ⚠️ ADD YOUR BASECAMP ACCOUNT ID HERE (Or put it in your .env file!)
-        const accountId = process.env.BASECAMP_ACCOUNT_ID || 'YOUR_ACCOUNT_ID_HERE'; 
-        
         const basecampHeaders = {
             'Authorization': `Bearer ${bcToken}`,
-            'User-Agent': 'TRON-V3-Engine (obhogate48@gmail.com)', // Keep your email here!
+            'User-Agent': 'TRON-V3-Engine (obhogate48@gmail.com)', // ⚠️ UPDATE THIS EMAIL
             'Accept': 'application/json' 
         };
 
-        // 3. Ask Basecamp for the Project details to find the Kanban Board
-        const projectRes = await axios.get(`https://3.basecampapi.com/${accountId}/buckets/${projectId}.json`, {
-            headers: basecampHeaders
-        });
+        // 3. Check Project Link
+        const projectUrl = `https://3.basecampapi.com/${accountId}/buckets/${projectId}.json`;
+        console.log("👉 1. Fetching Project:", projectUrl);
+        const projectRes = await axios.get(projectUrl, { headers: basecampHeaders });
 
-        // 4. Look through the project "dock" to find the Card Table (Kanban) tool
-        const cardTableTool = projectRes.data.dock.find(tool => tool.name === 'kanban_board');
-        
-        if (!cardTableTool) {
+        // 4. Look through the project "dock" to find the Kanban Board
+        const cardTableTool = projectRes.data.dock.find(tool => tool.name === 'kanban_board' || tool.title === 'kanban-board' || tool.type === 'card_table');
+        if (!cardTableTool || !cardTableTool.url) {
             return res.status(404).json({ error: "No Kanban Board (Card Table) found in this Basecamp project." });
         }
 
-        // 5. Basecamp gave us the endpoint for the Card Table, now fetch it to get the "lists" URL
+        // 5. Check Card Table Link
+        console.log("👉 2. Fetching Card Table:", cardTableTool.url);
         const cardTableRes = await axios.get(cardTableTool.url, { headers: basecampHeaders });
+        
         const listsUrl = cardTableRes.data.lists_url;
+        if (!listsUrl) throw new Error("Basecamp returned undefined for lists_url!");
 
-        // 6. Finally, fetch the actual columns (lists) from the board!
+        // 6. Check Columns Link
+        console.log("👉 3. Fetching Lists:", listsUrl);
         const listsRes = await axios.get(listsUrl, { headers: basecampHeaders });
         
         // 7. Format the data for our Next.js frontend dropdowns
         const realColumns = listsRes.data.map(list => ({
-            id: list.id.toString(), // Convert to string for the React select value
+            id: list.id.toString(), 
             name: list.title
         }));
 
+        console.log("✅ Success! Found columns:", realColumns.map(c => c.name).join(', '));
         res.json({ columns: realColumns });
 
     } catch (error) {
