@@ -351,8 +351,11 @@ app.get('/api/admin/basecamp-boards', async (req, res) => {
         res.status(500).json({ error: "Database query failed." });
     }
 });
+    // 🌟 IN-MEMORY CACHE: Prevent Discord Rate Limits
+let cachedDiscordChannels = null;
+let lastDiscordFetch = 0;
 
-// 🌟 UPDATED: Global Discord Status Fetcher
+// Global Discord Status Fetcher
 app.get('/api/admin/discord-status', async (req, res) => {
     try {
         // 1. Fetch the Discord secret_id
@@ -372,11 +375,16 @@ app.get('/api/admin/discord-status', async (req, res) => {
         });
 
         if (secError || !botToken) {
-            console.error("❌ Failed to decrypt Discord token.");
             return res.json({ isConnected: false });
         }
 
-        // 3. Ask Discord which servers (guilds) this bot is inside
+        // 🌟 3. CACHE CHECK: If we fetched less than 60 seconds ago, use the cache!
+        if (cachedDiscordChannels && (Date.now() - lastDiscordFetch < 60000)) {
+            console.log("⚡ Serving Discord channels from TRON cache!");
+            return res.json({ isConnected: true, channels: cachedDiscordChannels });
+        }
+
+        // 4. Ask Discord which servers (guilds) this bot is inside
         const guildResponse = await axios.get('https://discord.com/api/v10/users/@me/guilds', {
             headers: { Authorization: `Bot ${botToken}` }
         });
@@ -386,13 +394,13 @@ app.get('/api/admin/discord-status', async (req, res) => {
             return res.json({ isConnected: true, channels: [] }); 
         }
 
-        // 4. Grab the text channels from the first server the bot is in
+        // 5. Grab the text channels from the first server the bot is in
         const guildId = guilds[0].id;
         const channelResponse = await axios.get(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
             headers: { Authorization: `Bot ${botToken}` }
         });
 
-        // 5. Filter for standard text channels (type 0)
+        // 6. Filter for standard text channels (type 0)
         const textChannels = channelResponse.data
             .filter(channel => channel.type === 0)
             .map(channel => ({
@@ -400,12 +408,22 @@ app.get('/api/admin/discord-status', async (req, res) => {
                 name: channel.name
             }));
 
+        // 🌟 7. SAVE TO CACHE for the next 60 seconds
+        cachedDiscordChannels = textChannels;
+        lastDiscordFetch = Date.now();
+
         res.json({ 
             isConnected: true, 
             channels: textChannels 
         });
 
     } catch (error) {
+        // If we hit a rate limit, gracefully return the cache if we have it!
+        if (error.response?.status === 429 && cachedDiscordChannels) {
+            console.log("⚠️ Discord rate limited us, falling back to cache.");
+            return res.json({ isConnected: true, channels: cachedDiscordChannels });
+        }
+        
         console.error("❌ Discord Status Error:", error.response?.data || error.message);
         res.json({ isConnected: false }); 
     }
