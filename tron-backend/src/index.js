@@ -508,9 +508,15 @@ app.post('/api/admin/basecamp-columns', async (req, res) => {
         const projectRes = await axios.get(projectUrl, { headers: basecampHeaders });
 
         // 4. Look through the project "dock" to find the Kanban Board
-        const cardTableTool = projectRes.data.dock.find(tool => tool.name === 'card_table');
+        console.log("🛠️ Available tools in this project:", projectRes.data.dock.map(t => t.name).join(', '));
+        
+        // Look for both plural and singular just to be completely bulletproof
+        const cardTableTool = projectRes.data.dock.find(tool => tool.name === 'card_tables' || tool.name === 'card_table' || tool.name === 'kanban_board');
+        
         if (!cardTableTool || !cardTableTool.url) {
-            return res.status(404).json({ error: "No Kanban Board (Card Table) found in this Basecamp project." });
+            return res.status(404).json({ 
+                error: "No Kanban Board found. Basecamp says this project only has: " + projectRes.data.dock.map(t => t.name).join(', ') 
+            });
         }
 
         // 5. Construct the exact URL for the columns (lists)
