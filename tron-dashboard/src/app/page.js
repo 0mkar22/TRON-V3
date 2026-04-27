@@ -58,11 +58,11 @@ export default function Home() {
           </div>
         </Link>
 
-        {/* Repositories Card */}
+        {/* Workflow Mapping Card */}
         <Link href="/repositories" className="block group">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-green-400 transition-all duration-200 h-full flex flex-col">
             <div className="text-4xl mb-4">📦</div>
-            <h3 className="text-xl font-bold text-gray-800 group-hover:text-green-600 transition-colors">Repositories</h3>
+            <h3 className="text-xl font-bold text-gray-800 group-hover:text-green-600 transition-colors">Workflow Mapping</h3>
             <p className="text-gray-500 mt-2 text-sm leading-relaxed flex-grow">
               Map your GitHub repositories to your PM boards and configure automated webhook column movements.
             </p>
@@ -89,12 +89,12 @@ export default function Home() {
               <span className="mr-3 text-2xl">💻</span> VS Code Extension
             </h3>
             <p className="text-gray-400 mt-2 text-sm max-w-2xl leading-relaxed">
-              Maximize your workflow. Install the TRON VSIX file in your editor to enable 1-click branch creation, automatic code stashing, and Basecamp developer auto-assignment.
+              Supercharge your local development. Install the official TRON extension to enable 1-click branch generation and automated Basecamp ticket synchronization directly from your editor.
             </p>
         </div>
         <div className="flex-shrink-0">
            <div className="bg-gray-800 border border-gray-700 px-4 py-2 rounded text-sm font-mono text-gray-300">
-             npm run build
+             code --install-extension tron.vsix
            </div>
         </div>
       </div>
@@ -119,7 +119,7 @@ export default function Home() {
                               <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Repository</th>
                               <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">PM Tool</th>
                               <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Broadcast Channel</th>
-                              <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
+                              <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Status & Actions</th>
                           </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
@@ -156,9 +156,13 @@ export default function Home() {
                                       </div>
                                   </td>
                                   <td className="px-6 py-4 whitespace-nowrap text-right">
-                                      <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 border border-green-200">
+                                      <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 border border-green-200 mr-4">
                                           Active
                                       </span>
+                                      {/* Links back to the repositories page where they can edit the mapping */}
+                                      <Link href="/repositories" className="text-sm text-indigo-600 hover:text-indigo-900 font-bold transition-colors">
+                                        Configure ➔
+                                      </Link>
                                   </td>
                               </tr>
                           ))}

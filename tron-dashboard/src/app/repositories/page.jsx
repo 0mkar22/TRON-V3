@@ -114,7 +114,7 @@ export default function RepositoriesPage() {
 
   return (
     <div className="max-w-4xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-gray-100">
-      <h1 className="text-2xl font-bold text-gray-800 mb-2">Repository Configuration</h1>
+      <h1 className="text-2xl font-bold text-gray-800 mb-2">Workflow Mapping</h1>
       <p className="text-gray-600 mb-8">
         Link a GitHub repository to your Project Management tool and map your automation columns.
       </p>

@@ -40,7 +40,7 @@ export default function RootLayout({ children }) {
                   Integrations
                 </Link>
                 <Link href="/repositories" className="hover:text-green-200 transition-colors font-medium">
-                  Repositories
+                  Workflow Mapping
                 </Link>
                 {/* 🌟 NEW: Mission Control Link */}
                 <Link href="/activity" className="hover:text-green-200 transition-colors font-bold border-b-2 border-transparent hover:border-green-200 pb-1">
