@@ -10,7 +10,7 @@ export default function ActivityDashboard() {
         const fetchStatus = async () => {
             try {
                 // ⚠️ Update this to your Render URL if you are deploying to production!
-                const res = await fetch('https://tron-v3-engine.onrender.com/api/admin/system-status');
+                const res = await fetch('https://tron-v3.onrender.com/api/admin/system-status');
                 const data = await res.json();
                 setStatus(data);
                 setLoading(false);
