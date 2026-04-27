@@ -281,6 +281,10 @@ app.get('/api/review/:taskId', async (req, res) => {
     }
 });
 
+// ==========================================
+// DASHBOARD & ADMIN ROUTES
+// ==========================================
+
 // 🌟 NEW: Mission Control - Fetch Redis Queue & AI Reviews
 app.get('/api/admin/system-status', async (req, res) => {
     try {
@@ -564,6 +568,23 @@ app.post('/api/admin/basecamp-columns', async (req, res) => {
     } catch (error) {
         console.error("❌ Basecamp API Error:", error.response?.data || error.message);
         res.status(500).json({ error: "Failed to communicate with Basecamp API." });
+    }
+});
+// 🌟 NEW: Fetch Active Workflows for Dashboard
+app.get('/api/admin/dashboard-workflows', async (req, res) => {
+    try {
+        // Fetch all mapped repositories
+        const { data: workflows, error } = await supabase
+            .from('repositories') // ⚠️ Change this if your table is named differently!
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        res.json({ workflows: workflows || [] });
+    } catch (error) {
+        console.error("❌ Failed to fetch dashboard workflows:", error.message);
+        res.status(500).json({ error: "Failed to fetch workflows." });
     }
 });
 

@@ -1,8 +1,34 @@
+"use client";
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 export default function Home() {
+  // 1. Dashboard State
+  const [workflows, setWorkflows] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // 2. Fetch Active Workflows on Load
+  useEffect(() => {
+      const fetchWorkflows = async () => {
+          try {
+              // ⚠️ Ensure this matches your live Render URL
+              const res = await fetch('https://tron-v3.onrender.com/api/admin/dashboard-workflows');
+              if (res.ok) {
+                  const data = await res.json();
+                  setWorkflows(data.workflows || []);
+              }
+          } catch (error) {
+              console.error("Failed to fetch workflows:", error);
+          } finally {
+              setIsLoading(false);
+          }
+      };
+
+      fetchWorkflows();
+  }, []);
+
   return (
-    <div className="max-w-6xl mx-auto space-y-8">
+    <div className="max-w-6xl mx-auto space-y-8 pb-12">
       
       {/* Hero / System Status Section */}
       <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center">
@@ -23,10 +49,10 @@ export default function Home() {
         
         {/* Integrations Card */}
         <Link href="/integrations" className="block group">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-green-400 transition-all duration-200 h-full">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-green-400 transition-all duration-200 h-full flex flex-col">
             <div className="text-4xl mb-4">🔌</div>
             <h3 className="text-xl font-bold text-gray-800 group-hover:text-green-600 transition-colors">Integrations</h3>
-            <p className="text-gray-500 mt-2 text-sm leading-relaxed">
+            <p className="text-gray-500 mt-2 text-sm leading-relaxed flex-grow">
               Connect your PM tools (Basecamp, Jira, Monday) and link your communication channels (Discord, Slack).
             </p>
           </div>
@@ -34,10 +60,10 @@ export default function Home() {
 
         {/* Repositories Card */}
         <Link href="/repositories" className="block group">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-green-400 transition-all duration-200 h-full">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-green-400 transition-all duration-200 h-full flex flex-col">
             <div className="text-4xl mb-4">📦</div>
             <h3 className="text-xl font-bold text-gray-800 group-hover:text-green-600 transition-colors">Repositories</h3>
-            <p className="text-gray-500 mt-2 text-sm leading-relaxed">
+            <p className="text-gray-500 mt-2 text-sm leading-relaxed flex-grow">
               Map your GitHub repositories to your PM boards and configure automated webhook column movements.
             </p>
           </div>
@@ -45,10 +71,10 @@ export default function Home() {
 
         {/* Mission Control Card */}
         <Link href="/activity" className="block group">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-green-400 transition-all duration-200 h-full">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-green-400 transition-all duration-200 h-full flex flex-col">
             <div className="text-4xl mb-4">🚀</div>
             <h3 className="text-xl font-bold text-gray-800 group-hover:text-green-600 transition-colors">Mission Control</h3>
-            <p className="text-gray-500 mt-2 text-sm leading-relaxed">
+            <p className="text-gray-500 mt-2 text-sm leading-relaxed flex-grow">
               Monitor live AI code reviews, Git webhook deliveries, and the Redis background worker queue.
             </p>
           </div>
@@ -71,6 +97,72 @@ export default function Home() {
              npm run build
            </div>
         </div>
+      </div>
+
+      {/* --- 🌟 NEW: ACTIVE WORKFLOWS SECTION --- */}
+      <div className="mt-12">
+          <h2 className="text-xl font-bold text-gray-800 mb-4 border-b border-gray-200 pb-2">Active Workflows</h2>
+          
+          {isLoading ? (
+              <div className="text-center py-10 text-gray-400 animate-pulse">Loading engine diagnostics...</div>
+          ) : workflows.length === 0 ? (
+              <div className="bg-white p-8 rounded-xl border border-dashed border-gray-300 text-center shadow-sm">
+                  <span className="text-4xl mb-3 block">🔌</span>
+                  <h3 className="text-lg font-semibold text-gray-700">No repositories connected yet</h3>
+                  <p className="text-gray-500 text-sm mt-1">Head over to the Repositories tab to map your first workflow.</p>
+              </div>
+          ) : (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                          <tr>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Repository</th>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">PM Tool</th>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Broadcast Channel</th>
+                              <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
+                          </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                          {workflows.map((workflow) => (
+                              <tr key={workflow.id} className="hover:bg-gray-50 transition-colors">
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                      <div className="flex items-center">
+                                          <span className="text-xl mr-3">📦</span>
+                                          <div>
+                                              <div className="text-sm font-bold text-gray-900">{workflow.repo_name || 'Unknown Repo'}</div>
+                                              <div className="text-xs text-gray-500 font-mono">GitHub</div>
+                                          </div>
+                                      </div>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                      <div className="flex items-center">
+                                          <span className="text-xl mr-2">🏕️</span>
+                                          <span className="text-sm text-gray-700 capitalize">{workflow.pm_provider || 'basecamp'}</span>
+                                      </div>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                      <div className="flex items-center">
+                                          {workflow.discord_channel_id ? (
+                                              <>
+                                                  <span className="text-xl mr-2">🎮</span>
+                                                  <span className="text-sm text-gray-700">Discord</span>
+                                              </>
+                                          ) : (
+                                              <span className="text-sm text-gray-400 italic">Muted</span>
+                                          )}
+                                      </div>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                                      <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 border border-green-200">
+                                          Active
+                                      </span>
+                                  </td>
+                              </tr>
+                          ))}
+                      </tbody>
+                  </table>
+              </div>
+          )}
       </div>
 
     </div>
