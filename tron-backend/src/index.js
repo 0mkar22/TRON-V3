@@ -448,6 +448,22 @@ app.post('/api/admin/discord-token', async (req, res) => {
     }
 });
 
+// 🌟 NEW: Disconnect Discord
+app.delete('/api/admin/discord-token', async (req, res) => {
+    try {
+        // Delete the discord row from the integrations table
+        const { error } = await supabase
+            .from('integrations')
+            .delete()
+            .eq('provider', 'discord');
+
+        if (error) throw error;
+        res.json({ message: "Disconnected successfully" });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to disconnect" });
+    }
+});
+
 app.listen(port, () => {
     console.log(`\n🌐 T.R.O.N. V3 Cloud Router listening at http://localhost:${port}`);
 });

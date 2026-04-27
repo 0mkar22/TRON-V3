@@ -21,30 +21,31 @@ export default function IntegrationsPage() {
         discord: ''
     });
 
-    // 4. Fetch the dynamic boards when the page loads
+    // 4. Fetch dynamic data when the page loads
     useEffect(() => {
-        const fetchBoards = async () => {
+        const fetchData = async () => {
             try {
-                // Ensure this points to your live Render backend
-                const res = await fetch('https://tron-v3.onrender.com/api/admin/basecamp-boards');
-                
-                if (!res.ok) {
-                    throw new Error(`HTTP error! status: ${res.status}`);
+                // Fetch Basecamp Boards
+                const resBc = await fetch('https://tron-v3.onrender.com/api/admin/basecamp-boards');
+                if (resBc.ok) {
+                    const dataBc = await resBc.json();
+                    if (dataBc.boards) setBasecampBoards(dataBc.boards);
                 }
-                
-                const data = await res.json();
-                
-                if (data.boards) {
-                    setBasecampBoards(data.boards);
+
+                // 🌟 NEW: Fetch Discord Status
+                const resDisc = await fetch('https://tron-v3.onrender.com/api/admin/discord-status');
+                if (resDisc.ok) {
+                    const dataDisc = await resDisc.json();
+                    setConnected(prev => ({ ...prev, discord: dataDisc.isConnected }));
                 }
             } catch (error) {
-                console.error("Failed to fetch Basecamp boards:", error);
+                console.error("Failed to fetch integration data:", error);
             } finally {
                 setIsLoading(false);
             }
         };
 
-        fetchBoards();
+        fetchData();
     }, []);
 
    // 5. Connection Handler for Communication Tools
@@ -72,6 +73,21 @@ export default function IntegrationsPage() {
                 }
             } catch (error) {
                 console.error("Connection error:", error);
+            }
+        }
+    };
+
+    const handleDisconnect = async (provider) => {
+        if (provider === 'discord') {
+            try {
+                const response = await fetch('https://tron-v3.onrender.com/api/admin/discord-token', {
+                    method: 'DELETE'
+                });
+                if (response.ok) {
+                    setConnected({ ...connected, discord: false });
+                }
+            } catch (error) {
+                console.error("Failed to disconnect:", error);
             }
         }
     };
@@ -166,32 +182,57 @@ export default function IntegrationsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     
                     {/* Discord Card */}
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-                        <div className="flex justify-between items-center mb-4">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow relative overflow-hidden flex flex-col">
+                        {connected.discord && <div className="absolute top-0 left-0 w-full h-1 bg-indigo-500"></div>}
+                        
+                        <div className="flex justify-between items-center mb-4 mt-1">
                             <h3 className="text-lg font-bold text-gray-900 flex items-center">
                                 <span className="mr-2 text-2xl">🎮</span> Discord
                             </h3>
+                            {connected.discord && (
+                                <span className="bg-indigo-100 text-indigo-800 text-xs font-bold px-2 py-1 rounded-full shadow-sm">
+                                    Active
+                                </span>
+                            )}
                         </div>
-                        <p className="text-sm text-gray-500 mb-5 h-10">Broadcast AI executive summaries and PR alerts directly to your server.</p>
+                        <p className="text-sm text-gray-500 mb-5 flex-grow">Broadcast AI executive summaries and PR alerts directly to your server.</p>
                         
-                        <div className="space-y-4 border-t border-gray-100 pt-4">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">Bot Token</label>
-                                <input 
-                                    type="password" 
-                                    placeholder="Enter Discord Bot Token" 
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                                    value={tokens.discord}
-                                    onChange={(e) => setTokens({ ...tokens, discord: e.target.value })}
-                                />
+                        {connected.discord ? (
+                            /* 🌟 ACTIVE STATE: Show Disconnect Button */
+                            <div className="bg-gray-50 rounded border border-gray-200 p-3 flex justify-between items-center mt-auto">
+                                <span className="text-xs text-gray-500 font-bold">Bot Connected</span>
+                                <button 
+                                    onClick={() => handleDisconnect('discord')}
+                                    className="text-xs text-red-500 font-bold hover:text-red-700 hover:underline px-2 py-1"
+                                >
+                                    Disconnect
+                                </button>
                             </div>
-                            <button 
-                                onClick={() => handleConnect('discord')}
-                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-lg transition-colors shadow-sm flex justify-center items-center"
-                            >
-                                Connect Discord
-                            </button>
-                        </div>
+                        ) : (
+                            /* 🌟 INACTIVE STATE: Show Token Input */
+                            <div className="space-y-4 border-t border-gray-100 pt-4 mt-auto">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">Bot Token</label>
+                                    <input 
+                                        type="password" 
+                                        placeholder="Enter Discord Bot Token" 
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                                        value={tokens.discord}
+                                        onChange={(e) => setTokens({ ...tokens, discord: e.target.value })}
+                                    />
+                                </div>
+                                <button 
+                                    onClick={() => {
+                                        handleConnect('discord');
+                                        // Optimistically set to connected so the UI flips instantly
+                                        setTimeout(() => setConnected({ ...connected, discord: true }), 1000); 
+                                    }}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-lg transition-colors shadow-sm flex justify-center items-center"
+                                >
+                                    Connect Discord
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     {/* Slack Card */}
