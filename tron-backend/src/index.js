@@ -352,6 +352,96 @@ app.get('/api/admin/basecamp-boards', async (req, res) => {
     }
 });
 
+// 🌟 NEW: Global Discord Status & Channel Fetcher (Supabase Vault Edition)
+app.get('/api/admin/discord-status', async (req, res) => {
+    try {
+        // 1. Fetch the Discord secret_id from your existing table
+        // (Note: If your table is named 'org_integrations', change it here!)
+        const { data: integration, error: intError } = await supabase
+            .from('integrations') 
+            .select('secret_id')
+            .eq('provider', 'discord')
+            .single();
+
+        // If Discord isn't in the table yet, tell the frontend it's not connected
+        if (intError || !integration || !integration.secret_id) {
+            return res.json({ isConnected: false });
+        }
+
+        // 2. Decrypt the actual token from Supabase Vault
+        // ⚠️ This requires your Supabase client to be using the SERVICE_ROLE_KEY!
+        const { data: secret, error: secError } = await supabase
+            .from('decrypted_secrets')
+            .select('decrypted_secret')
+            .eq('id', integration.secret_id)
+            .single();
+
+        if (secError || !secret || !secret.decrypted_secret) {
+            console.error("❌ Failed to decrypt Discord token from Vault.");
+            return res.json({ isConnected: false });
+        }
+
+        const botToken = secret.decrypted_secret;
+
+        // 3. Ask Discord which servers (guilds) this bot is inside
+        const guildResponse = await axios.get('https://discord.com/api/v10/users/@me/guilds', {
+            headers: { Authorization: `Bot ${botToken}` }
+        });
+
+        const guilds = guildResponse.data;
+        if (guilds.length === 0) {
+            return res.json({ isConnected: true, channels: [] }); 
+        }
+
+        // 4. Grab the text channels from the first server the bot is in
+        const guildId = guilds[0].id;
+        const channelResponse = await axios.get(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
+            headers: { Authorization: `Bot ${botToken}` }
+        });
+
+        // 5. Filter for standard text channels (type 0)
+        const textChannels = channelResponse.data
+            .filter(channel => channel.type === 0)
+            .map(channel => ({
+                id: channel.id,
+                name: channel.name
+            }));
+
+        res.json({ 
+            isConnected: true, 
+            channels: textChannels 
+        });
+
+    } catch (error) {
+        console.error("❌ Discord Status Error:", error.response?.data || error.message);
+        res.json({ isConnected: false }); 
+    }
+});
+
+// 🌟 NEW: Save Discord Token to Vault
+app.post('/api/admin/discord-token', async (req, res) => {
+    const { token, orgId } = req.body;
+
+    if (!token || !orgId) {
+        return res.status(400).json({ error: "Missing token or organization ID." });
+    }
+
+    try {
+        // Call the Supabase SQL function we just created
+        const { error } = await supabase.rpc('add_discord_integration', {
+            p_org_id: orgId,
+            p_token: token
+        });
+
+        if (error) throw error;
+
+        res.json({ message: "Discord successfully connected and vaulted!" });
+    } catch (error) {
+        console.error("❌ Failed to save Discord token:", error.message);
+        res.status(500).json({ error: "Failed to securely store integration." });
+    }
+});
+
 app.listen(port, () => {
     console.log(`\n🌐 T.R.O.N. V3 Cloud Router listening at http://localhost:${port}`);
 });
