@@ -507,29 +507,37 @@ app.post('/api/admin/basecamp-columns', async (req, res) => {
         console.log("👉 1. Fetching Project:", projectUrl);
         const projectRes = await axios.get(projectUrl, { headers: basecampHeaders });
 
-        // 4. Look through the project "dock" to find the Kanban Board
-        console.log("🛠️ Available tools in this project:", projectRes.data.dock.map(t => t.name).join(', '));
+        // 4. Look through the project "dock" to find the kanban_board
+        console.log("🛠️ Available tools:", projectRes.data.dock.map(t => t.name).join(', '));
+        const kanbanTool = projectRes.data.dock.find(tool => tool.name === 'kanban_board');
         
-        // Look for both plural and singular just to be completely bulletproof
-        const cardTableTool = projectRes.data.dock.find(tool => tool.name === 'card_tables' || tool.name === 'card_table' || tool.name === 'kanban_board');
-        
-        if (!cardTableTool || !cardTableTool.url) {
-            return res.status(404).json({ 
-                error: "No Kanban Board found. Basecamp says this project only has: " + projectRes.data.dock.map(t => t.name).join(', ') 
-            });
+        if (!kanbanTool || !kanbanTool.url) {
+            return res.status(404).json({ error: "Kanban Board not found in this project." });
         }
 
-        // 5. Construct the exact URL for the columns (lists)
-        const listsUrl = cardTableTool.url.replace('.json', '/lists.json');
-        console.log("👉 2. Fetching Lists directly:", listsUrl);
-
-        // 6. Fetch the actual columns!
-        const listsRes = await axios.get(listsUrl, { headers: basecampHeaders });
+        // 5. Fetch the Kanban Board directly
+        console.log("👉 2. Fetching Kanban Board:", kanbanTool.url);
+        const kanbanRes = await axios.get(kanbanTool.url, { headers: basecampHeaders });
         
+        // 6. Extract the columns smartly!
+        // It will check if they are embedded, OR if there is a lists_url we need to follow.
+        let lists = kanbanRes.data.lists || kanbanRes.data.columns; 
+        
+        if (!lists && kanbanRes.data.lists_url) {
+            console.log("👉 3. Following lists_url:", kanbanRes.data.lists_url);
+            const listsRes = await axios.get(kanbanRes.data.lists_url, { headers: basecampHeaders });
+            lists = listsRes.data;
+        }
+
+        if (!lists) {
+            console.log("❌ Kanban Response Dump:", Object.keys(kanbanRes.data));
+            throw new Error("Found the Kanban Board, but couldn't locate the columns.");
+        }
+
         // 7. Format the data for our Next.js frontend dropdowns
-        const realColumns = listsRes.data.map(list => ({
+        const realColumns = lists.map(list => ({
             id: list.id.toString(), 
-            name: list.title
+            name: list.title || list.name // Handles both naming conventions
         }));
 
         console.log("✅ Success! Found columns:", realColumns.map(c => c.name).join(', '));
