@@ -297,17 +297,25 @@ app.get('/api/admin/system-status', async (req, res) => {
             catch (e) { return { eventType: 'Unknown', payload: { repository: { full_name: 'Corrupted Task' } } }; }
         });
 
-        // Fetch AI Review History Keys
+        // 2. Fetch AI Review History Keys
         const reviewKeys = await redis.keys('ai_review:*');
         const reviews = [];
 
         for (const key of reviewKeys) {
             try {
-                // ⚠️ Change 'redis' here to match whatever is at the top of your file!
                 const dataString = await redis.get(key);
                 
                 if (dataString) {
-                    const data = JSON.parse(dataString);
+                    let data;
+                    
+                    // SMART PARSE: Try JSON first. If it's raw text, catch the error and wrap it!
+                    try {
+                        data = JSON.parse(dataString);
+                    } catch (e) {
+                        // It's raw text! Wrap it in an object so the frontend modal can read it
+                        data = { review: dataString };
+                    }
+
                     const taskId = key.split(':')[1];
                     
                     reviews.push({ 
@@ -316,9 +324,8 @@ app.get('/api/admin/system-status', async (req, res) => {
                         details: data 
                     });
                 }
-            } catch (parseError) {
-                console.error(`⚠️ Skipping corrupted Redis key ${key}:`, parseError.message);
-                // We just skip the bad key instead of crashing the whole server!
+            } catch (redisError) {
+                console.error(`⚠️ Failed to read key ${key}:`, redisError.message);
             }
         }
 
