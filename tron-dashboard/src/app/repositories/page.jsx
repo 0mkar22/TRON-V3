@@ -17,6 +17,9 @@ export default function RepositoriesPage() {
     prCol: '',
     doneCol: ''
   });
+
+  const [boardColumns, setBoardColumns] = useState([]);
+  const [fetchingColumns, setFetchingColumns] = useState(false);
   
   // 🌟 REFACTORED: Discord Broadcast States
   const [isDiscordConnected, setIsDiscordConnected] = useState(false);
@@ -48,6 +51,26 @@ export default function RepositoriesPage() {
 
     checkDiscordIntegration();
   }, []);
+
+  const handleFetchColumns = async () => {
+      if (!formData.pmProjectId) return alert("Please enter a Project / Board ID first!");
+      
+      setFetchingColumns(true);
+      try {
+          // ⚠️ Update to your live Render URL if testing in production
+          const response = await axios.post('https://tron-v3.onrender.com/api/admin/basecamp-columns', {
+              projectId: formData.pmProjectId
+          });
+          
+          if (response.data.columns) {
+              setBoardColumns(response.data.columns);
+          }
+      } catch (error) {
+          alert("Failed to fetch columns. Is Basecamp connected?");
+      } finally {
+          setFetchingColumns(false);
+      }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -136,13 +159,23 @@ export default function RepositoriesPage() {
             </div>
             <div className="w-2/3">
               <label className="block text-sm font-medium text-gray-700 mb-1">Project / Board ID</label>
-              <input
-                type="text" required
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                placeholder="e.g., 1234567"
-                value={formData.pmProjectId}
-                onChange={(e) => setFormData({ ...formData, pmProjectId: e.target.value })}
-              />
+              <div className="flex gap-2">
+                  <input
+                    type="text" required
+                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="e.g., 1234567"
+                    value={formData.pmProjectId}
+                    onChange={(e) => setFormData({ ...formData, pmProjectId: e.target.value })}
+                  />
+                  <button 
+                    type="button"
+                    onClick={handleFetchColumns}
+                    disabled={fetchingColumns || !formData.pmProjectId}
+                    className="bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors disabled:opacity-50 whitespace-nowrap"
+                  >
+                      {fetchingColumns ? 'Loading...' : 'Fetch Columns'}
+                  </button>
+              </div>
             </div>
           </div>
         </div>
@@ -150,59 +183,58 @@ export default function RepositoriesPage() {
         <hr className="my-6 border-gray-200" />
         <h3 className="text-lg font-semibold text-gray-800 mb-4">Automation Mapping</h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* To-Do */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">&quot;To-Do&quot; Column ID</label>
-            <p className="text-xs text-gray-500 mb-2">Default starting column.</p>
-            <input
-              type="text" required
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-              placeholder="e.g., col_11111"
-              value={formData.todoCol}
-              onChange={(e) => setFormData({ ...formData, todoCol: e.target.value })}
-            />
-          </div>
+        {/* 🌟 DYNAMIC AUTOMATION MAPPING */}
+        {boardColumns.length === 0 ? (
+            <div className="bg-blue-50 p-6 rounded-lg border border-blue-100 text-center">
+                <p className="text-blue-800 font-medium">Enter your Board ID above and click &ldquo;Fetch Columns&ldquo; to map your workflow.</p>
+            </div>
+        ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 p-6 rounded-lg border border-gray-200">
+              {/* To-Do */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">&ldquo;To-Do&ldquo; Column</label>
+                <p className="text-xs text-gray-500 mb-2">Default starting column.</p>
+                <select required className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:ring-blue-500"
+                  value={formData.todoCol} onChange={(e) => setFormData({ ...formData, todoCol: e.target.value })}>
+                  <option value="">-- Select Column --</option>
+                  {boardColumns.map(col => <option key={col.id} value={col.id}>{col.name}</option>)}
+                </select>
+              </div>
 
-          {/* In Progress */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">&quot;In Progress&quot; Column ID</label>
-            <p className="text-xs text-gray-500 mb-2">Moves ticket here when a branch is created.</p>
-            <input
-              type="text" required
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-              placeholder="e.g., col_98765"
-              value={formData.branchCol}
-              onChange={(e) => setFormData({ ...formData, branchCol: e.target.value })}
-            />
-          </div>
+              {/* In Progress */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">&ldquo;In Progress&ldquo; Column</label>
+                <p className="text-xs text-gray-500 mb-2">Moves here when a branch is created.</p>
+                <select required className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:ring-blue-500"
+                  value={formData.branchCol} onChange={(e) => setFormData({ ...formData, branchCol: e.target.value })}>
+                  <option value="">-- Select Column --</option>
+                  {boardColumns.map(col => <option key={col.id} value={col.id}>{col.name}</option>)}
+                </select>
+              </div>
 
-          {/* In Review */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">&quot;In Review&quot; Column ID</label>
-            <p className="text-xs text-gray-500 mb-2">Moves ticket here when a PR is opened.</p>
-            <input
-              type="text" required
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-              placeholder="e.g., col_43210"
-              value={formData.prCol}
-              onChange={(e) => setFormData({ ...formData, prCol: e.target.value })}
-            />
-          </div>
+              {/* In Review */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">&ldquo;In Review&ldquo; Column</label>
+                <p className="text-xs text-gray-500 mb-2">Moves here when a PR is opened.</p>
+                <select required className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:ring-blue-500"
+                  value={formData.prCol} onChange={(e) => setFormData({ ...formData, prCol: e.target.value })}>
+                  <option value="">-- Select Column --</option>
+                  {boardColumns.map(col => <option key={col.id} value={col.id}>{col.name}</option>)}
+                </select>
+              </div>
 
-          {/* Done */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">&quot;Done&quot; Column ID</label>
-            <p className="text-xs text-gray-500 mb-2">Moves ticket here when a PR is closed/merged.</p>
-            <input
-              type="text" required
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-              placeholder="e.g., col_99999"
-              value={formData.doneCol}
-              onChange={(e) => setFormData({ ...formData, doneCol: e.target.value })}
-            />
-          </div>
-        </div>
+              {/* Done */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">&ldquo;Done&rdquo; Column</label>
+                <p className="text-xs text-gray-500 mb-2">Moves here when a PR is closed.</p>
+                <select required className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:ring-blue-500"
+                  value={formData.doneCol} onChange={(e) => setFormData({ ...formData, doneCol: e.target.value })}>
+                  <option value="">-- Select Column --</option>
+                  {boardColumns.map(col => <option key={col.id} value={col.id}>{col.name}</option>)}
+                </select>
+              </div>
+            </div>
+        )}
 
         {/* 🌟 REFACTORED: Discord Broadcast Section */}
         <hr className="my-6 border-gray-200" />

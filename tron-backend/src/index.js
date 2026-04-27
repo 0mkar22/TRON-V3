@@ -464,6 +464,75 @@ app.delete('/api/admin/discord-token', async (req, res) => {
     }
 });
 
+// 🌟 PRODUCTION EDITION: Fetch Real Basecamp Columns
+app.post('/api/admin/basecamp-columns', async (req, res) => {
+    const { projectId } = req.body;
+
+    if (!projectId) {
+        return res.status(400).json({ error: "Project ID is required." });
+    }
+
+    try {
+        // 1. Fetch the encrypted Basecamp token from the database
+        const { data: integration, error: intError } = await supabase
+            .from('integrations') 
+            .select('secret_id')
+            .eq('provider', 'basecamp')
+            .single();
+
+        if (intError || !integration) {
+            return res.status(400).json({ error: "Basecamp is not connected globally." });
+        }
+
+        // 2. Decrypt the token
+        const { data: bcToken, error: secError } = await supabase.rpc('get_decrypted_secret', {
+            p_secret_id: integration.secret_id
+        });
+
+        if (secError || !bcToken) throw new Error("Failed to decrypt Basecamp token");
+
+        // ⚠️ ADD YOUR BASECAMP ACCOUNT ID HERE (Or put it in your .env file!)
+        const accountId = process.env.BASECAMP_ACCOUNT_ID || 'YOUR_ACCOUNT_ID_HERE'; 
+        
+        const basecampHeaders = {
+            'Authorization': `Bearer ${bcToken}`,
+            // Basecamp strictly requires a User-Agent with contact info to prevent API abuse
+            'User-Agent': 'TRON-V3-Engine (your-email@example.com)' 
+        };
+
+        // 3. Ask Basecamp for the Project details to find the Kanban Board
+        const projectRes = await axios.get(`https://3.basecampapi.com/${accountId}/buckets/${projectId}.json`, {
+            headers: basecampHeaders
+        });
+
+        // 4. Look through the project "dock" to find the Card Table (Kanban) tool
+        const cardTableTool = projectRes.data.dock.find(tool => tool.name === 'card_table');
+        
+        if (!cardTableTool) {
+            return res.status(404).json({ error: "No Kanban Board (Card Table) found in this Basecamp project." });
+        }
+
+        // 5. Basecamp gave us the endpoint for the Card Table, now fetch it to get the "lists" URL
+        const cardTableRes = await axios.get(cardTableTool.url, { headers: basecampHeaders });
+        const listsUrl = cardTableRes.data.lists_url;
+
+        // 6. Finally, fetch the actual columns (lists) from the board!
+        const listsRes = await axios.get(listsUrl, { headers: basecampHeaders });
+        
+        // 7. Format the data for our Next.js frontend dropdowns
+        const realColumns = listsRes.data.map(list => ({
+            id: list.id.toString(), // Convert to string for the React select value
+            name: list.title
+        }));
+
+        res.json({ columns: realColumns });
+
+    } catch (error) {
+        console.error("❌ Basecamp API Error:", error.response?.data || error.message);
+        res.status(500).json({ error: "Failed to communicate with Basecamp API." });
+    }
+});
+
 app.listen(port, () => {
     console.log(`\n🌐 T.R.O.N. V3 Cloud Router listening at http://localhost:${port}`);
 });
