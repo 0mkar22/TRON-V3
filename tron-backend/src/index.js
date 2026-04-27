@@ -310,6 +310,48 @@ app.get('/api/admin/system-status', async (req, res) => {
     }
 });
 
+// 🌟 NEW: Fetch dynamically connected Basecamp boards from the database
+app.get('/api/admin/basecamp-boards', async (req, res) => {
+    try {
+        // Query Supabase for all repositories that use Basecamp
+        const { data, error } = await supabase
+            .from('repositories')
+            .select('repo_name, pm_project_id')
+            .eq('pm_provider', 'basecamp');
+
+        if (error) throw error;
+
+        // Format the data for the frontend
+        // We use a Set to remove duplicates just in case multiple repos point to the same board
+        const uniqueBoardsMap = new Map();
+        
+        data.forEach(row => {
+            if (row.pm_project_id) {
+                // If multiple repos share a board, we append the repo names
+                if (uniqueBoardsMap.has(row.pm_project_id)) {
+                    const existing = uniqueBoardsMap.get(row.pm_project_id);
+                    existing.repos.push(row.repo_name);
+                } else {
+                    uniqueBoardsMap.set(row.pm_project_id, {
+                        id: row.pm_project_id,
+                        repos: [row.repo_name]
+                    });
+                }
+            }
+        });
+
+        const formattedBoards = Array.from(uniqueBoardsMap.values()).map(board => ({
+            id: board.id,
+            name: `Linked to: ${board.repos.join(', ')}` // Dynamically name it based on the repo!
+        }));
+
+        res.json({ boards: formattedBoards });
+    } catch (error) {
+        console.error("❌ Failed to fetch Basecamp boards:", error);
+        res.status(500).json({ error: "Database query failed." });
+    }
+});
+
 app.listen(port, () => {
     console.log(`\n🌐 T.R.O.N. V3 Cloud Router listening at http://localhost:${port}`);
 });
