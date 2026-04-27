@@ -418,22 +418,35 @@ app.get('/api/admin/discord-status', async (req, res) => {
     }
 });
 
-// 🌟 NEW: Save Discord Token to Vault
+// 🌟 DYNAMIC EDITION: Save Discord Token to Vault 
 app.post('/api/admin/discord-token', async (req, res) => {
-    const { token, orgId } = req.body;
+    const { token } = req.body; // Notice: We don't ask the frontend for the orgId anymore!
 
-    if (!token || !orgId) {
-        return res.status(400).json({ error: "Missing token or organization ID." });
+    if (!token) {
+        return res.status(400).json({ error: "Missing Discord token." });
     }
 
     try {
-        // Call the Supabase SQL function we just created
-        const { error } = await supabase.rpc('add_discord_integration', {
-            p_org_id: orgId,
+        // 1. Dynamically fetch the master org_id from your existing GitHub connection
+        const { data: masterOrg, error: orgError } = await supabase
+            .from('integrations')
+            .select('org_id')
+            .eq('provider', 'github')
+            .single();
+
+        if (orgError || !masterOrg || !masterOrg.org_id) {
+            return res.status(400).json({ error: "Could not find a primary Organization ID. Please link GitHub first." });
+        }
+
+        const dynamicOrgId = masterOrg.org_id;
+
+        // 2. Call the Supabase SQL function using the dynamically found ID
+        const { error: vaultError } = await supabase.rpc('add_discord_integration', {
+            p_org_id: dynamicOrgId,
             p_token: token
         });
 
-        if (error) throw error;
+        if (vaultError) throw vaultError;
 
         res.json({ message: "Discord successfully connected and vaulted!" });
     } catch (error) {

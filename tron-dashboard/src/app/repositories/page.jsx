@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useRouter } from 'next/navigation'; // 🌟 NEW: Added router for redirecting
 
 export default function RepositoriesPage() {
+  const router = useRouter();
+  
   const [formData, setFormData] = useState({
     orgId: '',
     repoName: '',
@@ -15,38 +18,42 @@ export default function RepositoriesPage() {
     doneCol: ''
   });
   
-  // 🌟 NEW: Discord Broadcast States
-  const [discordToken, setDiscordToken] = useState('');
+  // 🌟 REFACTORED: Discord Broadcast States
+  const [isDiscordConnected, setIsDiscordConnected] = useState(false);
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState('');
-  const [fetchingChannels, setFetchingChannels] = useState(false);
+  const [checkingDiscord, setCheckingDiscord] = useState(true);
 
   const [status, setStatus] = useState({ type: '', message: '' });
   const [loading, setLoading] = useState(false);
 
-  // 🌟 NEW: Fetch channels from your backend
-  const fetchDiscordChannels = async (e) => {
-    e.preventDefault(); // Prevent the main form from submitting
-    setFetchingChannels(true);
-    try {
-      const response = await axios.post('http://localhost:3000/api/discord/channels', { botToken: discordToken });
-      setChannels(response.data.channels);
-      if (response.data.channels.length > 0) {
-        setSelectedChannel(response.data.channels[0].id); // Auto-select the first channel
+  // 🌟 NEW: Automatically check global Discord status and fetch channels on load
+  useEffect(() => {
+    const checkDiscordIntegration = async () => {
+      try {
+        // Ping the backend to see if a global token exists and grab the channels
+        // ⚠️ Replace with your Render URL if testing in prod
+        const response = await axios.get('https://tron-v3.onrender.com/api/admin/discord-status');
+        
+        if (response.data.isConnected && response.data.channels) {
+            setIsDiscordConnected(true);
+            setChannels(response.data.channels);
+        }
+      } catch (error) {
+        console.log("Discord is not connected or failed to fetch channels.", error);
+      } finally {
+        setCheckingDiscord(false);
       }
-    } catch (error) {
-      alert("Failed to fetch channels. Please check your bot token!");
-    } finally {
-      setFetchingChannels(false);
-    }
-  };
+    };
+
+    checkDiscordIntegration();
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setStatus({ type: '', message: '' });
 
-    // Format the mapping JSON for the backend worker
     const payload = {
       orgId: formData.orgId,
       repoName: formData.repoName,
@@ -58,22 +65,19 @@ export default function RepositoriesPage() {
         pull_request_opened: formData.prCol,
         pull_request_closed: formData.doneCol 
       },
-      // 🌟 NEW: Conditionally attach the Discord config if provided
-      communication_config: discordToken && selectedChannel ? {
+      // 🌟 REFACTORED: We only pass the channel ID now, not the secret token!
+      communication_config: isDiscordConnected && selectedChannel ? {
         provider: 'discord_bot',
-        bot_token: discordToken,
         channel_id: selectedChannel
       } : null
     };
 
     try {
+      // ⚠️ Replace with your Render URL if testing in prod
       const response = await axios.post('http://localhost:3000/api/repositories', payload);
       setStatus({ type: 'success', message: response.data.message });
       
-      // Reset form on success
       setFormData({ ...formData, repoName: '', pmProjectId: '', todoCol: '', branchCol: '', prCol: '', doneCol: '' });
-      setDiscordToken('');
-      setChannels([]);
       setSelectedChannel('');
     } catch (error) {
       setStatus({ 
@@ -149,7 +153,7 @@ export default function RepositoriesPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* To-Do */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">"To-Do" Column ID</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">&quot;To-Do&quot; Column ID</label>
             <p className="text-xs text-gray-500 mb-2">Default starting column.</p>
             <input
               type="text" required
@@ -162,7 +166,7 @@ export default function RepositoriesPage() {
 
           {/* In Progress */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">"In Progress" Column ID</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">&quot;In Progress&quot; Column ID</label>
             <p className="text-xs text-gray-500 mb-2">Moves ticket here when a branch is created.</p>
             <input
               type="text" required
@@ -175,7 +179,7 @@ export default function RepositoriesPage() {
 
           {/* In Review */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">"In Review" Column ID</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">&quot;In Review&quot; Column ID</label>
             <p className="text-xs text-gray-500 mb-2">Moves ticket here when a PR is opened.</p>
             <input
               type="text" required
@@ -188,7 +192,7 @@ export default function RepositoriesPage() {
 
           {/* Done */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">"Done" Column ID</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">&quot;Done&quot; Column ID</label>
             <p className="text-xs text-gray-500 mb-2">Moves ticket here when a PR is closed/merged.</p>
             <input
               type="text" required
@@ -200,49 +204,42 @@ export default function RepositoriesPage() {
           </div>
         </div>
 
-        {/* 🌟 NEW: Discord Broadcast Section */}
+        {/* 🌟 REFACTORED: Discord Broadcast Section */}
         <hr className="my-6 border-gray-200" />
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Broadcast Configuration (Optional)</h3>
+        <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+            <span className="mr-2">🎮</span> Broadcast Configuration
+        </h3>
         
-        <div className="space-y-4 bg-gray-50 p-4 rounded-md border border-gray-200">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Discord Bot Token</label>
-            <div className="flex gap-2">
-              <input
-                type="password"
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Paste your bot token..."
-                value={discordToken}
-                onChange={(e) => setDiscordToken(e.target.value)}
-              />
-              <button
-                onClick={fetchDiscordChannels}
-                disabled={fetchingChannels || !discordToken}
-                className="bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors disabled:opacity-50"
-              >
-                {fetchingChannels ? 'Fetching...' : 'Get Channels'}
-              </button>
-            </div>
-            <p className="text-xs text-gray-500 mt-2">Required to post AI summaries to your Discord server.</p>
-          </div>
-
-          {/* Only show the dropdown if we successfully fetched channels */}
-          {channels.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Select Broadcast Channel</label>
-              <select
-                className="w-full px-4 py-2 border border-gray-300 rounded-md bg-white focus:ring-blue-500 focus:border-blue-500"
-                value={selectedChannel}
-                onChange={(e) => setSelectedChannel(e.target.value)}
-              >
-                {channels.map(channel => (
-                  <option key={channel.id} value={channel.id}>
-                    #{channel.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+        <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
+            {checkingDiscord ? (
+                 <div className="text-sm text-gray-500 animate-pulse">Checking Discord integration status...</div>
+            ) : isDiscordConnected ? (
+                <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Select Discord Channel</label>
+                    <select 
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 bg-white"
+                        value={selectedChannel}
+                        onChange={(e) => setSelectedChannel(e.target.value)}
+                    >
+                        <option value="">-- Choose a channel --</option>
+                        {channels.map(channel => (
+                            <option key={channel.id} value={channel.id}># {channel.name}</option>
+                        ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-2">AI PR Summaries and alerts will be posted here.</p>
+                </div>
+            ) : (
+                <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100 flex flex-col sm:flex-row justify-between items-center">
+                    <span className="text-sm text-indigo-800 font-medium mb-3 sm:mb-0">Broadcasts disabled. Discord is not connected.</span>
+                    <button 
+                        type="button"
+                        onClick={() => router.push('/integrations')}
+                        className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition-colors"
+                    >
+                        Connect Discord
+                    </button>
+                </div>
+            )}
         </div>
 
         {status.message && (
@@ -254,7 +251,7 @@ export default function RepositoriesPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 mt-4"
+          className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 mt-4 text-lg"
         >
           {loading ? 'Saving...' : 'Link Repository'}
         </button>
