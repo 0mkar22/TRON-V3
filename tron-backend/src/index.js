@@ -366,7 +366,7 @@ app.get('/api/admin/discord-status', async (req, res) => {
             return res.json({ isConnected: false });
         }
 
-        // 2. 🌟 NEW: Use an RPC call to decrypt instead of querying the view
+        // 2. Use an RPC call to decrypt
         const { data: botToken, error: secError } = await supabase.rpc('get_decrypted_secret', {
             p_secret_id: integration.secret_id
         });
@@ -375,8 +375,6 @@ app.get('/api/admin/discord-status', async (req, res) => {
             console.error("❌ Failed to decrypt Discord token.");
             return res.json({ isConnected: false });
         }
-
-        const botToken = secret.decrypted_secret;
 
         // 3. Ask Discord which servers (guilds) this bot is inside
         const guildResponse = await axios.get('https://discord.com/api/v10/users/@me/guilds', {
