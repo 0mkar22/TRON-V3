@@ -10,7 +10,9 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className="bg-gray-50 min-h-screen flex flex-col text-gray-900">
+      <body className="bg-gray-50 min-h-screen flex flex-col text-gray-900" 
+      suppressHydrationWarning 
+      >
         
         {/* Navigation Header */}
         <header className="bg-green-600 text-white shadow-md">

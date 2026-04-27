@@ -496,8 +496,8 @@ app.post('/api/admin/basecamp-columns', async (req, res) => {
         
         const basecampHeaders = {
             'Authorization': `Bearer ${bcToken}`,
-            // Basecamp strictly requires a User-Agent with contact info to prevent API abuse
-            'User-Agent': 'TRON-V3-Engine (your-email@example.com)' 
+            'User-Agent': 'TRON-V3-Engine (obhogate48@gmail.com)', // Keep your email here!
+            'Accept': 'application/json' 
         };
 
         // 3. Ask Basecamp for the Project details to find the Kanban Board
