@@ -184,10 +184,10 @@ class BasecampAdapter {
         try {
             const cleanTicketId = ticketId.toString().replace(/\D/g, '');
 
-            // 1. Fetch all people in this Basecamp Project
+            // 🌟 THE FIX: Query the global account directory instead of the specific bucket
             const peopleResponse = await this.executeWithRetry(() => 
                 axios.get(
-                    `${this.getBaseUrl(projectId)}/people.json`,
+                    `https://3.basecampapi.com/${process.env.BASECAMP_ACCOUNT_ID}/people.json`,
                     this.getBaseConfig()
                 )
             );
@@ -196,7 +196,6 @@ class BasecampAdapter {
             const normalizedDev = developerName.toLowerCase().replace(/[^a-z0-9]/g, '');
             
             const assignee = peopleResponse.data.find(person => {
-                // Strip spaces and special chars to match how the VS Code extension formats names
                 const normName = person.name.toLowerCase().replace(/[^a-z0-9]/g, '');
                 const normEmail = person.email_address.toLowerCase().split('@')[0].replace(/[^a-z0-9]/g, '');
                 
