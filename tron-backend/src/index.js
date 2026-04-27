@@ -285,7 +285,7 @@ app.get('/api/review/:taskId', async (req, res) => {
 // DASHBOARD & ADMIN ROUTES
 // ==========================================
 
-// 🌟 NEW: Mission Control - Fetch Redis Queue & AI Reviews
+// 🌟 UPDATED: Mission Control - Fetch Redis Queue & AI Reviews (With Full Details)
 app.get('/api/admin/system-status', async (req, res) => {
     try {
         // 1. Fetch the Active Webhook Queue
@@ -296,10 +296,20 @@ app.get('/api/admin/system-status', async (req, res) => {
         const reviewKeys = await redis.keys('ai_review:*');
         const reviews = [];
 
-        // We only fetch the metadata (Task IDs), not the massive review text, to save bandwidth
+        // 🌟 UPDATED: We now fetch the full data payload for the frontend modal!
         for (const key of reviewKeys) {
-            const taskId = key.split(':')[1];
-            reviews.push({ taskId, key });
+            const dataString = await redis.get(key);
+            
+            if (dataString) {
+                const data = JSON.parse(dataString);
+                const taskId = key.split(':')[1];
+                
+                reviews.push({ 
+                    taskId: taskId, 
+                    key: key,
+                    details: data // <-- This is what feeds the new UI modal!
+                });
+            }
         }
 
         res.json({

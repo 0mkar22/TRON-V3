@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react';
 export default function ActivityDashboard() {
     const [status, setStatus] = useState({ queue: [], reviews: [] });
     const [loading, setLoading] = useState(true);
+    const [selectedReview, setSelectedReview] = useState(null); // State for the modal
 
     useEffect(() => {
-        // 🌟 Move the function INSIDE the useEffect to satisfy the React linter!
         const fetchStatus = async () => {
             try {
                 // ⚠️ Update this to your Render URL if you are deploying to production!
@@ -28,7 +28,7 @@ export default function ActivityDashboard() {
         
         // Cleanup the interval when you navigate away from the page
         return () => clearInterval(interval);
-    }, []); // <-- Now the dependency array is perfectly clean!
+    }, []);
 
     if (loading) {
         return (
@@ -39,7 +39,7 @@ export default function ActivityDashboard() {
     }
 
     return (
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-6xl mx-auto pb-12">
             <div className="mb-8">
                 <h1 className="text-3xl font-extrabold text-gray-900">🚀 Mission Control</h1>
                 <p className="text-gray-500 mt-2">Real-time monitoring of your TRON background workers and AI systems.</p>
@@ -94,20 +94,82 @@ export default function ActivityDashboard() {
                     ) : (
                         <ul className="space-y-3">
                             {status.reviews.map((review, idx) => (
-                                <li key={idx} className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-sm flex justify-between items-center hover:shadow-md transition-shadow">
+                                // 🌟 UPDATED: Added onClick, cursor-pointer, and group classes
+                                <li 
+                                    key={idx} 
+                                    onClick={() => setSelectedReview(review)}
+                                    className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-sm flex justify-between items-center hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer group"
+                                >
                                     <div className="flex items-center space-x-3">
-                                        <span className="text-xl">📄</span>
-                                        <span className="font-medium text-gray-700">Task ID: <span className="font-mono font-bold text-gray-900">{review.taskId}</span></span>
+                                        <span className="text-xl group-hover:text-indigo-500 transition-colors">📄</span>
+                                        <span className="font-medium text-gray-700 group-hover:text-indigo-700 transition-colors">
+                                            Task ID: <span className="font-mono font-bold text-gray-900">{review.taskId}</span>
+                                        </span>
                                     </div>
-                                    <span className="text-xs bg-green-50 border border-green-200 text-green-700 px-2 py-1 rounded-md font-semibold">
-                                        Available in VS Code
-                                    </span>
+                                    <div className="flex items-center gap-3">
+                                        {/* 🌟 NEW: "View Details" text that appears on hover */}
+                                        <span className="text-xs text-indigo-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                                            View Details
+                                        </span>
+                                        <span className="text-xs bg-green-50 border border-green-200 text-green-700 px-2 py-1 rounded-md font-semibold">
+                                            Available in VS Code
+                                        </span>
+                                    </div>
                                 </li>
                             ))}
                         </ul>
                     )}
                 </div>
             </div>
+
+            {/* 🌟 NEW: The AI Review Modal */}
+            {selectedReview && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+                        
+                        {/* Modal Header */}
+                        <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                            <h3 className="text-lg font-bold text-gray-900 flex items-center">
+                                <span className="mr-2">🧠</span> AI Code Review
+                                <span className="ml-3 text-xs font-mono bg-gray-200 text-gray-600 px-2 py-1 rounded border border-gray-300">
+                                    Task: {selectedReview.taskId}
+                                </span>
+                            </h3>
+                            <button 
+                                onClick={() => setSelectedReview(null)}
+                                className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="p-6 overflow-y-auto flex-grow bg-gray-50">
+                            <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Payload Data</h4>
+                                <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono bg-gray-50 p-4 rounded border border-gray-200 overflow-x-auto">
+                                    {/* Will try to render just the review text, or format the whole JSON object if not found */}
+                                    {selectedReview.details?.review || JSON.stringify(selectedReview.details, null, 2)}
+                                </pre>
+                            </div>
+                        </div>
+                        
+                        {/* Modal Footer */}
+                        <div className="px-6 py-4 border-t border-gray-100 bg-white flex justify-end">
+                            <button 
+                                onClick={() => setSelectedReview(null)}
+                                className="bg-gray-800 hover:bg-gray-900 text-white text-sm font-bold py-2.5 px-6 rounded-lg transition-colors shadow-sm"
+                            >
+                                Close Window
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 }
