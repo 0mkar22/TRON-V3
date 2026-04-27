@@ -508,20 +508,16 @@ app.post('/api/admin/basecamp-columns', async (req, res) => {
         const projectRes = await axios.get(projectUrl, { headers: basecampHeaders });
 
         // 4. Look through the project "dock" to find the Kanban Board
-        const cardTableTool = projectRes.data.dock.find(tool => tool.name === 'kanban_board' || tool.title === 'kanban-board' || tool.type === 'card_table');
+        const cardTableTool = projectRes.data.dock.find(tool => tool.name === 'card_table');
         if (!cardTableTool || !cardTableTool.url) {
             return res.status(404).json({ error: "No Kanban Board (Card Table) found in this Basecamp project." });
         }
 
-        // 5. Check Card Table Link
-        console.log("👉 2. Fetching Card Table:", cardTableTool.url);
-        const cardTableRes = await axios.get(cardTableTool.url, { headers: basecampHeaders });
-        
-        const listsUrl = cardTableRes.data.lists_url;
-        if (!listsUrl) throw new Error("Basecamp returned undefined for lists_url!");
+        // 5. Construct the exact URL for the columns (lists)
+        const listsUrl = cardTableTool.url.replace('.json', '/lists.json');
+        console.log("👉 2. Fetching Lists directly:", listsUrl);
 
-        // 6. Check Columns Link
-        console.log("👉 3. Fetching Lists:", listsUrl);
+        // 6. Fetch the actual columns!
         const listsRes = await axios.get(listsUrl, { headers: basecampHeaders });
         
         // 7. Format the data for our Next.js frontend dropdowns
