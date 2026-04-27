@@ -176,6 +176,53 @@ class BasecampAdapter {
             throw error; 
         }
     }
+
+    // ==========================================
+    // 4. Auto-Assign Developer
+    // ==========================================
+    static async assignDeveloper(projectId, ticketId, developerName) {
+        try {
+            const cleanTicketId = ticketId.toString().replace(/\D/g, '');
+
+            // 1. Fetch all people in this Basecamp Project
+            const peopleResponse = await this.executeWithRetry(() => 
+                axios.get(
+                    `${this.getBaseUrl(projectId)}/people.json`,
+                    this.getBaseConfig()
+                )
+            );
+
+            // 2. Fuzzy match the Git username to a Basecamp user
+            const normalizedDev = developerName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            
+            const assignee = peopleResponse.data.find(person => {
+                // Strip spaces and special chars to match how the VS Code extension formats names
+                const normName = person.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const normEmail = person.email_address.toLowerCase().split('@')[0].replace(/[^a-z0-9]/g, '');
+                
+                return normName.includes(normalizedDev) || normalizedDev.includes(normName) || normEmail.includes(normalizedDev);
+            });
+
+            if (!assignee) {
+                console.log(`⚠️ [BASECAMP] Could not find Basecamp user matching Git name: "${developerName}". Skipping assignment.`);
+                return;
+            }
+
+            // 3. Assign the user to the card using a PUT request
+            const targetUrl = `${this.getBaseUrl(projectId)}/card_tables/cards/${cleanTicketId}.json`;
+            await this.executeWithRetry(() => 
+                axios.put(
+                    targetUrl,
+                    { assignee_ids: [assignee.id] },
+                    this.getBaseConfig()
+                )
+            );
+            
+            console.log(`✅ [BASECAMP] Automatically assigned ticket [${cleanTicketId}] to ${assignee.name}`);
+        } catch (error) {
+            console.error(`❌ [BASECAMP] Assign Task Error:`, error.response?.data || error.message);
+        }
+    }
 }
 
 module.exports = BasecampAdapter;

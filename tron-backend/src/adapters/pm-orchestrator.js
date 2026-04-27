@@ -76,6 +76,23 @@ class PMOrchestrator {
         
         return fallbackId;
     }
+
+    static async assignTicket(pmConfig = {}, ticketId, developer) {
+        const provider = pmConfig.provider || pmConfig.pm_provider || 'none';
+        const projectId = pmConfig.project_id || pmConfig.pm_project_id || pmConfig.board_id;
+        
+        // If the extension failed to get a git username, it defaults to 'dev'. Skip in this case.
+        if (!developer || developer === 'dev') return; 
+
+        try {
+            if (provider === 'basecamp') {
+                await BasecampAdapter.assignDeveloper(projectId, ticketId, developer); 
+            }
+            // (You can add Jira/Monday assignment logic here in the future)
+        } catch (error) {
+            console.error(`❌ [ORCHESTRATOR] Failed to assign ticket for ${provider}:`, error.message);
+        }
+    }
 }
 
 module.exports = PMOrchestrator;

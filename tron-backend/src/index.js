@@ -115,7 +115,7 @@ app.post('/api/create-task', async (req, res) => {
     }
 });
 
-// 🌟 NEW: Start Task & Move Column
+// 🌟 NEW: Start Task, Move Column & Assign
 app.post('/api/start-task', async (req, res) => {
     const { taskInput, repoName, developer } = req.body;
     
@@ -131,6 +131,12 @@ app.post('/api/start-task', async (req, res) => {
             if (inProgressId) {
                 console.log(`🚚 [API] Moving task [${resolvedTaskID}] to In Progress column...`);
                 await PMOrchestrator.updateTicketStatus(config.pm_tool, resolvedTaskID, inProgressId);
+            }
+
+            // 🌟 NEW: Trigger the Auto-Assignment
+            if (developer) {
+                console.log(`👤 [API] Attempting to assign developer: ${developer}`);
+                await PMOrchestrator.assignTicket(config.pm_tool, resolvedTaskID, developer);
             }
         }
 
