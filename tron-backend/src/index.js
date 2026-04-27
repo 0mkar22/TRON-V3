@@ -281,6 +281,35 @@ app.get('/api/review/:taskId', async (req, res) => {
     }
 });
 
+// 🌟 NEW: Mission Control - Fetch Redis Queue & AI Reviews
+app.get('/api/admin/system-status', async (req, res) => {
+    try {
+        // 1. Fetch the Active Webhook Queue
+        const queueItems = await redis.lrange('tron:v3_secret_queue', 0, -1);
+        const parsedQueue = queueItems.map(item => JSON.parse(item));
+
+        // 2. Fetch AI Review History Keys
+        const reviewKeys = await redis.keys('ai_review:*');
+        const reviews = [];
+
+        // We only fetch the metadata (Task IDs), not the massive review text, to save bandwidth
+        for (const key of reviewKeys) {
+            const taskId = key.split(':')[1];
+            reviews.push({ taskId, key });
+        }
+
+        res.json({
+            queue: parsedQueue,
+            reviews: reviews,
+            queueCount: parsedQueue.length,
+            reviewCount: reviews.length
+        });
+    } catch (error) {
+        console.error("❌ System Status Error:", error);
+        res.status(500).json({ error: "Failed to fetch system status." });
+    }
+});
+
 app.listen(port, () => {
     console.log(`\n🌐 T.R.O.N. V3 Cloud Router listening at http://localhost:${port}`);
 });

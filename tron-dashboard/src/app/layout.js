@@ -1,5 +1,6 @@
 import './globals.css';
 import Link from 'next/link';
+import Image from 'next/image';
 
 export const metadata = {
   title: 'TRON V3 Dashboard',
@@ -18,24 +19,30 @@ export default function RootLayout({ children }) {
               
               {/* Branding */}
               <div className="flex items-center space-x-3">
-                <img 
-                  src="/logo.png" 
-                  alt="Organization Logo" 
-                  className="h-10 w-10 bg-white rounded-full p-1"
+                <Image
+                  src="/logo.png"
+                  alt="Organization Logo"
+                  width={40}
+                  height={40}
+                  className="bg-white rounded-full p-1"
                 />
                 <span className="font-bold text-xl tracking-wider">T.R.O.N.</span>
               </div>
 
               {/* Navigation Links */}
               <nav className="flex space-x-8">
-                <Link href="/" className="hover:text-green-200 transition-colors">
+                <Link href="/" className="hover:text-green-200 transition-colors font-medium">
                   Dashboard
                 </Link>
-                <Link href="/integrations" className="hover:text-green-200 transition-colors">
+                <Link href="/integrations" className="hover:text-green-200 transition-colors font-medium">
                   Integrations
                 </Link>
-                <Link href="/repositories" className="hover:text-green-200 transition-colors">
+                <Link href="/repositories" className="hover:text-green-200 transition-colors font-medium">
                   Repositories
+                </Link>
+                {/* 🌟 NEW: Mission Control Link */}
+                <Link href="/activity" className="hover:text-green-200 transition-colors font-bold border-b-2 border-transparent hover:border-green-200 pb-1">
+                  Activity Log
                 </Link>
               </nav>
 
