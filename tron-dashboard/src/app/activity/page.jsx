@@ -9,13 +9,25 @@ export default function ActivityDashboard() {
     useEffect(() => {
         const fetchStatus = async () => {
             try {
-                // ⚠️ Update this to your Render URL if you are deploying to production!
+                // ⚠️ Make sure this URL points to wherever your backend is actively running!
                 const res = await fetch('https://tron-v3.onrender.com/api/admin/system-status');
                 const data = await res.json();
-                setStatus(data);
-                setLoading(false);
+                
+                // Only update if the response is actually successful
+                if (res.ok) {
+                    setStatus({
+                        // The || [] guarantees it will ALWAYS be an array, preventing the .length crash
+                        queue: data.queue || [],
+                        reviews: data.reviews || [],
+                        queueCount: data.queueCount || 0,
+                        reviewCount: data.reviewCount || 0
+                    });
+                } else {
+                    console.error("Backend threw an error:", data);
+                }
             } catch (error) {
-                console.error('Failed to fetch status', error);
+                console.error('Failed to fetch status:', error);
+            } finally {
                 setLoading(false);
             }
         };
