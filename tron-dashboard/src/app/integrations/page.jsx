@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import axios from 'axios';
 
 export default function IntegrationsPage() {
     const router = useRouter();
@@ -20,6 +21,11 @@ export default function IntegrationsPage() {
         slack: '',
         discord: ''
     });
+
+   // GitHub State
+    const [githubPat, setGithubPat] = useState('');
+    const [isGithubConnected, setIsGithubConnected] = useState(false); // Changes UI to "Connected"
+    const [isSavingGithub, setIsSavingGithub] = useState(false);
 
     // 4. Fetch dynamic data when the page loads
     useEffect(() => {
@@ -99,7 +105,82 @@ export default function IntegrationsPage() {
                 <h1 className="text-3xl font-extrabold text-gray-900">🔌 Integrations</h1>
                 <p className="text-gray-500 mt-2 text-lg">Connect your Project Management tools and Communication channels to enable TRON&apos;s automated workflows.</p>
             </div>
+            {/* --- VERSION CONTROL SECTION --- */}
+            <div className="mb-10">
+                <h2 className="text-xl font-bold text-gray-800 mb-6">Version Control</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    {/* GitHub Inline Card */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col">
+                        <div className="flex justify-between items-start mb-4">
+                            <div className="flex items-center space-x-3">
+                                <span className="text-3xl">🐙</span>
+                                <h3 className="text-xl font-bold text-gray-800">GitHub</h3>
+                            </div>
+                            {isGithubConnected && (
+                                <span className="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full">Active</span>
+                            )}
+                        </div>
 
+                        <p className="text-gray-500 text-sm mb-6 flex-grow">
+                            Connect your Personal Access Token (PAT) to grant TRON permission to create branches, read PRs, and perform automated AI code reviews.
+                        </p>
+
+                        {/* Dynamic Bottom Section: Input Field OR Connected Status */}
+                        {isGithubConnected ? (
+                            <div className="flex justify-between items-center border-t border-gray-100 pt-4 mt-auto">
+                                <span className="text-sm font-bold text-gray-700">Token Connected</span>
+                                <button 
+                                    onClick={() => {
+                                        // TODO: Add backend call to delete token from database
+                                        setIsGithubConnected(false);
+                                        setGithubPat('');
+                                    }}
+                                    className="text-red-500 hover:text-red-700 text-sm font-bold transition-colors"
+                                >
+                                    Disconnect
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="mt-auto border-t border-gray-100 pt-4">
+                                <label className="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide">
+                                    Personal Access Token
+                                </label>
+                                <input 
+                                    type="password" 
+                                    value={githubPat}
+                                    onChange={(e) => setGithubPat(e.target.value)}
+                                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                                    className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-all font-mono text-sm mb-3"
+                                />
+                                <button 
+                                    onClick={async () => {
+                                        setIsSavingGithub(true);
+                                        try {
+                                            // 🌟 REAL BACKEND CALL: Sending the token to be encrypted!
+                                            await axios.post('https://tron-v3.onrender.com/api/admin/save-integration', { 
+                                                provider: 'github', 
+                                                token: githubPat 
+                                            });
+                                            setIsGithubConnected(true);
+                                        } catch (error) {
+                                            console.error("Failed to save GitHub token", error);
+                                        } finally {
+                                            setIsSavingGithub(false);
+                                        }
+                                    }}
+                                    disabled={!githubPat || isSavingGithub}
+                                    className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 text-white font-bold py-2.5 px-4 rounded-lg transition-colors flex justify-center items-center shadow-sm"
+                                >
+                                    {isSavingGithub ? 'Connecting...' : 'Connect GitHub'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                </div>
+            </div>
+            
             {/* --- PROJECT MANAGEMENT SECTION --- */}
             <div>
                 <h2 className="text-xl font-bold text-gray-800 mb-4 border-b border-gray-200 pb-2">Project Management</h2>
@@ -266,7 +347,7 @@ export default function IntegrationsPage() {
 
                 </div>
             </div>
-
+            
         </div>
     );
 }

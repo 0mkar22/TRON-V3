@@ -341,6 +341,48 @@ app.get('/api/admin/system-status', async (req, res) => {
     }
 });
 
+// 🌟 NEW: Securely Save Integrations (GitHub, Slack, etc.)
+app.post('/api/admin/save-integration', async (req, res) => {
+    const { provider, token } = req.body;
+
+    if (!provider || !token) {
+        return res.status(400).json({ error: "Provider and token are required." });
+    }
+
+    try {
+        console.log(`👉 Saving ${provider} token to Supabase Vault...`);
+
+        // 1. Encrypt and save the token into Supabase Vault
+        // Note: This assumes you have an RPC function named 'insert_secret' in Supabase
+        const { data: secretId, error: vaultError } = await supabase.rpc('insert_secret', {
+            secret_name: `${provider}_token_${Date.now()}`,
+            secret_description: `PAT for ${provider}`,
+            secret_value: token
+        });
+
+        if (vaultError || !secretId) {
+            throw new Error(vaultError?.message || "Failed to insert secret into Vault");
+        }
+
+        // 2. Link that secure Vault ID to our integrations table
+        const { error: dbError } = await supabase
+            .from('integrations')
+            .upsert({ 
+                provider: provider, 
+                secret_id: secretId 
+            }, { onConflict: 'provider' }); // Overwrites the old one if it already exists!
+
+        if (dbError) throw dbError;
+
+        console.log(`✅ Successfully saved ${provider} integration!`);
+        res.json({ success: true, message: `${provider} token saved securely.` });
+
+    } catch (error) {
+        console.error(`❌ Error saving ${provider} integration:`, error.message);
+        res.status(500).json({ error: "Failed to save integration securely." });
+    }
+});
+
 // 🌟 NEW: Fetch dynamically connected Basecamp boards from the database
 app.get('/api/admin/basecamp-boards', async (req, res) => {
     try {
