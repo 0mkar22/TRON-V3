@@ -501,7 +501,7 @@ app.delete('/api/admin/delete-integration/:provider', async (req, res) => {
     }
 });
 
-// 🌟 NEW: Start the Basecamp OAuth Dance
+// 🌟 Start the Basecamp OAuth Dance (State Parameter Edition)
 app.post('/api/auth/basecamp/init', async (req, res) => {
     const { accountId, clientId, clientSecret } = req.body;
 
@@ -512,10 +512,18 @@ app.post('/api/auth/basecamp/init', async (req, res) => {
     try {
         console.log("👉 Saving pending Basecamp credentials...");
 
-        // 1. Pack the initial credentials into JSON so Vault can encrypt them
+        // 1. Get the current active org_id (acting as our user session)
+        const { data: masterOrg } = await supabase
+            .from('integrations')
+            .select('org_id')
+            .eq('provider', 'github')
+            .single();
+            
+        const activeOrgId = masterOrg?.org_id || null;
+
+        // 2. Pack the pending credentials
         const pendingData = JSON.stringify({ accountId, clientId, clientSecret });
 
-        // 2. Save them securely into Supabase Vault
         const { data: secretId, error: vaultError } = await supabase.rpc('insert_secret', {
             secret_name: `basecamp_pending_${Date.now()}`,
             secret_description: `Pending OAuth keys for Basecamp`,
@@ -524,22 +532,24 @@ app.post('/api/auth/basecamp/init', async (req, res) => {
 
         if (vaultError || !secretId) throw vaultError;
 
-        // 3. Save as "pending" in the integrations table so we can find it later
         const { error: dbError } = await supabase
             .from('integrations')
             .upsert({ 
-                provider: 'basecamp_pending', // Using a temporary provider name!
-                secret_id: secretId 
+                provider: 'basecamp_pending', 
+                secret_id: secretId
+                // We no longer save org_id here, we pass it in the URL!
             }, { onConflict: 'provider' });
 
         if (dbError) throw dbError;
 
-        // 4. Construct the official 37signals Authorization URL
-        // ⚠️ WARNING: Ensure this redirect_uri exactly matches what you put in the 37signals Launchpad!
+        // 3. Construct the Authorization URL WITH THE STATE PARAMETER
         const redirectUri = encodeURIComponent("https://tron-v3.onrender.com/api/auth/basecamp/callback");
-        const authUrl = `https://launchpad.37signals.com/authorization/new?type=web_server&client_id=${clientId}&redirect_uri=${redirectUri}`;
+        
+        // Encode the org_id so it safely travels through the browser
+        const stateParam = encodeURIComponent(activeOrgId); 
 
-        // 5. Send the URL back to the frontend
+        const authUrl = `https://launchpad.37signals.com/authorization/new?type=web_server&client_id=${clientId}&redirect_uri=${redirectUri}&state=${stateParam}`;
+
         res.json({ success: true, redirectUrl: authUrl });
 
     } catch (error) {
@@ -548,10 +558,10 @@ app.post('/api/auth/basecamp/init', async (req, res) => {
     }
 });
 
-// 🌟 NEW: Catch the Basecamp OAuth Redirect and get the Tokens!
+// 🌟 Catch the Basecamp OAuth Redirect (State Parameter Edition)
 app.get('/api/auth/basecamp/callback', async (req, res) => {
-    // 1. Basecamp puts the authorization code in the URL query
-    const { code } = req.query;
+    // 1. Basecamp passes back BOTH the code and our state!
+    const { code, state } = req.query;
 
     if (!code) {
         return res.status(400).send("No authorization code provided by Basecamp.");
@@ -560,7 +570,10 @@ app.get('/api/auth/basecamp/callback', async (req, res) => {
     try {
         console.log("👉 Catching Basecamp redirect...");
 
-        // 2. Fetch the pending Client ID & Secret we saved right before the redirect
+        // Decode the state to get the exact org_id back
+        const returnedOrgId = state ? decodeURIComponent(state) : null;
+
+        // 2. Fetch the pending credentials
         const { data: pendingInt, error: pendingError } = await supabase
             .from('integrations')
             .select('secret_id')
@@ -569,7 +582,6 @@ app.get('/api/auth/basecamp/callback', async (req, res) => {
 
         if (pendingError || !pendingInt) throw new Error("Could not find pending Basecamp credentials.");
 
-        // Decrypt them out of the Vault
         const { data: decryptedJson, error: decryptError } = await supabase.rpc('get_decrypted_secret', {
             p_secret_id: pendingInt.secret_id
         });
@@ -578,24 +590,22 @@ app.get('/api/auth/basecamp/callback', async (req, res) => {
 
         const { accountId, clientId, clientSecret } = JSON.parse(decryptedJson);
 
-        // 3. Trade the 'code' + 'Client Secret' for the actual Access & Refresh Tokens!
+        // 3. Exchange for tokens
         const redirectUri = encodeURIComponent("https://tron-v3.onrender.com/api/auth/basecamp/callback");
         const tokenUrl = `https://launchpad.37signals.com/authorization/token?type=web_server&client_id=${clientId}&redirect_uri=${redirectUri}&client_secret=${clientSecret}&code=${code}`;
 
         const tokenResponse = await axios.post(tokenUrl);
         const { access_token, refresh_token, expires_in } = tokenResponse.data;
 
-        // 4. Bundle EVERYTHING into one ultimate credential object
         const finalCredentials = JSON.stringify({
             accountId,
             clientId,
             clientSecret,
             accessToken: access_token,
             refreshToken: refresh_token,
-            expiresAt: Date.now() + (expires_in * 1000) // Track when it expires!
+            expiresAt: Date.now() + (expires_in * 1000)
         });
 
-        // 5. Save the final credentials securely in the Vault
         const { data: finalSecretId, error: vaultError } = await supabase.rpc('insert_secret', {
             secret_name: `basecamp_active_${Date.now()}`,
             secret_description: `Active OAuth keys for Basecamp`,
@@ -604,16 +614,17 @@ app.get('/api/auth/basecamp/callback', async (req, res) => {
 
         if (vaultError || !finalSecretId) throw vaultError;
 
-        // 6. Save as the official 'basecamp' provider in the database
+        // 4. Save the final row using the org_id passed from the State parameter!
         await supabase
             .from('integrations')
-            .upsert({ provider: 'basecamp', secret_id: finalSecretId }, { onConflict: 'provider' });
+            .upsert({ 
+                provider: 'basecamp', 
+                secret_id: finalSecretId,
+                org_id: returnedOrgId // 🌟 Flawless, thread-safe assignment
+            }, { onConflict: 'provider' });
 
-        // 7. Clean up the pending row so your database stays tidy
         await supabase.from('integrations').delete().eq('provider', 'basecamp_pending');
 
-        // 8. Redirect the user back to the frontend dashboard!
-        // ⚠️ CHANGE THIS if your frontend runs on a different port than 3000!
         res.redirect('http://localhost:3000/integrations'); 
 
     } catch (error) {
