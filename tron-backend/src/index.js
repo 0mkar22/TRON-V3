@@ -633,6 +633,54 @@ app.get('/api/auth/basecamp/callback', async (req, res) => {
     }
 });
 
+// 🌟 NEW: Fetch Basecamp Projects for the Mapping Dropdown
+app.get('/api/admin/basecamp-projects', async (req, res) => {
+    try {
+        // 1. Find the Basecamp integration in the database
+        const { data: integration, error: intError } = await supabase
+            .from('integrations')
+            .select('secret_id')
+            .eq('provider', 'basecamp')
+            .single();
+
+        if (intError || !integration || !integration.secret_id) {
+            return res.json({ isConnected: false, projects: [] });
+        }
+
+        // 2. Decrypt the Vault Secret
+        const { data: decryptedJson, error: secError } = await supabase.rpc('get_decrypted_secret', {
+            p_secret_id: integration.secret_id
+        });
+
+        if (secError || !decryptedJson) {
+            return res.json({ isConnected: false, projects: [] });
+        }
+
+        // Parse the JSON object we saved during the OAuth dance
+        const { accountId, accessToken } = JSON.parse(decryptedJson);
+
+        // 3. Call the Basecamp API using the decrypted token
+        const response = await axios.get(`https://3.basecampapi.com/${accountId}/projects.json`, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'User-Agent': 'TRON-V3-Engine (obhogate48@gmail.com)' // Ensure this matches your email
+            }
+        });
+
+        // 4. Map the response to just the ID and Name for the frontend dropdown
+        const projects = response.data.map(proj => ({
+            id: proj.id.toString(),
+            name: proj.name
+        }));
+
+        res.json({ isConnected: true, projects });
+
+    } catch (error) {
+        console.error("❌ Basecamp Projects Fetch Error:", error.response?.data || error.message);
+        res.status(500).json({ error: "Failed to fetch Basecamp projects." });
+    }
+});
+
 // 🌟 NEW: Fetch dynamically connected Basecamp boards from the database
 app.get('/api/admin/basecamp-boards', async (req, res) => {
     try {

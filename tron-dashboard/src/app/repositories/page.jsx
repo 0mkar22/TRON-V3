@@ -21,6 +21,10 @@ export default function RepositoriesPage() {
 
   const [boardColumns, setBoardColumns] = useState([]);
   const [fetchingColumns, setFetchingColumns] = useState(false);
+
+  const [basecampProjects, setBasecampProjects] = useState([]);
+  const [isLoadingBcProjects, setIsLoadingBcProjects] = useState(true);
+  const [isBcConnected, setIsBcConnected] = useState(true);
   
   // 🌟 REFACTORED: Discord Broadcast States
   const [isDiscordConnected, setIsDiscordConnected] = useState(false);
@@ -67,6 +71,36 @@ useEffect(() => {
         };
 
     fetchRepos();
+}, []);
+
+// Fetch Basecamp Projects on load
+useEffect(() => {
+    const fetchBcProjects = async () => {
+        try {
+            // ⚠️ Update to your Render URL
+            const res = await fetch('https://tron-v3.onrender.com/api/admin/basecamp-projects');
+            const contentType = res.headers.get("content-type");
+            
+            if (contentType && contentType.indexOf("application/json") !== -1) {
+                const data = await res.json();
+                if (res.ok && data.isConnected) {
+                    setBasecampProjects(data.projects);
+                } else {
+                    setIsBcConnected(false);
+                }
+            } else {
+                console.error("Backend did not return JSON for Basecamp projects.");
+                setIsBcConnected(false);
+            }
+        } catch (error) {
+            console.error("Failed to fetch Basecamp projects", error);
+            setIsBcConnected(false);
+        } finally {
+            setIsLoadingBcProjects(false);
+        }
+    };
+
+    fetchBcProjects();
 }, []);
   // 🌟 NEW: Automatically check global Discord status and fetch channels on load
   useEffect(() => {
@@ -200,6 +234,13 @@ useEffect(() => {
             )}
           </div>
 
+          Here is the perfectly updated section for your page.jsx file!
+
+I have replaced the old text input with the new smart dropdown, integrated your loading and error states, and kept the Fetch Columns button perfectly aligned next to it.
+
+Replace your entire PM Tool & Project ID section with this updated code:
+
+JavaScript
           {/* PM Tool & Project ID */}
           <div className="flex gap-4">
             <div className="w-1/3">
@@ -215,13 +256,33 @@ useEffect(() => {
             <div className="w-2/3">
               <label className="block text-sm font-medium text-gray-700 mb-1">Project / Board ID</label>
               <div className="flex gap-2">
-                  <input
-                    type="text" required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., 1234567"
-                    value={formData.pmProjectId}
-                    onChange={(e) => setFormData({ ...formData, pmProjectId: e.target.value })}
-                  />
+                  
+                  {/* 🌟 THE SMART BASECAMP DROPDOWN */}
+                  {isLoadingBcProjects ? (
+                      <div className="w-full px-4 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-400 animate-pulse">
+                          Loading projects...
+                      </div>
+                  ) : !isBcConnected ? (
+                      <div className="w-full px-4 py-2 border border-red-300 rounded-md bg-red-50 text-red-600 text-sm flex justify-between items-center">
+                          <span>Basecamp not connected.</span>
+                          <a href="/integrations" className="font-bold underline hover:text-red-800">Connect</a>
+                      </div>
+                  ) : (
+                      <select 
+                          required
+                          value={formData.pmProjectId} 
+                          onChange={(e) => setFormData({ ...formData, pmProjectId: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                          <option value="" disabled>Select a project...</option>
+                          {basecampProjects.map((project) => (
+                              <option key={project.id} value={project.id}>
+                                  {project.name}
+                              </option>
+                          ))}
+                      </select>
+                  )}
+
                   <button 
                     type="button"
                     onClick={handleFetchColumns}
