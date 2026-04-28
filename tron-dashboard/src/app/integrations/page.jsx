@@ -10,6 +10,11 @@ export default function IntegrationsPage() {
     const [basecampBoards, setBasecampBoards] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
+    // Basecamp State
+    const [basecampToken, setBasecampToken] = useState('');
+    const [isBasecampConnected, setIsBasecampConnected] = useState(false);
+    const [isSavingBasecamp, setIsSavingBasecamp] = useState(false);
+
     // 2. Connection Statuses
     const [connected, setConnected] = useState({
         slack: false,
@@ -69,6 +74,27 @@ export default function IntegrationsPage() {
         };
 
         checkGithubStatus();
+    }, []);
+
+    useEffect(() => {
+        const checkStatuses = async () => {
+            try {
+                // Check GitHub
+                const ghRes = await axios.get('https://tron-v3.onrender.com/api/admin/github-status');
+                if (ghRes.data.isConnected) setIsGithubConnected(true);
+
+                // 🌟 NEW: Check Basecamp (Using the same logic!)
+                // Note: You will need to quickly copy/paste your github-status route 
+                // in the backend and rename it to basecamp-status later!
+                const bcRes = await axios.get('https://tron-v3.onrender.com/api/admin/basecamp-status');
+                if (bcRes.data.isConnected) setIsBasecampConnected(true);
+
+            } catch (error) {
+                console.error("Failed to check integration statuses", error);
+            }
+        };
+
+        checkStatuses();
     }, []);
 
    // 5. Connection Handler for Communication Tools
@@ -211,58 +237,76 @@ export default function IntegrationsPage() {
                 <h2 className="text-xl font-bold text-gray-800 mb-4 border-b border-gray-200 pb-2">Project Management</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     
-                    {/* Basecamp Card */}
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow relative overflow-hidden flex flex-col">
-                        {basecampBoards.length > 0 && <div className="absolute top-0 left-0 w-full h-1 bg-green-500"></div>}
-                        
-                        <div className="flex justify-between items-center mb-4 mt-1">
-                            <h3 className="text-lg font-bold text-gray-900 flex items-center">
-                                <span className="mr-2 text-2xl">🏕️</span> Basecamp
-                            </h3>
-                            {basecampBoards.length > 0 && (
-                                <span className="bg-green-100 text-green-800 text-xs font-bold px-2 py-1 rounded-full shadow-sm">
-                                    {basecampBoards.length} Active
-                                </span>
+                    {/* Basecamp Interactive Card */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col">
+                        <div className="flex justify-between items-start mb-4">
+                            <div className="flex items-center space-x-3">
+                                <span className="text-3xl">⛺</span>
+                                <h3 className="text-xl font-bold text-gray-800">Basecamp</h3>
+                            </div>
+                            {isBasecampConnected && (
+                                <span className="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full">Active</span>
                             )}
                         </div>
-                        <p className="text-sm text-gray-500 mb-6 flex-grow">Sync tasks, auto-assign developers, and manage column states automatically.</p>
-                        
-                        {isLoading ? (
-                            <div className="text-center py-4 text-gray-400 text-sm animate-pulse">Loading boards...</div>
-                        ) : basecampBoards.length > 0 ? (
-                            <div className="space-y-3">
-                                {/* Loop through all connected boards */}
-                                {basecampBoards.map((board) => (
-                                    <div key={board.id} className="bg-gray-50 rounded border border-gray-200 p-3 flex justify-between items-center hover:border-blue-300 transition-colors">
-                                        <div>
-                                            <span className="block text-sm font-bold text-gray-800">{board.name}</span>
-                                            <span className="text-xs text-gray-500 font-mono">ID: {board.id}</span>
-                                        </div>
-                                        <button 
-                                            onClick={() => setBasecampBoards(boards => boards.filter(b => b.id !== board.id))}
-                                            className="text-xs text-red-500 font-bold hover:text-red-700 hover:underline px-2 py-1"
-                                        >
-                                            Disconnect
-                                        </button>
-                                    </div>
-                                ))}
-                                
-                                {/* Add Another Board Button (Redirects to Repositories) */}
+
+                        <p className="text-gray-500 text-sm mb-6 flex-grow">
+                            Connect your Basecamp API token to sync tasks, auto-assign developers, and manage column states automatically.
+                        </p>
+
+                        {/* Dynamic Bottom Section */}
+                        {isBasecampConnected ? (
+                            <div className="flex justify-between items-center border-t border-gray-100 pt-4 mt-auto">
+                                <span className="text-sm font-bold text-gray-700">Token Connected</span>
                                 <button 
-                                    onClick={() => router.push('/repositories')}
-                                    className="w-full mt-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold py-2 px-4 rounded border border-blue-200 transition-colors shadow-sm text-sm"
+                                    onClick={async () => {
+                                        try {
+                                            // 🌟 Reusing our awesome generic delete route!
+                                            await axios.delete('https://tron-v3.onrender.com/api/admin/delete-integration/basecamp');
+                                            setIsBasecampConnected(false);
+                                            setBasecampToken('');
+                                        } catch (error) {
+                                            console.error("Failed to disconnect Basecamp", error);
+                                        }
+                                    }}
+                                    className="text-red-500 hover:text-red-700 text-sm font-bold transition-colors"
                                 >
-                                    Add the Workflow ➔
+                                    Disconnect
                                 </button>
                             </div>
                         ) : (
-                            /* Empty State Connect Button (Redirects to Repositories) */
-                            <button 
-                                onClick={() => router.push('/repositories')}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition-colors shadow-sm mt-auto"
-                            >
-                                Connect Basecamp
-                            </button>
+                            <div className="mt-auto border-t border-gray-100 pt-4">
+                                <label className="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide">
+                                    Basecamp API Token
+                                </label>
+                                <input 
+                                    type="password" 
+                                    value={basecampToken}
+                                    onChange={(e) => setBasecampToken(e.target.value)}
+                                    placeholder="Paste Basecamp Token..."
+                                    className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all font-mono text-sm mb-3"
+                                />
+                                <button 
+                                    onClick={async () => {
+                                        setIsSavingBasecamp(true);
+                                        try {
+                                            // 🌟 Reusing our generic save route!
+                                            await axios.post('https://tron-v3.onrender.com/api/admin/save-integration', { 
+                                                provider: 'basecamp', 
+                                                token: basecampToken 
+                                            });
+                                            setIsBasecampConnected(true);
+                                        } catch (error) {
+                                            console.error("Failed to save Basecamp token", error);
+                                        } finally {
+                                            setIsSavingBasecamp(false);
+                                        }
+                                    }}
+                                    disabled={!basecampToken || isSavingBasecamp}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-bold py-2.5 px-4 rounded-lg transition-colors flex justify-center items-center shadow-sm"
+                                >
+                                    {isSavingBasecamp ? 'Connecting...' : 'Connect Basecamp'}
+                                </button>
+                            </div>
                         )}
                     </div>
                     
