@@ -460,7 +460,7 @@ app.get('/api/admin/basecamp-status', async (req, res) => {
         const { data, error } = await supabase
             .from('integrations')
             .select('id')
-            .eq('provider', 'github')
+            .eq('provider', 'basecamp')
             .single();
 
         if (error || !data) {
