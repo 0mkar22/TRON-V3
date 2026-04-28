@@ -54,6 +54,23 @@ export default function IntegrationsPage() {
         fetchData();
     }, []);
 
+    // 🌟 NEW: Check connection status on page load
+    useEffect(() => {
+        const checkGithubStatus = async () => {
+            try {
+                // ⚠️ Update to your Render URL
+                const res = await axios.get('https://tron-v3.onrender.com/api/admin/github-status');
+                if (res.data.isConnected) {
+                    setIsGithubConnected(true);
+                }
+            } catch (error) {
+                console.error("Failed to check GitHub status", error);
+            }
+        };
+
+        checkGithubStatus();
+    }, []);
+
    // 5. Connection Handler for Communication Tools
     const handleConnect = async (provider) => {
         if (provider === 'discord') {
@@ -131,10 +148,18 @@ export default function IntegrationsPage() {
                             <div className="flex justify-between items-center border-t border-gray-100 pt-4 mt-auto">
                                 <span className="text-sm font-bold text-gray-700">Token Connected</span>
                                 <button 
-                                    onClick={() => {
-                                        // TODO: Add backend call to delete token from database
-                                        setIsGithubConnected(false);
-                                        setGithubPat('');
+                                    onClick={async () => {
+                                        try {
+                                            // 🌟 REAL BACKEND CALL: Tells the database to wipe the row
+                                            await axios.delete('https://tron-v3.onrender.com/api/admin/delete-integration/github');
+                                            
+                                            // Instantly update the UI so the user isn't waiting
+                                            setIsGithubConnected(false);
+                                            setGithubPat('');
+                                        } catch (error) {
+                                            console.error("Failed to disconnect GitHub", error);
+                                            alert("Failed to disconnect. Please check the server logs.");
+                                        }
                                     }}
                                     className="text-red-500 hover:text-red-700 text-sm font-bold transition-colors"
                                 >

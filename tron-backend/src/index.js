@@ -432,6 +432,54 @@ app.get('/api/admin/github-repos', async (req, res) => {
     }
 });
 
+// 🌟 NEW: Check GitHub Connection Status for the Integrations Page
+app.get('/api/admin/github-status', async (req, res) => {
+    try {
+        // Just check if a row exists for 'github'
+        const { data, error } = await supabase
+            .from('integrations')
+            .select('id')
+            .eq('provider', 'github')
+            .single();
+
+        if (error || !data) {
+            return res.json({ isConnected: false });
+        }
+
+        res.json({ isConnected: true });
+    } catch (error) {
+        console.error("❌ GitHub Status Error:", error.message);
+        res.json({ isConnected: false });
+    }
+});
+
+// 🌟 NEW: Generic Delete Route for Integrations
+app.delete('/api/admin/delete-integration/:provider', async (req, res) => {
+    const { provider } = req.params;
+
+    try {
+        console.log(`🗑️ Disconnecting ${provider}...`);
+
+        // 1. Delete the link from the integrations table
+        const { error: dbError } = await supabase
+            .from('integrations')
+            .delete()
+            .eq('provider', provider);
+
+        if (dbError) throw dbError;
+
+        // Note: The actual secret stays in Supabase Vault for audit purposes, 
+        // but TRON can no longer access it because the integration row is gone!
+
+        console.log(`✅ Successfully disconnected ${provider}`);
+        res.json({ success: true, message: `${provider} has been disconnected.` });
+
+    } catch (error) {
+        console.error(`❌ Error disconnecting ${provider}:`, error.message);
+        res.status(500).json({ error: `Failed to disconnect ${provider}.` });
+    }
+});
+
 // 🌟 NEW: Fetch dynamically connected Basecamp boards from the database
 app.get('/api/admin/basecamp-boards', async (req, res) => {
     try {
