@@ -501,6 +501,53 @@ app.delete('/api/admin/delete-integration/:provider', async (req, res) => {
     }
 });
 
+// 🌟 NEW: Start the Basecamp OAuth Dance
+app.post('/api/auth/basecamp/init', async (req, res) => {
+    const { accountId, clientId, clientSecret } = req.body;
+
+    if (!accountId || !clientId || !clientSecret) {
+        return res.status(400).json({ error: "Missing Basecamp credentials." });
+    }
+
+    try {
+        console.log("👉 Saving pending Basecamp credentials...");
+
+        // 1. Pack the initial credentials into JSON so Vault can encrypt them
+        const pendingData = JSON.stringify({ accountId, clientId, clientSecret });
+
+        // 2. Save them securely into Supabase Vault
+        const { data: secretId, error: vaultError } = await supabase.rpc('insert_secret', {
+            secret_name: `basecamp_pending_${Date.now()}`,
+            secret_description: `Pending OAuth keys for Basecamp`,
+            secret_value: pendingData
+        });
+
+        if (vaultError || !secretId) throw vaultError;
+
+        // 3. Save as "pending" in the integrations table so we can find it later
+        const { error: dbError } = await supabase
+            .from('integrations')
+            .upsert({ 
+                provider: 'basecamp_pending', // Using a temporary provider name!
+                secret_id: secretId 
+            }, { onConflict: 'provider' });
+
+        if (dbError) throw dbError;
+
+        // 4. Construct the official 37signals Authorization URL
+        // ⚠️ WARNING: Ensure this redirect_uri exactly matches what you put in the 37signals Launchpad!
+        const redirectUri = encodeURIComponent("https://tron-v3.onrender.com/api/auth/basecamp/callback");
+        const authUrl = `https://launchpad.37signals.com/authorization/new?type=web_server&client_id=${clientId}&redirect_uri=${redirectUri}`;
+
+        // 5. Send the URL back to the frontend
+        res.json({ success: true, redirectUrl: authUrl });
+
+    } catch (error) {
+        console.error("❌ Basecamp Init Error:", error.message);
+        res.status(500).json({ error: "Failed to initialize Basecamp auth." });
+    }
+});
+
 // 🌟 NEW: Fetch dynamically connected Basecamp boards from the database
 app.get('/api/admin/basecamp-boards', async (req, res) => {
     try {

@@ -10,8 +10,12 @@ export default function IntegrationsPage() {
     const [basecampBoards, setBasecampBoards] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Basecamp State
-    const [basecampToken, setBasecampToken] = useState('');
+    // 🌟 Basecamp Auth State (Updated for OAuth Flow)
+    const [basecampCredentials, setBasecampCredentials] = useState({
+        accountId: '',
+        clientId: '',
+        clientSecret: ''
+    });
     const [isBasecampConnected, setIsBasecampConnected] = useState(false);
     const [isSavingBasecamp, setIsSavingBasecamp] = useState(false);
 
@@ -27,14 +31,14 @@ export default function IntegrationsPage() {
         discord: ''
     });
 
-   // GitHub State
+    // GitHub State
     const [githubPat, setGithubPat] = useState('');
-    const [isGithubConnected, setIsGithubConnected] = useState(false); // Changes UI to "Connected"
+    const [isGithubConnected, setIsGithubConnected] = useState(false);
     const [isSavingGithub, setIsSavingGithub] = useState(false);
 
-    // 4. Fetch dynamic data when the page loads
+    // 4. Fetch dynamic data & check integration statuses when the page loads
     useEffect(() => {
-        const fetchData = async () => {
+        const fetchAllData = async () => {
             try {
                 // Fetch Basecamp Boards
                 const resBc = await fetch('https://tron-v3.onrender.com/api/admin/basecamp-boards');
@@ -43,12 +47,21 @@ export default function IntegrationsPage() {
                     if (dataBc.boards) setBasecampBoards(dataBc.boards);
                 }
 
-                // 🌟 NEW: Fetch Discord Status
+                // Check Discord Status
                 const resDisc = await fetch('https://tron-v3.onrender.com/api/admin/discord-status');
                 if (resDisc.ok) {
                     const dataDisc = await resDisc.json();
                     setConnected(prev => ({ ...prev, discord: dataDisc.isConnected }));
                 }
+
+                // Check GitHub Status
+                const ghRes = await axios.get('https://tron-v3.onrender.com/api/admin/github-status');
+                if (ghRes.data.isConnected) setIsGithubConnected(true);
+
+                // Check Basecamp Status
+                const bcRes = await axios.get('https://tron-v3.onrender.com/api/admin/basecamp-status');
+                if (bcRes.data.isConnected) setIsBasecampConnected(true);
+
             } catch (error) {
                 console.error("Failed to fetch integration data:", error);
             } finally {
@@ -56,67 +69,25 @@ export default function IntegrationsPage() {
             }
         };
 
-        fetchData();
+        fetchAllData();
     }, []);
 
-    // 🌟 NEW: Check connection status on page load
-    useEffect(() => {
-        const checkGithubStatus = async () => {
-            try {
-                // ⚠️ Update to your Render URL
-                const res = await axios.get('https://tron-v3.onrender.com/api/admin/github-status');
-                if (res.data.isConnected) {
-                    setIsGithubConnected(true);
-                }
-            } catch (error) {
-                console.error("Failed to check GitHub status", error);
-            }
-        };
-
-        checkGithubStatus();
-    }, []);
-
-    useEffect(() => {
-        const checkStatuses = async () => {
-            try {
-                // Check GitHub
-                const ghRes = await axios.get('https://tron-v3.onrender.com/api/admin/github-status');
-                if (ghRes.data.isConnected) setIsGithubConnected(true);
-
-                // 🌟 NEW: Check Basecamp (Using the same logic!)
-                // Note: You will need to quickly copy/paste your github-status route 
-                // in the backend and rename it to basecamp-status later!
-                const bcRes = await axios.get('https://tron-v3.onrender.com/api/admin/basecamp-status');
-                if (bcRes.data.isConnected) setIsBasecampConnected(true);
-
-            } catch (error) {
-                console.error("Failed to check integration statuses", error);
-            }
-        };
-
-        checkStatuses();
-    }, []);
-
-   // 5. Connection Handler for Communication Tools
+    // 5. Connection Handler for Communication Tools
     const handleConnect = async (provider) => {
         if (provider === 'discord') {
             const token = tokens.discord;
             if (!token) return alert("Please enter a Discord Bot Token.");
 
             try {
-                // ⚠️ Update to your Render URL if testing in production!
-                // Make sure to use your actual Org UUID from your database screenshot
                 const response = await fetch('https://tron-v3.onrender.com/api/admin/discord-token', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                    token: token 
-                    })
+                    body: JSON.stringify({ token: token })
                 });
 
                 if (response.ok) {
                     alert("Discord Connected Successfully!");
-                    setTokens({ ...tokens, discord: '' }); // Clear the input field
+                    setTokens({ ...tokens, discord: '' });
                 } else {
                     alert("Failed to connect Discord.");
                 }
@@ -148,6 +119,7 @@ export default function IntegrationsPage() {
                 <h1 className="text-3xl font-extrabold text-gray-900">🔌 Integrations</h1>
                 <p className="text-gray-500 mt-2 text-lg">Connect your Project Management tools and Communication channels to enable TRON&apos;s automated workflows.</p>
             </div>
+
             {/* --- VERSION CONTROL SECTION --- */}
             <div className="mb-10">
                 <h2 className="text-xl font-bold text-gray-800 mb-6">Version Control</h2>
@@ -176,10 +148,7 @@ export default function IntegrationsPage() {
                                 <button 
                                     onClick={async () => {
                                         try {
-                                            // 🌟 REAL BACKEND CALL: Tells the database to wipe the row
                                             await axios.delete('https://tron-v3.onrender.com/api/admin/delete-integration/github');
-                                            
-                                            // Instantly update the UI so the user isn't waiting
                                             setIsGithubConnected(false);
                                             setGithubPat('');
                                         } catch (error) {
@@ -202,13 +171,12 @@ export default function IntegrationsPage() {
                                     value={githubPat}
                                     onChange={(e) => setGithubPat(e.target.value)}
                                     placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                                    className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-all font-mono text-sm mb-3"
+                                    className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:teal-500 focus:border-teal-500 outline-none transition-all font-mono text-sm mb-3"
                                 />
                                 <button 
                                     onClick={async () => {
                                         setIsSavingGithub(true);
                                         try {
-                                            // 🌟 REAL BACKEND CALL: Sending the token to be encrypted!
                                             await axios.post('https://tron-v3.onrender.com/api/admin/save-integration', { 
                                                 provider: 'github', 
                                                 token: githubPat 
@@ -228,7 +196,6 @@ export default function IntegrationsPage() {
                             </div>
                         )}
                     </div>
-
                 </div>
             </div>
             
@@ -250,20 +217,19 @@ export default function IntegrationsPage() {
                         </div>
 
                         <p className="text-gray-500 text-sm mb-6 flex-grow">
-                            Connect your Basecamp API token to sync tasks, auto-assign developers, and manage column states automatically.
+                            Authorize TRON to sync tasks, auto-assign developers, and manage column states automatically.
                         </p>
 
                         {/* Dynamic Bottom Section */}
                         {isBasecampConnected ? (
                             <div className="flex justify-between items-center border-t border-gray-100 pt-4 mt-auto">
-                                <span className="text-sm font-bold text-gray-700">Token Connected</span>
+                                <span className="text-sm font-bold text-gray-700">Account Connected</span>
                                 <button 
                                     onClick={async () => {
                                         try {
-                                            // 🌟 Reusing our awesome generic delete route!
                                             await axios.delete('https://tron-v3.onrender.com/api/admin/delete-integration/basecamp');
                                             setIsBasecampConnected(false);
-                                            setBasecampToken('');
+                                            setBasecampCredentials({ accountId: '', clientId: '', clientSecret: '' });
                                         } catch (error) {
                                             console.error("Failed to disconnect Basecamp", error);
                                         }
@@ -274,37 +240,54 @@ export default function IntegrationsPage() {
                                 </button>
                             </div>
                         ) : (
-                            <div className="mt-auto border-t border-gray-100 pt-4">
-                                <label className="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide">
-                                    Basecamp API Token
-                                </label>
-                                <input 
-                                    type="password" 
-                                    value={basecampToken}
-                                    onChange={(e) => setBasecampToken(e.target.value)}
-                                    placeholder="Paste Basecamp Token..."
-                                    className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all font-mono text-sm mb-3"
-                                />
+                            <div className="mt-auto border-t border-gray-100 pt-4 space-y-3">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-700 mb-1 uppercase tracking-wide">Account ID</label>
+                                    <input 
+                                        type="text" 
+                                        value={basecampCredentials.accountId}
+                                        onChange={(e) => setBasecampCredentials({...basecampCredentials, accountId: e.target.value})}
+                                        placeholder="e.g. 9999999"
+                                        className="w-full border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all font-mono text-xs"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-700 mb-1 uppercase tracking-wide">Client ID</label>
+                                    <input 
+                                        type="password" 
+                                        value={basecampCredentials.clientId}
+                                        onChange={(e) => setBasecampCredentials({...basecampCredentials, clientId: e.target.value})}
+                                        placeholder="Paste Client ID..."
+                                        className="w-full border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all font-mono text-xs"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-700 mb-1 uppercase tracking-wide">Client Secret</label>
+                                    <input 
+                                        type="password" 
+                                        value={basecampCredentials.clientSecret}
+                                        onChange={(e) => setBasecampCredentials({...basecampCredentials, clientSecret: e.target.value})}
+                                        placeholder="Paste Client Secret..."
+                                        className="w-full border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all font-mono text-xs mb-2"
+                                    />
+                                </div>
                                 <button 
                                     onClick={async () => {
                                         setIsSavingBasecamp(true);
                                         try {
-                                            // 🌟 Reusing our generic save route!
-                                            await axios.post('https://tron-v3.onrender.com/api/admin/save-integration', { 
-                                                provider: 'basecamp', 
-                                                token: basecampToken 
-                                            });
-                                            setIsBasecampConnected(true);
+                                            const res = await axios.post('https://tron-v3.onrender.com/api/auth/basecamp/init', basecampCredentials);
+                                            if (res.data.redirectUrl) {
+                                                window.location.href = res.data.redirectUrl;
+                                            }
                                         } catch (error) {
-                                            console.error("Failed to save Basecamp token", error);
-                                        } finally {
+                                            console.error("Failed to start Basecamp auth", error);
                                             setIsSavingBasecamp(false);
                                         }
                                     }}
-                                    disabled={!basecampToken || isSavingBasecamp}
+                                    disabled={!basecampCredentials.accountId || !basecampCredentials.clientId || !basecampCredentials.clientSecret || isSavingBasecamp}
                                     className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-bold py-2.5 px-4 rounded-lg transition-colors flex justify-center items-center shadow-sm"
                                 >
-                                    {isSavingBasecamp ? 'Connecting...' : 'Connect Basecamp'}
+                                    {isSavingBasecamp ? 'Preparing Dance...' : 'Login with Basecamp'}
                                 </button>
                             </div>
                         )}
@@ -348,7 +331,6 @@ export default function IntegrationsPage() {
                         <p className="text-sm text-gray-500 mb-5 flex-grow">Broadcast AI executive summaries and PR alerts directly to your server.</p>
                         
                         {connected.discord ? (
-                            /* 🌟 ACTIVE STATE: Show Disconnect Button */
                             <div className="bg-gray-50 rounded border border-gray-200 p-3 flex justify-between items-center mt-auto">
                                 <span className="text-xs text-gray-500 font-bold">Bot Connected</span>
                                 <button 
@@ -359,7 +341,6 @@ export default function IntegrationsPage() {
                                 </button>
                             </div>
                         ) : (
-                            /* 🌟 INACTIVE STATE: Show Token Input */
                             <div className="space-y-4 border-t border-gray-100 pt-4 mt-auto">
                                 <div>
                                     <label className="block text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">Bot Token</label>
@@ -374,7 +355,6 @@ export default function IntegrationsPage() {
                                 <button 
                                     onClick={() => {
                                         handleConnect('discord');
-                                        // Optimistically set to connected so the UI flips instantly
                                         setTimeout(() => setConnected({ ...connected, discord: true }), 1000); 
                                     }}
                                     className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-lg transition-colors shadow-sm flex justify-center items-center"
