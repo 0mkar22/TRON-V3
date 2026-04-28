@@ -548,6 +548,80 @@ app.post('/api/auth/basecamp/init', async (req, res) => {
     }
 });
 
+// 🌟 NEW: Catch the Basecamp OAuth Redirect and get the Tokens!
+app.get('/api/auth/basecamp/callback', async (req, res) => {
+    // 1. Basecamp puts the authorization code in the URL query
+    const { code } = req.query;
+
+    if (!code) {
+        return res.status(400).send("No authorization code provided by Basecamp.");
+    }
+
+    try {
+        console.log("👉 Catching Basecamp redirect...");
+
+        // 2. Fetch the pending Client ID & Secret we saved right before the redirect
+        const { data: pendingInt, error: pendingError } = await supabase
+            .from('integrations')
+            .select('secret_id')
+            .eq('provider', 'basecamp_pending')
+            .single();
+
+        if (pendingError || !pendingInt) throw new Error("Could not find pending Basecamp credentials.");
+
+        // Decrypt them out of the Vault
+        const { data: decryptedJson, error: decryptError } = await supabase.rpc('get_decrypted_secret', {
+            p_secret_id: pendingInt.secret_id
+        });
+
+        if (decryptError || !decryptedJson) throw new Error("Failed to decrypt pending credentials.");
+
+        const { accountId, clientId, clientSecret } = JSON.parse(decryptedJson);
+
+        // 3. Trade the 'code' + 'Client Secret' for the actual Access & Refresh Tokens!
+        const redirectUri = encodeURIComponent("https://tron-v3.onrender.com/api/auth/basecamp/callback");
+        const tokenUrl = `https://launchpad.37signals.com/authorization/token?type=web_server&client_id=${clientId}&redirect_uri=${redirectUri}&client_secret=${clientSecret}&code=${code}`;
+
+        const tokenResponse = await axios.post(tokenUrl);
+        const { access_token, refresh_token, expires_in } = tokenResponse.data;
+
+        // 4. Bundle EVERYTHING into one ultimate credential object
+        const finalCredentials = JSON.stringify({
+            accountId,
+            clientId,
+            clientSecret,
+            accessToken: access_token,
+            refreshToken: refresh_token,
+            expiresAt: Date.now() + (expires_in * 1000) // Track when it expires!
+        });
+
+        // 5. Save the final credentials securely in the Vault
+        const { data: finalSecretId, error: vaultError } = await supabase.rpc('insert_secret', {
+            secret_name: `basecamp_active_${Date.now()}`,
+            secret_description: `Active OAuth keys for Basecamp`,
+            secret_value: finalCredentials
+        });
+
+        if (vaultError || !finalSecretId) throw vaultError;
+
+        // 6. Save as the official 'basecamp' provider in the database
+        await supabase
+            .from('integrations')
+            .upsert({ provider: 'basecamp', secret_id: finalSecretId }, { onConflict: 'provider' });
+
+        // 7. Clean up the pending row so your database stays tidy
+        await supabase.from('integrations').delete().eq('provider', 'basecamp_pending');
+
+        // 8. Redirect the user back to the frontend dashboard!
+        // ⚠️ CHANGE THIS if your frontend runs on a different port than 3000!
+        res.redirect('http://localhost:3000/integrations'); 
+
+    } catch (error) {
+        console.error("❌ Basecamp Callback Error:", error.response?.data || error.message);
+        res.status(500).send("Failed to complete Basecamp authentication. Check server logs.");
+    }
+});
+
 // 🌟 NEW: Fetch dynamically connected Basecamp boards from the database
 app.get('/api/admin/basecamp-boards', async (req, res) => {
     try {
