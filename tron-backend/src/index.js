@@ -864,9 +864,6 @@ app.post('/api/admin/basecamp-columns', async (req, res) => {
     try {
         // 1. SMART CLEANUP: In case you pasted a full URL or it has spaces, just extract the digits!
         projectId = projectId.toString().match(/\d+/g)?.pop() || projectId.trim();
-        
-        let accountId = process.env.BASECAMP_ACCOUNT_ID || 'YOUR_ACCOUNT_ID_HERE'; 
-        accountId = accountId.toString().match(/\d+/g)?.pop() || accountId.trim();
 
         // 2. Fetch the encrypted Basecamp token
         const { data: integration, error: intError } = await supabase
@@ -879,14 +876,17 @@ app.post('/api/admin/basecamp-columns', async (req, res) => {
             return res.status(400).json({ error: "Basecamp is not connected globally." });
         }
 
-        const { data: bcToken, error: secError } = await supabase.rpc('get_decrypted_secret', {
+        const { data: decryptedJson, error: secError } = await supabase.rpc('get_decrypted_secret', {
             p_secret_id: integration.secret_id
         });
 
-        if (secError || !bcToken) throw new Error("Failed to decrypt Basecamp token");
+        if (secError || !decryptedJson) throw new Error("Failed to decrypt Basecamp token");
+
+        // 🌟 THE FIX: Parse the JSON to get the real token AND dynamically get the account ID!
+        const { accountId, accessToken } = JSON.parse(decryptedJson);
 
         const basecampHeaders = {
-            'Authorization': `Bearer ${bcToken}`,
+            'Authorization': `Bearer ${accessToken}`, // Now we are sending just the clean token!
             'User-Agent': 'TRON-V3-Engine (obhogate48@gmail.com)', // ⚠️ UPDATE THIS EMAIL
             'Accept': 'application/json' 
         };
@@ -909,7 +909,6 @@ app.post('/api/admin/basecamp-columns', async (req, res) => {
         const kanbanRes = await axios.get(kanbanTool.url, { headers: basecampHeaders });
         
         // 6. Extract the columns smartly!
-        // It will check if they are embedded, OR if there is a lists_url we need to follow.
         let lists = kanbanRes.data.lists || kanbanRes.data.columns; 
         
         if (!lists && kanbanRes.data.lists_url) {
@@ -926,7 +925,7 @@ app.post('/api/admin/basecamp-columns', async (req, res) => {
         // 7. Format the data for our Next.js frontend dropdowns
         const realColumns = lists.map(list => ({
             id: list.id.toString(), 
-            name: list.title || list.name // Handles both naming conventions
+            name: list.title || list.name 
         }));
 
         console.log("✅ Success! Found columns:", realColumns.map(c => c.name).join(', '));
