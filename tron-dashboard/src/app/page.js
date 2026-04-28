@@ -84,18 +84,27 @@ export default function Home() {
 
       {/* VS Code Extension Banner */}
       <div className="bg-gray-900 rounded-xl p-8 shadow-lg text-white flex flex-col md:flex-row items-center justify-between border border-gray-800 mt-8">
-        <div className="mb-4 md:mb-0">
+        <div className="mb-6 md:mb-0">
             <h3 className="text-xl font-bold flex items-center text-blue-400">
               <span className="mr-3 text-2xl">💻</span> VS Code Extension
             </h3>
             <p className="text-gray-400 mt-2 text-sm max-w-2xl leading-relaxed">
               Supercharge your local development. Install the official TRON extension to enable 1-click branch generation and automated Basecamp ticket synchronization directly from your editor.
             </p>
+            <p className="text-gray-500 mt-3 text-xs font-mono">
+              After downloading, install via terminal: <span className="text-gray-300 bg-gray-800 px-2 py-1 rounded">code --install-extension tron.vsix</span>
+            </p>
         </div>
         <div className="flex-shrink-0">
-           <div className="bg-gray-800 border border-gray-700 px-4 py-2 rounded text-sm font-mono text-gray-300">
-             code --install-extension tron.vsix
-           </div>
+           {/* 🌟 NEW: Download Button */}
+           <a 
+             href="/tron-vscode-0.0.1.vsix" 
+             download="tron-vscode-0.0.1.vsix"
+             className="bg-blue-600 hover:bg-blue-500 border border-blue-400 px-6 py-3 rounded-lg text-sm font-bold text-white transition-all flex items-center shadow-lg group"
+           >
+             <span className="mr-2 group-hover:animate-bounce">⬇️</span> 
+             Download .vsix
+           </a>
         </div>
       </div>
 

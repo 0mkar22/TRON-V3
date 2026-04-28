@@ -146,7 +146,7 @@ export default function IntegrationsPage() {
                                     onClick={() => router.push('/repositories')}
                                     className="w-full mt-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold py-2 px-4 rounded border border-blue-200 transition-colors shadow-sm text-sm"
                                 >
-                                    Map to Repository ➔
+                                    Add the Workflow ➔
                                 </button>
                             </div>
                         ) : (
