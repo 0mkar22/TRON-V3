@@ -383,6 +383,55 @@ app.post('/api/admin/save-integration', async (req, res) => {
     }
 });
 
+// 🌟 NEW: Fetch GitHub Repositories for the Dropdown
+app.get('/api/admin/github-repos', async (req, res) => {
+    try {
+        // 1. Find the GitHub integration in the database
+        const { data: integration, error: intError } = await supabase
+            .from('integrations')
+            .select('secret_id')
+            .eq('provider', 'github')
+            .single();
+
+        if (intError || !integration || !integration.secret_id) {
+            return res.json({ isConnected: false, repos: [] });
+        }
+
+        // 2. Decrypt the PAT using Vault
+        const { data: githubPat, error: secError } = await supabase.rpc('get_decrypted_secret', {
+            p_secret_id: integration.secret_id
+        });
+
+        if (secError || !githubPat) {
+            return res.json({ isConnected: false, repos: [] });
+        }
+
+        // 3. Call the GitHub API to get the user's repositories
+        const response = await axios.get('https://api.github.com/user/repos', {
+            headers: {
+                Authorization: `token ${githubPat}`,
+                Accept: 'application/vnd.github.v3+json'
+            },
+            params: {
+                per_page: 100, // Fetch up to 100 recent repos
+                sort: 'updated' // Show the most recently active ones first
+            }
+        });
+
+        // 4. Map the response to just the data the frontend needs
+        const repos = response.data.map(repo => ({
+            id: repo.id,
+            full_name: repo.full_name // e.g., "Omkar22/git-playground"
+        }));
+
+        res.json({ isConnected: true, repos: repos });
+
+    } catch (error) {
+        console.error("❌ GitHub Fetch Error:", error.response?.data || error.message);
+        res.status(500).json({ error: "Failed to fetch repositories from GitHub." });
+    }
+});
+
 // 🌟 NEW: Fetch dynamically connected Basecamp boards from the database
 app.get('/api/admin/basecamp-boards', async (req, res) => {
     try {

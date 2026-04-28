@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useRouter } from 'next/navigation'; // 🌟 NEW: Added router for redirecting
+import Link from 'next/link';
 
 export default function RepositoriesPage() {
   const router = useRouter();
@@ -30,6 +31,43 @@ export default function RepositoriesPage() {
   const [status, setStatus] = useState({ type: '', message: '' });
   const [loading, setLoading] = useState(false);
 
+  const [githubRepos, setGithubRepos] = useState([]);
+  const [isLoadingRepos, setIsLoadingRepos] = useState(true);
+  const [isGithubConnected, setIsGithubConnected] = useState(true);
+
+  // Fetch the repositories when the page loads
+useEffect(() => {
+    const fetchRepos = async () => {
+            try {
+                // ⚠️ Ensure this is your correct backend URL
+                const res = await fetch('https://tron-v3.onrender.com/api/admin/github-repos');
+                
+                // 🌟 DIAGNOSTIC CHECK: Is it HTML?
+                const contentType = res.headers.get("content-type");
+                if (contentType && contentType.indexOf("application/json") !== -1) {
+                    const data = await res.json();
+                    if (res.ok && data.isConnected) {
+                        setGithubRepos(data.repos);
+                    } else {
+                        setIsGithubConnected(false);
+                    }
+                } else {
+                    // It's not JSON! Let's read the HTML text to see what the server is complaining about.
+                    const text = await res.text();
+                    console.error("Backend did not return JSON! Here is what it returned:", text);
+                    setIsGithubConnected(false);
+                }
+
+            } catch (error) {
+                console.error("Failed to fetch GitHub repos", error);
+                setIsGithubConnected(false);
+            } finally {
+                setIsLoadingRepos(false);
+            }
+        };
+
+    fetchRepos();
+}, []);
   // 🌟 NEW: Automatically check global Discord status and fetch channels on load
   useEffect(() => {
     const checkDiscordIntegration = async () => {
@@ -134,15 +172,32 @@ export default function RepositoriesPage() {
           </div>
 
           {/* Repo Name */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">GitHub Repository</label>
-            <input
-              type="text" required
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-              placeholder="e.g., owner/repo-name"
-              value={formData.repoName}
-              onChange={(e) => setFormData({ ...formData, repoName: e.target.value })}
-            />
+          <div className="flex-1">
+            <label className="block text-sm font-bold text-gray-700 mb-2">GitHub Repository</label>
+    
+            {isLoadingRepos ? (
+            <div className="w-full border border-gray-300 p-2.5 rounded-lg bg-gray-50 text-gray-400 text-sm animate-pulse">
+                Loading repositories...
+            </div>
+            ) : !isGithubConnected ? (
+            <div className="w-full border border-red-300 p-2.5 rounded-lg bg-red-50 text-red-600 text-sm flex justify-between items-center">
+                <span>GitHub not connected.</span>
+                <Link href="/integrations" className="font-bold underline hover:text-red-800">Connect PAT</Link>
+            </div>
+            ) : (
+            <select 
+                value={formData.repoName}
+                  onChange={(e) => setFormData({ ...formData, repoName: e.target.value })}
+                  className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-sm bg-white"
+                >
+                <option value="" disabled>Select a repository...</option>
+                  {githubRepos.map((repo) => (
+                    <option key={repo.id} value={repo.full_name}>
+                        {repo.full_name}
+                    </option>
+              ))}
+            </select>
+            )}
           </div>
 
           {/* PM Tool & Project ID */}
