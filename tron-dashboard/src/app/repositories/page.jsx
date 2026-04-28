@@ -233,14 +233,7 @@ useEffect(() => {
             </select>
             )}
           </div>
-
-          Here is the perfectly updated section for your page.jsx file!
-
-I have replaced the old text input with the new smart dropdown, integrated your loading and error states, and kept the Fetch Columns button perfectly aligned next to it.
-
-Replace your entire PM Tool & Project ID section with this updated code:
-
-JavaScript
+          
           {/* PM Tool & Project ID */}
           <div className="flex gap-4">
             <div className="w-1/3">
