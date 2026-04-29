@@ -11,7 +11,7 @@ export default async function LoginPage({ searchParams }) {
     'use server'
     const email = formData.get('email')
     const password = formData.get('password')
-    const supabase = createClient()
+    const supabase = await createClient() // 🌟 Add await here!
 
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
@@ -24,7 +24,7 @@ export default async function LoginPage({ searchParams }) {
   // 🌟 SERVER ACTION: GitHub OAuth
   const signInWithGithub = async () => {
     'use server'
-    const supabase = createClient()
+    const supabase = await createClient() // 🌟 Add await here!
     const origin = headers().get('origin')
 
     const { data, error } = await supabase.auth.signInWithOAuth({

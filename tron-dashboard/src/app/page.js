@@ -1,31 +1,36 @@
-"use client";
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { createClient } from '@/utils/supabase/server';
 
-export default function Home() {
-  // 1. Dashboard State
-  const [workflows, setWorkflows] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+export default async function Home() {
+  // 1. Initialize Supabase Server Client
+  const supabase = await createClient();
 
-  // 2. Fetch Active Workflows on Load
-  useEffect(() => {
-      const fetchWorkflows = async () => {
-          try {
-              // ⚠️ Ensure this matches your live Render URL
-              const res = await fetch('https://tron-v3.onrender.com/api/admin/dashboard-workflows');
-              if (res.ok) {
-                  const data = await res.json();
-                  setWorkflows(data.workflows || []);
-              }
-          } catch (error) {
-              console.error("Failed to fetch workflows:", error);
-          } finally {
-              setIsLoading(false);
-          }
-      };
+  // 2. Securely fetch the logged-in user
+  const { data: { user } } = await supabase.auth.getUser();
 
-      fetchWorkflows();
-  }, []);
+  // 3. Fetch Workflows directly on the server (No useEffect needed!)
+  let workflows = [];
+  try {
+      // cache: 'no-store' ensures the dashboard always fetches fresh data on reload
+      const res = await fetch('https://tron-v3.onrender.com/api/admin/dashboard-workflows', {
+          cache: 'no-store' 
+      });
+      if (res.ok) {
+          const data = await res.json();
+          workflows = data.workflows || [];
+      }
+  } catch (error) {
+      console.error("Failed to fetch workflows:", error);
+  }
+
+  // 🌟 SERVER ACTION: Log Out
+  const handleLogout = async () => {
+      'use server'
+      const supabaseServer = await createClient();
+      await supabaseServer.auth.signOut();
+      redirect('/login');
+  };
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-12">
@@ -34,20 +39,36 @@ export default function Home() {
       <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center">
         <div className="text-center md:text-left">
           <h1 className="text-3xl font-extrabold text-gray-900">Welcome to T.R.O.N. V3</h1>
+          
+          {user?.email && (
+            <p className="text-sm font-medium text-indigo-600 mt-2">
+              Logged in securely as: {user.email}
+            </p>
+          )}
+
           <p className="text-gray-500 mt-2 text-lg">Your automated project management and AI code review engine is online.</p>
         </div>
-        <div className="mt-6 md:mt-0">
+        
+        <div className="mt-6 md:mt-0 flex flex-col items-center md:items-end space-y-4">
             <span className="inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-full font-semibold text-sm shadow-sm">
               <span className="w-2.5 h-2.5 bg-green-500 rounded-full mr-2 animate-pulse"></span>
               Engine Active
             </span>
+            
+            {/* 🌟 Log Out Form (Server Action) */}
+            <form action={handleLogout}>
+                <button 
+                  type="submit"
+                  className="text-sm px-4 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 font-semibold rounded-md transition-colors border border-red-200 shadow-sm"
+                >
+                  Log out
+                </button>
+            </form>
         </div>
       </div>
 
       {/* Quick Actions Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
-        {/* Integrations Card */}
         <Link href="/integrations" className="block group">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-green-400 transition-all duration-200 h-full flex flex-col">
             <div className="text-4xl mb-4">🔌</div>
@@ -58,7 +79,6 @@ export default function Home() {
           </div>
         </Link>
 
-        {/* Workflow Mapping Card */}
         <Link href="/repositories" className="block group">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-green-400 transition-all duration-200 h-full flex flex-col">
             <div className="text-4xl mb-4">📦</div>
@@ -69,7 +89,6 @@ export default function Home() {
           </div>
         </Link>
 
-        {/* Mission Control Card */}
         <Link href="/activity" className="block group">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-green-400 transition-all duration-200 h-full flex flex-col">
             <div className="text-4xl mb-4">🚀</div>
@@ -79,7 +98,6 @@ export default function Home() {
             </p>
           </div>
         </Link>
-
       </div>
 
       {/* VS Code Extension Banner */}
@@ -96,7 +114,6 @@ export default function Home() {
             </p>
         </div>
         <div className="flex-shrink-0">
-           {/* 🌟 NEW: Download Button */}
            <a 
              href="/tron-vscode-0.0.1.vsix" 
              download="tron-vscode-0.0.1.vsix"
@@ -108,13 +125,11 @@ export default function Home() {
         </div>
       </div>
 
-      {/* --- 🌟 NEW: ACTIVE WORKFLOWS SECTION --- */}
+      {/* --- ACTIVE WORKFLOWS SECTION --- */}
       <div className="mt-12">
           <h2 className="text-xl font-bold text-gray-800 mb-4 border-b border-gray-200 pb-2">Active Workflows</h2>
           
-          {isLoading ? (
-              <div className="text-center py-10 text-gray-400 animate-pulse">Loading engine diagnostics...</div>
-          ) : workflows.length === 0 ? (
+          {workflows.length === 0 ? (
               <div className="bg-white p-8 rounded-xl border border-dashed border-gray-300 text-center shadow-sm">
                   <span className="text-4xl mb-3 block">🔌</span>
                   <h3 className="text-lg font-semibold text-gray-700">No repositories connected yet</h3>
@@ -151,16 +166,15 @@ export default function Home() {
                                   </td>
                                   <td className="px-6 py-4 whitespace-nowrap">
                                       <div className="flex items-center">
-                                          {/* Check if the JSONB column exists AND has a channel_id inside it */}
                                           {workflow.communication_config && workflow.communication_config.channel_id ? (
                                           <>
-                                          <span className="text-xl mr-2">🎮</span>
-                                          <span className="text-sm text-gray-700 capitalize">
-                                          {workflow.communication_config.provider === 'discord_bot' ? 'Discord' : workflow.communication_config.provider}
-                                          </span>
+                                            <span className="text-xl mr-2">🎮</span>
+                                            <span className="text-sm text-gray-700 capitalize">
+                                              {workflow.communication_config.provider === 'discord_bot' ? 'Discord' : workflow.communication_config.provider}
+                                            </span>
                                           </>
                                           ) : (
-                                          <span className="text-sm text-gray-400 italic">Muted</span>
+                                            <span className="text-sm text-gray-400 italic">Muted</span>
                                           )}
                                       </div>
                                   </td>
@@ -168,9 +182,8 @@ export default function Home() {
                                       <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 border border-green-200 mr-4">
                                           Active
                                       </span>
-                                      {/* Links back to the repositories page where they can edit the mapping */}
                                       <Link href="/repositories" className="text-sm text-indigo-600 hover:text-indigo-900 font-bold transition-colors">
-                                        Configure ➔
+                                          Configure ➔
                                       </Link>
                                   </td>
                               </tr>

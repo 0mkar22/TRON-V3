@@ -9,10 +9,9 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      <body className="bg-gray-50 min-h-screen flex flex-col text-gray-900" 
-      suppressHydrationWarning 
-      >
+    // 🌟 Moved suppressHydrationWarning to the <html> tag right here!
+    <html lang="en" suppressHydrationWarning>
+      <body className="bg-gray-50 min-h-screen flex flex-col text-gray-900">
         
         {/* Navigation Header */}
         <header className="bg-green-600 text-white shadow-md">
