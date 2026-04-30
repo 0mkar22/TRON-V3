@@ -3,10 +3,13 @@ import axios from 'axios';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { TronProvider } from './tronProvider';
+import { createSupabaseClient } from './supabaseClient';
 
 const execAsync = promisify(exec);
-const API_BASE_URL = 'https://tron-v3.onrender.com'; // Pointing to Render
-const DAEMON_API_KEY = 'tron_v3_super_secret_key_123'; 
+const API_BASE_URL = 'https://tron-v3.onrender.com';
+const DAEMON_API_KEY = 'tron_v3_super_secret_key_123';
+const SUPABASE_URL = 'https://your-project.supabase.co';
+const SUPABASE_ANON_KEY = 'your-anon-key';
 
 interface TaskQuickPickItem extends vscode.QuickPickItem {
     taskId: string;
@@ -15,6 +18,33 @@ interface TaskQuickPickItem extends vscode.QuickPickItem {
 
 export function activate(context: vscode.ExtensionContext) {
     axios.defaults.headers.common['x-api-key'] = DAEMON_API_KEY;
+
+    const supabase = createSupabaseClient(context, SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) {
+            vscode.window.showInformationMessage(`T.R.O.N: Signed in as ${session.user.email}`);
+        }
+    });
+
+    const signInCmd = vscode.commands.registerCommand('tron.signIn', async () => {
+        const email = await vscode.window.showInputBox({ prompt: 'Enter your email', placeHolder: 'you@example.com' });
+        if (!email) { return; }
+        const password = await vscode.window.showInputBox({ prompt: 'Enter your password', password: true });
+        if (!password) { return; }
+
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+            vscode.window.showErrorMessage(`T.R.O.N: Sign in failed — ${error.message}`);
+        } else {
+            vscode.window.showInformationMessage(`T.R.O.N: Signed in as ${data.user.email}`);
+        }
+    });
+
+    const signOutCmd = vscode.commands.registerCommand('tron.signOut', async () => {
+        await supabase.auth.signOut();
+        vscode.window.showInformationMessage('T.R.O.N: Signed out.');
+    });
 
     const tronProvider = new TronProvider();
     vscode.window.registerTreeDataProvider('tron-tickets', tronProvider);
@@ -429,7 +459,7 @@ export function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(gitWatcher);
     }
 
-    context.subscriptions.push(refreshCmd, startTaskCmd, createCmd, viewReviewCmd, quickPickCmd);
+    context.subscriptions.push(refreshCmd, startTaskCmd, createCmd, viewReviewCmd, quickPickCmd, signInCmd, signOutCmd);
 }
 
 export function deactivate() {}
