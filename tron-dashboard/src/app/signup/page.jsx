@@ -6,30 +6,31 @@ import Link from 'next/link'
 export default async function SignupPage({ searchParams }) {
   const resolvedParams = await searchParams
 
-  // 🌟 SERVER ACTION: Sign Up Only
+  // 🌟 SERVER ACTION: Minimal Sign Up
   const signup = async (formData) => {
     'use server'
     const email = formData.get('email')
     const password = formData.get('password')
-    const supabase = await createClient() // 🌟 Add await here!
+    const supabase = await createClient()
 
+    // Just email and password. We get the rest later!
     const { error } = await supabase.auth.signUp({ email, password })
 
     if (error) {
       return redirect(`/signup?message=${error.message}`)
     }
     
-    // If Email Confirmations are turned ON in Supabase, show this message:
     return redirect('/signup?message=Check your email to continue the sign in process')
-    
-    // Note: If Confirmations are OFF, you could just redirect straight to '/' here!
   }
 
-  // 🌟 SERVER ACTION: GitHub OAuth
+  // 🌟 SERVER ACTION: GitHub OAuth (Fixed for Next.js 15)
   const signInWithGithub = async () => {
     'use server'
-    const supabase = await createClient() // 🌟 Add await here!
-    const origin = headers().get('origin')
+    const supabase = await createClient()
+    
+    // 🌟 THE FIX: We await the headers object before using it!
+    const headersList = await headers()
+    const origin = headersList.get('origin')
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'github',
@@ -74,7 +75,7 @@ export default async function SignupPage({ searchParams }) {
           </div>
 
           <button type="submit" className="group relative w-full flex justify-center py-2.5 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none transition-colors shadow-sm">
-            Create account
+            Continue ➔
           </button>
         </form>
 

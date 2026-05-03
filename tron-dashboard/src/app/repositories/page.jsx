@@ -1,402 +1,88 @@
-"use client";
-
-import { useState, useEffect } from 'react';
-import axios from 'axios';
-import { useRouter } from 'next/navigation'; // 🌟 NEW: Added router for redirecting
+import { createClient } from '@/utils/supabase/server';
+import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import ClientForm from './ClientForm';
+import { deleteWorkflowAction } from './actions';
 
-export default function RepositoriesPage() {
-  const router = useRouter();
-  
-  const [formData, setFormData] = useState({
-    orgId: '',
-    repoName: '',
-    pmProvider: 'basecamp',
-    pmProjectId: '',
-    todoCol: '',
-    branchCol: '',
-    prCol: '',
-    doneCol: ''
-  });
+export default async function RepositoriesPage() {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
 
-  const [boardColumns, setBoardColumns] = useState([]);
-  const [fetchingColumns, setFetchingColumns] = useState(false);
+    if (!user) return redirect('/login');
 
-  const [basecampProjects, setBasecampProjects] = useState([]);
-  const [isLoadingBcProjects, setIsLoadingBcProjects] = useState(true);
-  const [isBcConnected, setIsBcConnected] = useState(true);
-  
-  // 🌟 REFACTORED: Discord Broadcast States
-  const [isDiscordConnected, setIsDiscordConnected] = useState(false);
-  const [channels, setChannels] = useState([]);
-  const [selectedChannel, setSelectedChannel] = useState('');
-  const [checkingDiscord, setCheckingDiscord] = useState(true);
-
-  const [status, setStatus] = useState({ type: '', message: '' });
-  const [loading, setLoading] = useState(false);
-
-  const [githubRepos, setGithubRepos] = useState([]);
-  const [isLoadingRepos, setIsLoadingRepos] = useState(true);
-  const [isGithubConnected, setIsGithubConnected] = useState(true);
-
-  // Fetch the repositories when the page loads
-useEffect(() => {
-    const fetchRepos = async () => {
-            try {
-                // ⚠️ Ensure this is your correct backend URL
-                const res = await fetch('https://tron-v3.onrender.com/api/admin/github-repos');
-                
-                // 🌟 DIAGNOSTIC CHECK: Is it HTML?
-                const contentType = res.headers.get("content-type");
-                if (contentType && contentType.indexOf("application/json") !== -1) {
-                    const data = await res.json();
-                    if (res.ok && data.isConnected) {
-                        setGithubRepos(data.repos);
-                    } else {
-                        setIsGithubConnected(false);
-                    }
-                } else {
-                    // It's not JSON! Let's read the HTML text to see what the server is complaining about.
-                    const text = await res.text();
-                    console.error("Backend did not return JSON! Here is what it returned:", text);
-                    setIsGithubConnected(false);
-                }
-
-            } catch (error) {
-                console.error("Failed to fetch GitHub repos", error);
-                setIsGithubConnected(false);
-            } finally {
-                setIsLoadingRepos(false);
-            }
-        };
-
-    fetchRepos();
-}, []);
-
-// Fetch Basecamp Projects on load
-useEffect(() => {
-    const fetchBcProjects = async () => {
-        try {
-            // ⚠️ Update to your Render URL
-            const res = await fetch('https://tron-v3.onrender.com/api/admin/basecamp-projects');
-            const contentType = res.headers.get("content-type");
-            
-            if (contentType && contentType.indexOf("application/json") !== -1) {
-                const data = await res.json();
-                if (res.ok && data.isConnected) {
-                    setBasecampProjects(data.projects);
-                } else {
-                    setIsBcConnected(false);
-                }
-            } else {
-                console.error("Backend did not return JSON for Basecamp projects.");
-                setIsBcConnected(false);
-            }
-        } catch (error) {
-            console.error("Failed to fetch Basecamp projects", error);
-            setIsBcConnected(false);
-        } finally {
-            setIsLoadingBcProjects(false);
-        }
-    };
-
-    fetchBcProjects();
-}, []);
-  // 🌟 NEW: Automatically check global Discord status and fetch channels on load
-  useEffect(() => {
-    const checkDiscordIntegration = async () => {
-      try {
-        // Ping the backend to see if a global token exists and grab the channels
-        // ⚠️ Replace with your Render URL if testing in prod
-        const response = await axios.get('https://tron-v3.onrender.com/api/admin/discord-status');
-        
-        if (response.data.isConnected && response.data.channels) {
-            setIsDiscordConnected(true);
-            setChannels(response.data.channels);
-        }
-      } catch (error) {
-        console.log("Discord is not connected or failed to fetch channels.", error);
-      } finally {
-        setCheckingDiscord(false);
-      }
-    };
-
-    checkDiscordIntegration();
-  }, []);
-
-  const handleFetchColumns = async () => {
-      if (!formData.pmProjectId) return alert("Please enter a Project / Board ID first!");
-      
-      setFetchingColumns(true);
-      try {
-          // ⚠️ Update to your live Render URL if testing in production
-          const response = await axios.post('https://tron-v3.onrender.com/api/admin/basecamp-columns', {
-              projectId: formData.pmProjectId
-          });
-          
-          if (response.data.columns) {
-              setBoardColumns(response.data.columns);
-          }
-      } catch (error) {
-          alert("Failed to fetch columns. Is Basecamp connected?");
-      } finally {
-          setFetchingColumns(false);
-      }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setStatus({ type: '', message: '' });
-
-    const payload = {
-      orgId: formData.orgId,
-      repoName: formData.repoName,
-      pmProvider: formData.pmProvider,
-      pmProjectId: formData.pmProjectId,
-      mapping: {
-        todo: formData.todoCol,
-        branch_created: formData.branchCol,
-        pull_request_opened: formData.prCol,
-        pull_request_closed: formData.doneCol 
-      },
-      // 🌟 REFACTORED: We only pass the channel ID now, not the secret token!
-      communication_config: isDiscordConnected && selectedChannel ? {
-        provider: 'discord_bot',
-        channel_id: selectedChannel
-      } : null
-    };
-
-    try {
-      // ⚠️ Replace with your Render URL if testing in prod
-      const response = await axios.post('https://tron-v3.onrender.com/api/repositories', payload);
-      setStatus({ type: 'success', message: response.data.message });
-      
-      setFormData({ ...formData, repoName: '', pmProjectId: '', todoCol: '', branchCol: '', prCol: '', doneCol: '' });
-      setSelectedChannel('');
-    } catch (error) {
-      setStatus({ 
-        type: 'error', 
-        message: error.response?.data?.error || 'Failed to link repository.' 
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="max-w-4xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-gray-100">
-      <h1 className="text-2xl font-bold text-gray-800 mb-2">Workflow Mapping</h1>
-      <p className="text-gray-600 mb-8">
-        Link a GitHub repository to your Project Management tool and map your automation columns.
-      </p>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Org ID */}
-          <div className="col-span-1 md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Organization ID</label>
-            <input
-              type="text" required
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-              placeholder="e.g., 123e4567-e89b..."
-              value={formData.orgId}
-              onChange={(e) => setFormData({ ...formData, orgId: e.target.value })}
-            />
-          </div>
-
-          {/* Repo Name */}
-          <div className="flex-1">
-            <label className="block text-sm font-bold text-gray-700 mb-2">GitHub Repository</label>
+    const { data: userData } = await supabase.from('users').select('org_id').eq('id', user.id).single();
     
-            {isLoadingRepos ? (
-            <div className="w-full border border-gray-300 p-2.5 rounded-lg bg-gray-50 text-gray-400 text-sm animate-pulse">
-                Loading repositories...
-            </div>
-            ) : !isGithubConnected ? (
-            <div className="w-full border border-red-300 p-2.5 rounded-lg bg-red-50 text-red-600 text-sm flex justify-between items-center">
-                <span>GitHub not connected.</span>
-                <Link href="/integrations" className="font-bold underline hover:text-red-800">Connect PAT</Link>
-            </div>
-            ) : (
-            <select 
-                value={formData.repoName}
-                  onChange={(e) => setFormData({ ...formData, repoName: e.target.value })}
-                  className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-sm bg-white"
-                >
-                <option value="" disabled>Select a repository...</option>
-                  {githubRepos.map((repo) => (
-                    <option key={repo.id} value={repo.full_name}>
-                        {repo.full_name}
-                    </option>
-              ))}
-            </select>
-            )}
-          </div>
-          
-          {/* PM Tool & Project ID */}
-          <div className="flex gap-4">
-            <div className="w-1/3">
-              <label className="block text-sm font-medium text-gray-700 mb-1">PM Tool</label>
-              <select
-                className="w-full px-4 py-2 border border-gray-300 rounded-md bg-gray-50"
-                value={formData.pmProvider}
-                onChange={(e) => setFormData({ ...formData, pmProvider: e.target.value })}
-              >
-                <option value="basecamp">Basecamp</option>
-              </select>
-            </div>
-            <div className="w-2/3">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Project / Board ID</label>
-              <div className="flex gap-2">
-                  
-                  {/* 🌟 THE SMART BASECAMP DROPDOWN */}
-                  {isLoadingBcProjects ? (
-                      <div className="w-full px-4 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-400 animate-pulse">
-                          Loading projects...
-                      </div>
-                  ) : !isBcConnected ? (
-                      <div className="w-full px-4 py-2 border border-red-300 rounded-md bg-red-50 text-red-600 text-sm flex justify-between items-center">
-                          <span>Basecamp not connected.</span>
-                          <a href="/integrations" className="font-bold underline hover:text-red-800">Connect</a>
-                      </div>
-                  ) : (
-                      <select 
-                          required
-                          value={formData.pmProjectId} 
-                          onChange={(e) => setFormData({ ...formData, pmProjectId: e.target.value })}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white"
-                      >
-                          <option value="" disabled>Select a project...</option>
-                          {basecampProjects.map((project) => (
-                              <option key={project.id} value={project.id}>
-                                  {project.name}
-                              </option>
-                          ))}
-                      </select>
-                  )}
+    const { data: workflows } = await supabase
+        .from('workflows')
+        .select('*')
+        .eq('org_id', userData?.org_id)
+        .order('created_at', { ascending: false });
 
-                  <button 
-                    type="button"
-                    onClick={handleFetchColumns}
-                    disabled={fetchingColumns || !formData.pmProjectId}
-                    className="bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors disabled:opacity-50 whitespace-nowrap"
-                  >
-                      {fetchingColumns ? 'Loading...' : 'Fetch Columns'}
-                  </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <hr className="my-6 border-gray-200" />
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Automation Mapping</h3>
-
-        {/* 🌟 DYNAMIC AUTOMATION MAPPING */}
-        {boardColumns.length === 0 ? (
-            <div className="bg-blue-50 p-6 rounded-lg border border-blue-100 text-center">
-                <p className="text-blue-800 font-medium">Enter your Board ID above and click &ldquo;Fetch Columns&ldquo; to map your workflow.</p>
-            </div>
-        ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 p-6 rounded-lg border border-gray-200">
-              {/* To-Do */}
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">&ldquo;To-Do&ldquo; Column</label>
-                <p className="text-xs text-gray-500 mb-2">Default starting column.</p>
-                <select required className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:ring-blue-500"
-                  value={formData.todoCol} onChange={(e) => setFormData({ ...formData, todoCol: e.target.value })}>
-                  <option value="">-- Select Column --</option>
-                  {boardColumns.map(col => <option key={col.id} value={col.id}>{col.name}</option>)}
-                </select>
-              </div>
-
-              {/* In Progress */}
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">&ldquo;In Progress&ldquo; Column</label>
-                <p className="text-xs text-gray-500 mb-2">Moves here when a branch is created.</p>
-                <select required className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:ring-blue-500"
-                  value={formData.branchCol} onChange={(e) => setFormData({ ...formData, branchCol: e.target.value })}>
-                  <option value="">-- Select Column --</option>
-                  {boardColumns.map(col => <option key={col.id} value={col.id}>{col.name}</option>)}
-                </select>
-              </div>
-
-              {/* In Review */}
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">&ldquo;In Review&ldquo; Column</label>
-                <p className="text-xs text-gray-500 mb-2">Moves here when a PR is opened.</p>
-                <select required className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:ring-blue-500"
-                  value={formData.prCol} onChange={(e) => setFormData({ ...formData, prCol: e.target.value })}>
-                  <option value="">-- Select Column --</option>
-                  {boardColumns.map(col => <option key={col.id} value={col.id}>{col.name}</option>)}
-                </select>
-              </div>
-
-              {/* Done */}
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">&ldquo;Done&rdquo; Column</label>
-                <p className="text-xs text-gray-500 mb-2">Moves here when a PR is closed.</p>
-                <select required className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:ring-blue-500"
-                  value={formData.doneCol} onChange={(e) => setFormData({ ...formData, doneCol: e.target.value })}>
-                  <option value="">-- Select Column --</option>
-                  {boardColumns.map(col => <option key={col.id} value={col.id}>{col.name}</option>)}
-                </select>
-              </div>
-            </div>
-        )}
-
-        {/* 🌟 REFACTORED: Discord Broadcast Section */}
-        <hr className="my-6 border-gray-200" />
-        <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-            <span className="mr-2">🎮</span> Broadcast Configuration
-        </h3>
+    // 🌟 NEW: Fetch the absolute truth about what is connected from Supabase
+    const { data: integrations } = await supabase
+        .from('integrations')
+        .select('provider')
+        .eq('org_id', userData?.org_id);
         
-        <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
-            {checkingDiscord ? (
-                 <div className="text-sm text-gray-500 animate-pulse">Checking Discord integration status...</div>
-            ) : isDiscordConnected ? (
-                <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">Select Discord Channel</label>
-                    <select 
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 bg-white"
-                        value={selectedChannel}
-                        onChange={(e) => setSelectedChannel(e.target.value)}
-                    >
-                        <option value="">-- Choose a channel --</option>
-                        {channels.map(channel => (
-                            <option key={channel.id} value={channel.id}># {channel.name}</option>
-                        ))}
-                    </select>
-                    <p className="text-xs text-gray-500 mt-2">AI PR Summaries and alerts will be posted here.</p>
+    const connectedProviders = integrations?.map(i => i.provider) || [];
+
+    return (
+        <div className="max-w-7xl mx-auto space-y-10 pb-12 pt-8 px-4 sm:px-6 lg:px-8">
+            <div className="mb-8">
+                <Link href="/" className="text-sm font-bold text-green-600 hover:text-green-700 mb-2 inline-block">
+                    ← Back to Dashboard
+                </Link>
+                <h1 className="text-3xl font-extrabold text-gray-900">📦 Workflow Mapping</h1>
+                <p className="text-gray-500 mt-2 text-lg">Map your GitHub repositories to your Project Management boards.</p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <div className="lg:col-span-7 bg-white p-8 rounded-xl border border-gray-200 shadow-sm">
+                    {/* 🌟 NEW: Pass the truth to the Client Form */}
+                    <ClientForm connectedProviders={connectedProviders} />
                 </div>
-            ) : (
-                <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100 flex flex-col sm:flex-row justify-between items-center">
-                    <span className="text-sm text-indigo-800 font-medium mb-3 sm:mb-0">Broadcasts disabled. Discord is not connected.</span>
-                    <button 
-                        type="button"
-                        onClick={() => router.push('/integrations')}
-                        className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition-colors"
-                    >
-                        Connect Discord
-                    </button>
+
+                <div className="lg:col-span-5 space-y-4">
+                    <h2 className="text-lg font-bold text-gray-900 mb-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                        Active Mappings
+                    </h2>
+                    
+                    {workflows?.length === 0 ? (
+                        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-10 text-center">
+                            <span className="text-4xl block mb-2 opacity-50">📭</span>
+                            <h3 className="text-gray-700 font-bold">No mappings found</h3>
+                            <p className="text-gray-500 text-sm mt-1">Create your first workflow mapping using the form.</p>
+                        </div>
+                    ) : (
+                        workflows?.map((workflow) => (
+                            <div key={workflow.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-3 transition-all hover:shadow-md">
+                                <div className="flex items-center space-x-2">
+                                    <span className="text-xl">🐙</span>
+                                    <span className="font-bold text-gray-900 font-mono text-sm">{workflow.repo_name}</span>
+                                </div>
+                                <div className="flex items-center space-x-2 text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                                    <span className="text-lg">⛺</span>
+                                    <span className="font-mono text-xs">{workflow.pm_project_id || 'N/A'}</span>
+                                    {workflow.communication_config?.channel_id && (
+                                        <>
+                                            <span className="ml-2 font-bold text-gray-300">|</span>
+                                            <span className="text-lg ml-2">🎮</span>
+                                            <span className="font-mono text-xs">{workflow.communication_config.channel_id}</span>
+                                        </>
+                                    )}
+                                </div>
+                                
+                                <form action={deleteWorkflowAction} className="mt-2 text-right">
+                                    <input type="hidden" name="workflowId" value={workflow.id} />
+                                    <button type="submit" className="text-red-500 hover:text-white hover:bg-red-500 border border-red-200 px-3 py-1 rounded text-xs font-bold transition-colors">
+                                        Delete Mapping
+                                    </button>
+                                </form>
+                            </div>
+                        ))
+                    )}
                 </div>
-            )}
+            </div>
         </div>
-
-        {status.message && (
-          <div className={`p-4 rounded-md ${status.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
-            {status.message}
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 mt-4 text-lg"
-        >
-          {loading ? 'Saving...' : 'Link Repository'}
-        </button>
-      </form>
-    </div>
-  );
+    );
 }

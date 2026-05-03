@@ -24,8 +24,11 @@ export default async function LoginPage({ searchParams }) {
   // 🌟 SERVER ACTION: GitHub OAuth
   const signInWithGithub = async () => {
     'use server'
-    const supabase = await createClient() // 🌟 Add await here!
-    const origin = headers().get('origin')
+    const supabase = await createClient()
+    
+    // 🌟 THE FIX: Await the headers!
+    const headersList = await headers()
+    const origin = headersList.get('origin')
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'github',
