@@ -553,29 +553,30 @@ app.post('/api/auth/basecamp/init', async (req, res) => {
     }
 });
 
-// 🌟 Catch the Basecamp OAuth Redirect (State Parameter Edition)
+// 🌟 Catch the Basecamp OAuth Redirect (Diagnostic Edition)
 app.get('/api/auth/basecamp/callback', async (req, res) => {
-    // 1. Basecamp passes back BOTH the code and our state!
     const { code, state } = req.query;
 
-    if (!code) {
-        return res.status(400).send("No authorization code provided by Basecamp.");
-    }
+    if (!code) return res.status(400).json({ error: "No authorization code provided." });
 
     try {
         console.log("👉 Catching Basecamp redirect...");
 
-        // Decode the state to get the exact org_id back
         const returnedOrgId = state ? decodeURIComponent(state) : null;
+        if (!returnedOrgId) throw new Error("Missing Org ID in state parameter.");
 
-        // 2. Fetch the pending credentials
+        console.log(`🔍 Looking for pending credentials for Org: ${returnedOrgId}`);
+
         const { data: pendingInt, error: pendingError } = await supabase
             .from('integrations')
             .select('secret_id')
             .eq('provider', 'basecamp_pending')
+            .eq('org_id', returnedOrgId)
             .single();
 
-        if (pendingError || !pendingInt) throw new Error("Could not find pending Basecamp credentials.");
+        if (pendingError || !pendingInt) throw new Error(`Could not find pending credentials. DB Error: ${pendingError?.message}`);
+
+        console.log("✅ Found pending credentials. Decrypting...");
 
         const { data: decryptedJson, error: decryptError } = await supabase.rpc('get_decrypted_secret', {
             p_secret_id: pendingInt.secret_id
@@ -585,46 +586,68 @@ app.get('/api/auth/basecamp/callback', async (req, res) => {
 
         const { accountId, clientId, clientSecret } = JSON.parse(decryptedJson);
 
-        // 3. Exchange for tokens
+        console.log("✅ Decrypted successfully. Exchanging code for tokens...");
+
         const redirectUri = encodeURIComponent("https://tron-v3.onrender.com/api/auth/basecamp/callback");
         const tokenUrl = `https://launchpad.37signals.com/authorization/token?type=web_server&client_id=${clientId}&redirect_uri=${redirectUri}&client_secret=${clientSecret}&code=${code}`;
 
         const tokenResponse = await axios.post(tokenUrl);
         const { access_token, refresh_token, expires_in } = tokenResponse.data;
 
+        console.log("✅ Tokens received. Saving to Vault...");
+
         const finalCredentials = JSON.stringify({
-            accountId,
-            clientId,
-            clientSecret,
+            accountId, clientId, clientSecret,
             accessToken: access_token,
             refreshToken: refresh_token,
             expiresAt: Date.now() + (expires_in * 1000)
         });
 
         const { data: finalSecretId, error: vaultError } = await supabase.rpc('insert_secret', {
-            secret_name: `basecamp_active_${Date.now()}`,
+            secret_name: `basecamp_active_${returnedOrgId}_${Date.now()}`,
             secret_description: `Active OAuth keys for Basecamp`,
             secret_value: finalCredentials
         });
 
-        if (vaultError || !finalSecretId) throw vaultError;
+        if (vaultError || !finalSecretId) throw new Error(`Vault Error: ${vaultError?.message}`);
 
-        // 4. Save the final row using the org_id passed from the State parameter!
+        console.log("✅ Saved to Vault. Upserting to integrations table...");
+
+        // 🌟 Adding .select() forces Supabase to return the newly created row!
+        const { data: upsertData, error: upsertError } = await supabase
+            .from('integrations')
+            .upsert({
+                provider: 'basecamp',
+                secret_id: finalSecretId,
+                org_id: returnedOrgId
+            }, { onConflict: 'org_id, provider' })
+            .select(); 
+
+        if (upsertError) throw new Error(`DB Upsert Error: ${upsertError.message}`);
+
+        console.log("✅ Upsert complete. Deleting pending row...");
+
         await supabase
             .from('integrations')
-            .upsert({ 
-                provider: 'basecamp', 
-                secret_id: finalSecretId,
-                org_id: returnedOrgId // 🌟 Flawless, thread-safe assignment
-            }, { onConflict: 'provider' });
+            .delete()
+            .eq('provider', 'basecamp_pending')
+            .eq('org_id', returnedOrgId);
 
-        await supabase.from('integrations').delete().eq('provider', 'basecamp_pending');
+        console.log("🎉 All done! Sending success response.");
 
-        res.redirect('http://localhost:3000/integrations'); 
+        // 🌟 We stop the redirect so you can read the exact database output on your screen!
+        res.json({
+            success: true,
+            message: "Basecamp connected successfully!",
+            insertedRow: upsertData
+        });
 
     } catch (error) {
-        console.error("❌ Basecamp Callback Error:", error.response?.data || error.message);
-        res.status(500).send("Failed to complete Basecamp authentication. Check server logs.");
+        console.error("❌ Basecamp Callback Error:", error.message || error.response?.data);
+        res.status(500).json({
+            error: "Failed to complete Basecamp authentication.",
+            details: error.message || error.response?.data
+        });
     }
 });
 
