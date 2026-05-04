@@ -341,45 +341,42 @@ app.get('/api/admin/system-status', async (req, res) => {
     }
 });
 
-// 🌟 NEW: Securely Save Integrations (GitHub, Slack, etc.)
+// 1. Save GitHub Token
 app.post('/api/admin/save-integration', async (req, res) => {
-    const { provider, token } = req.body;
+    const { provider, token, orgId } = req.body;
 
-    if (!provider || !token) {
-        return res.status(400).json({ error: "Provider and token are required." });
+    if (!provider || !token || !orgId) {
+        return res.status(400).json({ error: "Missing provider, token, or orgId" });
     }
 
     try {
-        console.log(`👉 Saving ${provider} token to Supabase Vault...`);
+        console.log(`👉 Saving ${provider} token for Org: ${orgId}`);
 
-        // 1. Encrypt and save the token into Supabase Vault
-        // Note: This assumes you have an RPC function named 'insert_secret' in Supabase
+        // 1. Save the raw token to the Vault
         const { data: secretId, error: vaultError } = await supabase.rpc('insert_secret', {
-            secret_name: `${provider}_token_${Date.now()}`,
-            secret_description: `PAT for ${provider}`,
-            secret_value: token
+            secret_name: `${provider}_token_${orgId}_${Date.now()}`,
+            secret_description: `Access token for ${provider}`,
+            secret_value: token // Just the raw string, no JSON parsing needed for a simple token
         });
 
-        if (vaultError || !secretId) {
-            throw new Error(vaultError?.message || "Failed to insert secret into Vault");
-        }
+        if (vaultError || !secretId) throw new Error(`Vault Error: ${vaultError?.message}`);
 
-        // 2. Link that secure Vault ID to our integrations table
+        // 2. Tie it to the organization in the DB
         const { error: dbError } = await supabase
             .from('integrations')
             .upsert({ 
+                org_id: orgId,
                 provider: provider, 
                 secret_id: secretId 
-            }, { onConflict: 'provider' }); // Overwrites the old one if it already exists!
+            }, { onConflict: 'org_id, provider' });
 
-        if (dbError) throw dbError;
+        if (dbError) throw new Error(`DB Error: ${dbError.message}`);
 
-        console.log(`✅ Successfully saved ${provider} integration!`);
-        res.json({ success: true, message: `${provider} token saved securely.` });
+        res.json({ success: true, message: `${provider} connected successfully!` });
 
     } catch (error) {
-        console.error(`❌ Error saving ${provider} integration:`, error.message);
-        res.status(500).json({ error: "Failed to save integration securely." });
+        console.error(`❌ ${provider} Save Error:`, error.message);
+        res.status(500).json({ error: `Failed to save ${provider} integration.` });
     }
 });
 
@@ -474,29 +471,27 @@ app.get('/api/admin/basecamp-status', async (req, res) => {
     }
 });
 
-// 🌟 NEW: Generic Delete Route for Integrations
+// 3. Delete Integrations (GitHub & Basecamp)
 app.delete('/api/admin/delete-integration/:provider', async (req, res) => {
     const { provider } = req.params;
+    const { orgId } = req.body;
+
+    if (!orgId) return res.status(400).json({ error: "Missing orgId" });
 
     try {
-        console.log(`🗑️ Disconnecting ${provider}...`);
-
-        // 1. Delete the link from the integrations table
-        const { error: dbError } = await supabase
+        console.log(`🗑️ Disconnecting ${provider} for Org: ${orgId}`);
+        
+        // When we delete the row, Supabase Vault unfortunately doesn't auto-delete the secret.
+        // We just delete the row here. A true production app would run a cron-job to clear orphaned Vault secrets.
+        await supabase
             .from('integrations')
             .delete()
-            .eq('provider', provider);
+            .eq('provider', provider)
+            .eq('org_id', orgId);
 
-        if (dbError) throw dbError;
-
-        // Note: The actual secret stays in Supabase Vault for audit purposes, 
-        // but TRON can no longer access it because the integration row is gone!
-
-        console.log(`✅ Successfully disconnected ${provider}`);
-        res.json({ success: true, message: `${provider} has been disconnected.` });
-
+        res.json({ success: true, message: `${provider} disconnected.` });
     } catch (error) {
-        console.error(`❌ Error disconnecting ${provider}:`, error.message);
+        console.error(`❌ Disconnect Error (${provider}):`, error.message);
         res.status(500).json({ error: `Failed to disconnect ${provider}.` });
     }
 });
@@ -814,56 +809,55 @@ app.get('/api/admin/discord-status', async (req, res) => {
     }
 });
 
-// 🌟 DYNAMIC EDITION: Save Discord Token to Vault 
+// 2. Save Discord Webhook/Bot Token
+// (Your frontend uses a specific route name for Discord, so we catch it here!)
 app.post('/api/admin/discord-token', async (req, res) => {
-    const { token } = req.body; // Notice: We don't ask the frontend for the orgId anymore!
+    const { token, orgId } = req.body;
 
-    if (!token) {
-        return res.status(400).json({ error: "Missing Discord token." });
-    }
+    if (!token || !orgId) return res.status(400).json({ error: "Missing token or orgId" });
 
+    // We can just reuse the exact same logic, hardcoding the provider as 'discord'
     try {
-        // 1. Dynamically fetch the master org_id from your existing GitHub connection
-        const { data: masterOrg, error: orgError } = await supabase
-            .from('integrations')
-            .select('org_id')
-            .eq('provider', 'github')
-            .single();
+        console.log(`👉 Saving discord token for Org: ${orgId}`);
 
-        if (orgError || !masterOrg || !masterOrg.org_id) {
-            return res.status(400).json({ error: "Could not find a primary Organization ID. Please link GitHub first." });
-        }
-
-        const dynamicOrgId = masterOrg.org_id;
-
-        // 2. Call the Supabase SQL function using the dynamically found ID
-        const { error: vaultError } = await supabase.rpc('add_discord_integration', {
-            p_org_id: dynamicOrgId,
-            p_token: token
+        const { data: secretId, error: vaultError } = await supabase.rpc('insert_secret', {
+            secret_name: `discord_token_${orgId}_${Date.now()}`,
+            secret_description: `Webhook/Bot token for Discord`,
+            secret_value: token
         });
 
-        if (vaultError) throw vaultError;
+        if (vaultError || !secretId) throw new Error(`Vault Error: ${vaultError?.message}`);
 
-        res.json({ message: "Discord successfully connected and vaulted!" });
+        const { error: dbError } = await supabase
+            .from('integrations')
+            .upsert({ 
+                org_id: orgId,
+                provider: 'discord', 
+                secret_id: secretId 
+            }, { onConflict: 'org_id, provider' });
+
+        if (dbError) throw new Error(`DB Error: ${dbError.message}`);
+
+        res.json({ success: true, message: "Discord connected successfully!" });
+
     } catch (error) {
-        console.error("❌ Failed to save Discord token:", error.message);
-        res.status(500).json({ error: "Failed to securely store integration." });
+        console.error("❌ Discord Save Error:", error.message);
+        res.status(500).json({ error: "Failed to save Discord integration." });
     }
 });
 
-// 🌟 NEW: Disconnect Discord
+// 4. Delete Discord
 app.delete('/api/admin/discord-token', async (req, res) => {
-    try {
-        // Delete the discord row from the integrations table
-        const { error } = await supabase
-            .from('integrations')
-            .delete()
-            .eq('provider', 'discord');
+    const { orgId } = req.body;
+    if (!orgId) return res.status(400).json({ error: "Missing orgId" });
 
-        if (error) throw error;
-        res.json({ message: "Disconnected successfully" });
+    try {
+        console.log(`🗑️ Disconnecting discord for Org: ${orgId}`);
+        await supabase.from('integrations').delete().eq('provider', 'discord').eq('org_id', orgId);
+        res.json({ success: true, message: "Discord disconnected." });
     } catch (error) {
-        res.status(500).json({ error: "Failed to disconnect" });
+        console.error("❌ Discord Disconnect Error:", error.message);
+        res.status(500).json({ error: "Failed to disconnect Discord." });
     }
 });
 
