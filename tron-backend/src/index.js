@@ -501,9 +501,8 @@ app.delete('/api/admin/delete-integration/:provider', async (req, res) => {
     }
 });
 
-// 🌟 Start the Basecamp OAuth Dance (State Parameter Edition)
+// 🌟 Start the Basecamp OAuth Dance (Diagnostic Edition)
 app.post('/api/auth/basecamp/init', async (req, res) => {
-    // 🌟 FIX 1: Extract orgId directly from the request body!
     const { accountId, clientId, clientSecret, orgId } = req.body;
 
     if (!accountId || !clientId || !clientSecret || !orgId) {
@@ -511,20 +510,21 @@ app.post('/api/auth/basecamp/init', async (req, res) => {
     }
 
     try {
-        console.log("👉 Saving pending Basecamp credentials...");
+        console.log(`👉 Starting Basecamp auth for Org: ${orgId}`);
 
-        // 1. Pack the pending credentials
         const pendingData = JSON.stringify({ accountId, clientId, clientSecret });
 
+        // 1. Save to Vault (Added Date.now() back to prevent duplicate name crashes!)
         const { data: secretId, error: vaultError } = await supabase.rpc('insert_secret', {
-            secret_name: `basecamp_pending_${orgId}`, // Tie the vault name directly to the org
+            secret_name: `basecamp_pending_${orgId}_${Date.now()}`,
             secret_description: `Pending OAuth keys for Basecamp`,
             secret_value: pendingData
         });
 
-        if (vaultError || !secretId) throw vaultError;
+        if (vaultError) throw new Error(`Vault Error: ${vaultError.message}`);
+        if (!secretId) throw new Error(`Vault Error: No secret_id returned`);
 
-        // 🌟 FIX 2 & 3: Pass org_id (it is required by the DB) and use the correct onConflict rule!
+        // 2. Save to Integrations table
         const { error: dbError } = await supabase
             .from('integrations')
             .upsert({ 
@@ -533,21 +533,23 @@ app.post('/api/auth/basecamp/init', async (req, res) => {
                 secret_id: secretId
             }, { onConflict: 'org_id, provider' });
 
-        if (dbError) throw dbError;
+        if (dbError) throw new Error(`DB Error: ${dbError.message}`);
 
-        // 2. Construct the Authorization URL WITH THE STATE PARAMETER
+        // 3. Construct URL
         const redirectUri = encodeURIComponent("https://tron-v3.onrender.com/api/auth/basecamp/callback");
-        
-        // Encode the org_id so it safely travels through the browser
         const stateParam = encodeURIComponent(orgId); 
-
         const authUrl = `https://launchpad.37signals.com/authorization/new?type=web_server&client_id=${clientId}&redirect_uri=${redirectUri}&state=${stateParam}`;
 
         res.json({ success: true, redirectUrl: authUrl });
 
     } catch (error) {
-        console.error("❌ Basecamp Init Error:", error.message || error);
-        res.status(500).json({ error: "Failed to initialize Basecamp auth." });
+        console.error("❌ Basecamp Init Error:", error.message);
+        
+        // 🌟 FIX: Stop hiding the error! Send the exact details to the frontend.
+        res.status(500).json({ 
+            error: "Failed to initialize Basecamp auth.",
+            details: error.message 
+        });
     }
 });
 
