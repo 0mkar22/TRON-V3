@@ -12,6 +12,9 @@ export async function saveWorkflowAction(payload) {
     const { data: userData } = await supabase.from('users').select('org_id').eq('id', user.id).single();
     const orgId = userData?.org_id;
 
+    // 🌟 ADD THIS LINE RIGHT HERE:
+    if (!orgId) throw new Error("No Organization ID found. Cannot map repository.");
+
     // 1. Dual-Write: Sync with your Render Engine
     try {
         await fetch('https://tron-v3.onrender.com/api/repositories', {
@@ -23,15 +26,15 @@ export async function saveWorkflowAction(payload) {
         console.error("Failed to sync with Render Engine:", e);
     }
 
-    // 2. Save securely to Supabase
-    const { error } = await supabase.from('workflows').insert({
+    // 2. Save securely to Supabase (Using the correct 'repositories' table and 'mapping' column)
+    const { error } = await supabase.from('repositories').upsert({
         org_id: orgId,
         repo_name: payload.repoName,
         pm_provider: payload.pmProvider,
         pm_project_id: payload.pmProjectId,
-        pm_mapping: payload.mapping,
+        mapping: payload.mapping,
         communication_config: payload.communication_config
-    });
+    }, { onConflict: 'repo_name' });
 
     if (error) throw new Error(error.message);
 
@@ -42,15 +45,24 @@ export async function saveWorkflowAction(payload) {
     return { success: true, message: "Workflow successfully mapped and secured!" };
 }
 
-export async function deleteWorkflowAction(workflowId) {
+export async function deleteWorkflowAction(formData) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     const { data: userData } = await supabase.from('users').select('org_id').eq('id', user.id).single();
     
-    await supabase.from('workflows').delete().match({ id: workflowId, org_id: userData.org_id });
+    // Extract ID from the form data
+    const workflowId = formData.get('workflowId');
+
+    // Delete from repositories table
+    await supabase.from('repositories').delete().match({ id: workflowId, org_id: userData.org_id });
+    
     revalidatePath('/repositories');
     revalidatePath('/');
 }
+
+// ==========================================
+// 🔌 RESTORED PROXY FETCHERS
+// ==========================================
 
 export async function fetchGithubRepos() {
     try {
