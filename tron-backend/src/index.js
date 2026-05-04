@@ -341,45 +341,42 @@ app.get('/api/admin/system-status', async (req, res) => {
     }
 });
 
-// 🌟 NEW: Securely Save Integrations (GitHub, Slack, etc.)
+// 1. Save GitHub Token
 app.post('/api/admin/save-integration', async (req, res) => {
-    const { provider, token } = req.body;
+    const { provider, token, orgId } = req.body;
 
-    if (!provider || !token) {
-        return res.status(400).json({ error: "Provider and token are required." });
+    if (!provider || !token || !orgId) {
+        return res.status(400).json({ error: "Missing provider, token, or orgId" });
     }
 
     try {
-        console.log(`👉 Saving ${provider} token to Supabase Vault...`);
+        console.log(`👉 Saving ${provider} token for Org: ${orgId}`);
 
-        // 1. Encrypt and save the token into Supabase Vault
-        // Note: This assumes you have an RPC function named 'insert_secret' in Supabase
+        // 1. Save the raw token to the Vault
         const { data: secretId, error: vaultError } = await supabase.rpc('insert_secret', {
-            secret_name: `${provider}_token_${Date.now()}`,
-            secret_description: `PAT for ${provider}`,
-            secret_value: token
+            secret_name: `${provider}_token_${orgId}_${Date.now()}`,
+            secret_description: `Access token for ${provider}`,
+            secret_value: token // Just the raw string, no JSON parsing needed for a simple token
         });
 
-        if (vaultError || !secretId) {
-            throw new Error(vaultError?.message || "Failed to insert secret into Vault");
-        }
+        if (vaultError || !secretId) throw new Error(`Vault Error: ${vaultError?.message}`);
 
-        // 2. Link that secure Vault ID to our integrations table
+        // 2. Tie it to the organization in the DB
         const { error: dbError } = await supabase
             .from('integrations')
             .upsert({ 
+                org_id: orgId,
                 provider: provider, 
                 secret_id: secretId 
-            }, { onConflict: 'provider' }); // Overwrites the old one if it already exists!
+            }, { onConflict: 'org_id, provider' });
 
-        if (dbError) throw dbError;
+        if (dbError) throw new Error(`DB Error: ${dbError.message}`);
 
-        console.log(`✅ Successfully saved ${provider} integration!`);
-        res.json({ success: true, message: `${provider} token saved securely.` });
+        res.json({ success: true, message: `${provider} connected successfully!` });
 
     } catch (error) {
-        console.error(`❌ Error saving ${provider} integration:`, error.message);
-        res.status(500).json({ error: "Failed to save integration securely." });
+        console.error(`❌ ${provider} Save Error:`, error.message);
+        res.status(500).json({ error: `Failed to save ${provider} integration.` });
     }
 });
 
@@ -474,113 +471,107 @@ app.get('/api/admin/basecamp-status', async (req, res) => {
     }
 });
 
-// 🌟 NEW: Generic Delete Route for Integrations
+// 3. Delete Integrations (GitHub & Basecamp)
 app.delete('/api/admin/delete-integration/:provider', async (req, res) => {
     const { provider } = req.params;
+    const { orgId } = req.body;
+
+    if (!orgId) return res.status(400).json({ error: "Missing orgId" });
 
     try {
-        console.log(`🗑️ Disconnecting ${provider}...`);
-
-        // 1. Delete the link from the integrations table
-        const { error: dbError } = await supabase
+        console.log(`🗑️ Disconnecting ${provider} for Org: ${orgId}`);
+        
+        // When we delete the row, Supabase Vault unfortunately doesn't auto-delete the secret.
+        // We just delete the row here. A true production app would run a cron-job to clear orphaned Vault secrets.
+        await supabase
             .from('integrations')
             .delete()
-            .eq('provider', provider);
+            .eq('provider', provider)
+            .eq('org_id', orgId);
 
-        if (dbError) throw dbError;
-
-        // Note: The actual secret stays in Supabase Vault for audit purposes, 
-        // but TRON can no longer access it because the integration row is gone!
-
-        console.log(`✅ Successfully disconnected ${provider}`);
-        res.json({ success: true, message: `${provider} has been disconnected.` });
-
+        res.json({ success: true, message: `${provider} disconnected.` });
     } catch (error) {
-        console.error(`❌ Error disconnecting ${provider}:`, error.message);
+        console.error(`❌ Disconnect Error (${provider}):`, error.message);
         res.status(500).json({ error: `Failed to disconnect ${provider}.` });
     }
 });
 
-// 🌟 Start the Basecamp OAuth Dance (State Parameter Edition)
+// 🌟 Start the Basecamp OAuth Dance (Diagnostic Edition)
 app.post('/api/auth/basecamp/init', async (req, res) => {
-    const { accountId, clientId, clientSecret } = req.body;
+    const { accountId, clientId, clientSecret, orgId } = req.body;
 
-    if (!accountId || !clientId || !clientSecret) {
-        return res.status(400).json({ error: "Missing Basecamp credentials." });
+    if (!accountId || !clientId || !clientSecret || !orgId) {
+        return res.status(400).json({ error: "Missing Basecamp credentials or Org ID." });
     }
 
     try {
-        console.log("👉 Saving pending Basecamp credentials...");
+        console.log(`👉 Starting Basecamp auth for Org: ${orgId}`);
 
-        // 1. Get the current active org_id (acting as our user session)
-        const { data: masterOrg } = await supabase
-            .from('integrations')
-            .select('org_id')
-            .eq('provider', 'github')
-            .single();
-            
-        const activeOrgId = masterOrg?.org_id || null;
-
-        // 2. Pack the pending credentials
         const pendingData = JSON.stringify({ accountId, clientId, clientSecret });
 
+        // 1. Save to Vault (Added Date.now() back to prevent duplicate name crashes!)
         const { data: secretId, error: vaultError } = await supabase.rpc('insert_secret', {
-            secret_name: `basecamp_pending_${Date.now()}`,
+            secret_name: `basecamp_pending_${orgId}_${Date.now()}`,
             secret_description: `Pending OAuth keys for Basecamp`,
             secret_value: pendingData
         });
 
-        if (vaultError || !secretId) throw vaultError;
+        if (vaultError) throw new Error(`Vault Error: ${vaultError.message}`);
+        if (!secretId) throw new Error(`Vault Error: No secret_id returned`);
 
+        // 2. Save to Integrations table
         const { error: dbError } = await supabase
             .from('integrations')
             .upsert({ 
+                org_id: orgId,
                 provider: 'basecamp_pending', 
                 secret_id: secretId
-                // We no longer save org_id here, we pass it in the URL!
-            }, { onConflict: 'provider' });
+            }, { onConflict: 'org_id, provider' });
 
-        if (dbError) throw dbError;
+        if (dbError) throw new Error(`DB Error: ${dbError.message}`);
 
-        // 3. Construct the Authorization URL WITH THE STATE PARAMETER
+        // 3. Construct URL
         const redirectUri = encodeURIComponent("https://tron-v3.onrender.com/api/auth/basecamp/callback");
-        
-        // Encode the org_id so it safely travels through the browser
-        const stateParam = encodeURIComponent(activeOrgId); 
-
+        const stateParam = encodeURIComponent(orgId); 
         const authUrl = `https://launchpad.37signals.com/authorization/new?type=web_server&client_id=${clientId}&redirect_uri=${redirectUri}&state=${stateParam}`;
 
         res.json({ success: true, redirectUrl: authUrl });
 
     } catch (error) {
         console.error("❌ Basecamp Init Error:", error.message);
-        res.status(500).json({ error: "Failed to initialize Basecamp auth." });
+        
+        // 🌟 FIX: Stop hiding the error! Send the exact details to the frontend.
+        res.status(500).json({ 
+            error: "Failed to initialize Basecamp auth.",
+            details: error.message 
+        });
     }
 });
 
-// 🌟 Catch the Basecamp OAuth Redirect (State Parameter Edition)
+// 🌟 Catch the Basecamp OAuth Redirect (Diagnostic Edition)
 app.get('/api/auth/basecamp/callback', async (req, res) => {
-    // 1. Basecamp passes back BOTH the code and our state!
     const { code, state } = req.query;
 
-    if (!code) {
-        return res.status(400).send("No authorization code provided by Basecamp.");
-    }
+    if (!code) return res.status(400).json({ error: "No authorization code provided." });
 
     try {
         console.log("👉 Catching Basecamp redirect...");
 
-        // Decode the state to get the exact org_id back
         const returnedOrgId = state ? decodeURIComponent(state) : null;
+        if (!returnedOrgId) throw new Error("Missing Org ID in state parameter.");
 
-        // 2. Fetch the pending credentials
+        console.log(`🔍 Looking for pending credentials for Org: ${returnedOrgId}`);
+
         const { data: pendingInt, error: pendingError } = await supabase
             .from('integrations')
             .select('secret_id')
             .eq('provider', 'basecamp_pending')
+            .eq('org_id', returnedOrgId)
             .single();
 
-        if (pendingError || !pendingInt) throw new Error("Could not find pending Basecamp credentials.");
+        if (pendingError || !pendingInt) throw new Error(`Could not find pending credentials. DB Error: ${pendingError?.message}`);
+
+        console.log("✅ Found pending credentials. Decrypting...");
 
         const { data: decryptedJson, error: decryptError } = await supabase.rpc('get_decrypted_secret', {
             p_secret_id: pendingInt.secret_id
@@ -590,46 +581,64 @@ app.get('/api/auth/basecamp/callback', async (req, res) => {
 
         const { accountId, clientId, clientSecret } = JSON.parse(decryptedJson);
 
-        // 3. Exchange for tokens
+        console.log("✅ Decrypted successfully. Exchanging code for tokens...");
+
         const redirectUri = encodeURIComponent("https://tron-v3.onrender.com/api/auth/basecamp/callback");
         const tokenUrl = `https://launchpad.37signals.com/authorization/token?type=web_server&client_id=${clientId}&redirect_uri=${redirectUri}&client_secret=${clientSecret}&code=${code}`;
 
         const tokenResponse = await axios.post(tokenUrl);
         const { access_token, refresh_token, expires_in } = tokenResponse.data;
 
+        console.log("✅ Tokens received. Saving to Vault...");
+
         const finalCredentials = JSON.stringify({
-            accountId,
-            clientId,
-            clientSecret,
+            accountId, clientId, clientSecret,
             accessToken: access_token,
             refreshToken: refresh_token,
             expiresAt: Date.now() + (expires_in * 1000)
         });
 
         const { data: finalSecretId, error: vaultError } = await supabase.rpc('insert_secret', {
-            secret_name: `basecamp_active_${Date.now()}`,
+            secret_name: `basecamp_active_${returnedOrgId}_${Date.now()}`,
             secret_description: `Active OAuth keys for Basecamp`,
             secret_value: finalCredentials
         });
 
-        if (vaultError || !finalSecretId) throw vaultError;
+        if (vaultError || !finalSecretId) throw new Error(`Vault Error: ${vaultError?.message}`);
 
-        // 4. Save the final row using the org_id passed from the State parameter!
+        console.log("✅ Saved to Vault. Upserting to integrations table...");
+
+        // 🌟 Adding .select() forces Supabase to return the newly created row!
+        const { data: upsertData, error: upsertError } = await supabase
+            .from('integrations')
+            .upsert({
+                provider: 'basecamp',
+                secret_id: finalSecretId,
+                org_id: returnedOrgId
+            }, { onConflict: 'org_id, provider' })
+            .select(); 
+
+        if (upsertError) throw new Error(`DB Upsert Error: ${upsertError.message}`);
+
+        console.log("✅ Upsert complete. Deleting pending row...");
+
         await supabase
             .from('integrations')
-            .upsert({ 
-                provider: 'basecamp', 
-                secret_id: finalSecretId,
-                org_id: returnedOrgId // 🌟 Flawless, thread-safe assignment
-            }, { onConflict: 'provider' });
+            .delete()
+            .eq('provider', 'basecamp_pending')
+            .eq('org_id', returnedOrgId);
 
-        await supabase.from('integrations').delete().eq('provider', 'basecamp_pending');
+        console.log("🎉 All done! Sending success response.");
 
-        res.redirect('http://localhost:3000/integrations'); 
+       // Redirect back to the TRON dashboard!
+        res.redirect('http://localhost:3000/integrations');
 
     } catch (error) {
-        console.error("❌ Basecamp Callback Error:", error.response?.data || error.message);
-        res.status(500).send("Failed to complete Basecamp authentication. Check server logs.");
+        console.error("❌ Basecamp Callback Error:", error.message || error.response?.data);
+        res.status(500).json({
+            error: "Failed to complete Basecamp authentication.",
+            details: error.message || error.response?.data
+        });
     }
 });
 
@@ -800,56 +809,55 @@ app.get('/api/admin/discord-status', async (req, res) => {
     }
 });
 
-// 🌟 DYNAMIC EDITION: Save Discord Token to Vault 
+// 2. Save Discord Webhook/Bot Token
+// (Your frontend uses a specific route name for Discord, so we catch it here!)
 app.post('/api/admin/discord-token', async (req, res) => {
-    const { token } = req.body; // Notice: We don't ask the frontend for the orgId anymore!
+    const { token, orgId } = req.body;
 
-    if (!token) {
-        return res.status(400).json({ error: "Missing Discord token." });
-    }
+    if (!token || !orgId) return res.status(400).json({ error: "Missing token or orgId" });
 
+    // We can just reuse the exact same logic, hardcoding the provider as 'discord'
     try {
-        // 1. Dynamically fetch the master org_id from your existing GitHub connection
-        const { data: masterOrg, error: orgError } = await supabase
-            .from('integrations')
-            .select('org_id')
-            .eq('provider', 'github')
-            .single();
+        console.log(`👉 Saving discord token for Org: ${orgId}`);
 
-        if (orgError || !masterOrg || !masterOrg.org_id) {
-            return res.status(400).json({ error: "Could not find a primary Organization ID. Please link GitHub first." });
-        }
-
-        const dynamicOrgId = masterOrg.org_id;
-
-        // 2. Call the Supabase SQL function using the dynamically found ID
-        const { error: vaultError } = await supabase.rpc('add_discord_integration', {
-            p_org_id: dynamicOrgId,
-            p_token: token
+        const { data: secretId, error: vaultError } = await supabase.rpc('insert_secret', {
+            secret_name: `discord_token_${orgId}_${Date.now()}`,
+            secret_description: `Webhook/Bot token for Discord`,
+            secret_value: token
         });
 
-        if (vaultError) throw vaultError;
+        if (vaultError || !secretId) throw new Error(`Vault Error: ${vaultError?.message}`);
 
-        res.json({ message: "Discord successfully connected and vaulted!" });
+        const { error: dbError } = await supabase
+            .from('integrations')
+            .upsert({ 
+                org_id: orgId,
+                provider: 'discord', 
+                secret_id: secretId 
+            }, { onConflict: 'org_id, provider' });
+
+        if (dbError) throw new Error(`DB Error: ${dbError.message}`);
+
+        res.json({ success: true, message: "Discord connected successfully!" });
+
     } catch (error) {
-        console.error("❌ Failed to save Discord token:", error.message);
-        res.status(500).json({ error: "Failed to securely store integration." });
+        console.error("❌ Discord Save Error:", error.message);
+        res.status(500).json({ error: "Failed to save Discord integration." });
     }
 });
 
-// 🌟 NEW: Disconnect Discord
+// 4. Delete Discord
 app.delete('/api/admin/discord-token', async (req, res) => {
-    try {
-        // Delete the discord row from the integrations table
-        const { error } = await supabase
-            .from('integrations')
-            .delete()
-            .eq('provider', 'discord');
+    const { orgId } = req.body;
+    if (!orgId) return res.status(400).json({ error: "Missing orgId" });
 
-        if (error) throw error;
-        res.json({ message: "Disconnected successfully" });
+    try {
+        console.log(`🗑️ Disconnecting discord for Org: ${orgId}`);
+        await supabase.from('integrations').delete().eq('provider', 'discord').eq('org_id', orgId);
+        res.json({ success: true, message: "Discord disconnected." });
     } catch (error) {
-        res.status(500).json({ error: "Failed to disconnect" });
+        console.error("❌ Discord Disconnect Error:", error.message);
+        res.status(500).json({ error: "Failed to disconnect Discord." });
     }
 });
 

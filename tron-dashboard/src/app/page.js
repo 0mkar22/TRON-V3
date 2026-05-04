@@ -9,10 +9,13 @@ export default async function Home() {
   // 2. Securely fetch the logged-in user
   const { data: { user } } = await supabase.auth.getUser();
 
-  // 3. Fetch Workflows directly on the server (No useEffect needed!)
+  // 🌟 Extract the metadata we saved during onboarding!
+  const fullName = user?.user_metadata?.full_name || 'User';
+  const companyName = user?.user_metadata?.company_name || 'Personal Workspace';
+
+  // 3. Fetch Workflows directly on the server
   let workflows = [];
   try {
-      // cache: 'no-store' ensures the dashboard always fetches fresh data on reload
       const res = await fetch('https://tron-v3.onrender.com/api/admin/dashboard-workflows', {
           cache: 'no-store' 
       });
@@ -24,7 +27,7 @@ export default async function Home() {
       console.error("Failed to fetch workflows:", error);
   }
 
-  // 🌟 SERVER ACTION: Log Out
+  // SERVER ACTION: Log Out
   const handleLogout = async () => {
       'use server'
       const supabaseServer = await createClient();
@@ -36,26 +39,35 @@ export default async function Home() {
     <div className="max-w-6xl mx-auto space-y-8 pb-12">
       
       {/* Hero / System Status Section */}
-      <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center">
-        <div className="text-center md:text-left">
-          <h1 className="text-3xl font-extrabold text-gray-900">Welcome to T.R.O.N. V3</h1>
+      <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center relative overflow-hidden">
+        
+        {/* Subtle background decoration */}
+        <div className="absolute top-0 right-0 -mt-4 -mr-4 w-32 h-32 bg-green-50 rounded-full opacity-50 blur-2xl pointer-events-none"></div>
+
+        <div className="text-center md:text-left relative z-10">
           
-          {user?.email && (
-            <p className="text-sm font-medium text-indigo-600 mt-2">
-              Logged in securely as: {user.email}
-            </p>
-          )}
+          {/* 🌟 New Workspace Badge */}
+          <div className="inline-flex items-center space-x-2 bg-gray-100 px-3 py-1 rounded-full text-xs font-bold text-gray-600 tracking-wide mb-3 uppercase">
+            <span>🏢</span>
+            <span>{companyName}</span>
+          </div>
+
+          {/* 🌟 Personalized Welcome */}
+          <h1 className="text-3xl font-extrabold text-gray-900">Welcome back, {fullName}</h1>
+          
+          <p className="text-sm font-medium text-indigo-600 mt-2">
+            Logged in securely as: {user?.email}
+          </p>
 
           <p className="text-gray-500 mt-2 text-lg">Your automated project management and AI code review engine is online.</p>
         </div>
         
-        <div className="mt-6 md:mt-0 flex flex-col items-center md:items-end space-y-4">
-            <span className="inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-full font-semibold text-sm shadow-sm">
+        <div className="mt-6 md:mt-0 flex flex-col items-center md:items-end space-y-4 relative z-10">
+            <span className="inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-full font-semibold text-sm shadow-sm border border-green-200">
               <span className="w-2.5 h-2.5 bg-green-500 rounded-full mr-2 animate-pulse"></span>
               Engine Active
             </span>
             
-            {/* 🌟 Log Out Form (Server Action) */}
             <form action={handleLogout}>
                 <button 
                   type="submit"
@@ -71,7 +83,7 @@ export default async function Home() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Link href="/integrations" className="block group">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-green-400 transition-all duration-200 h-full flex flex-col">
-            <div className="text-4xl mb-4">🔌</div>
+            <div className="text-4xl mb-4 transition-transform group-hover:scale-110">🔌</div>
             <h3 className="text-xl font-bold text-gray-800 group-hover:text-green-600 transition-colors">Integrations</h3>
             <p className="text-gray-500 mt-2 text-sm leading-relaxed flex-grow">
               Connect your PM tools (Basecamp, Jira, Monday) and link your communication channels (Discord, Slack).
@@ -81,7 +93,7 @@ export default async function Home() {
 
         <Link href="/repositories" className="block group">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-green-400 transition-all duration-200 h-full flex flex-col">
-            <div className="text-4xl mb-4">📦</div>
+            <div className="text-4xl mb-4 transition-transform group-hover:scale-110">📦</div>
             <h3 className="text-xl font-bold text-gray-800 group-hover:text-green-600 transition-colors">Workflow Mapping</h3>
             <p className="text-gray-500 mt-2 text-sm leading-relaxed flex-grow">
               Map your GitHub repositories to your PM boards and configure automated webhook column movements.
@@ -91,7 +103,7 @@ export default async function Home() {
 
         <Link href="/activity" className="block group">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-green-400 transition-all duration-200 h-full flex flex-col">
-            <div className="text-4xl mb-4">🚀</div>
+            <div className="text-4xl mb-4 transition-transform group-hover:scale-110">🚀</div>
             <h3 className="text-xl font-bold text-gray-800 group-hover:text-green-600 transition-colors">Mission Control</h3>
             <p className="text-gray-500 mt-2 text-sm leading-relaxed flex-grow">
               Monitor live AI code reviews, Git webhook deliveries, and the Redis background worker queue.
@@ -101,8 +113,9 @@ export default async function Home() {
       </div>
 
       {/* VS Code Extension Banner */}
-      <div className="bg-gray-900 rounded-xl p-8 shadow-lg text-white flex flex-col md:flex-row items-center justify-between border border-gray-800 mt-8">
-        <div className="mb-6 md:mb-0">
+      <div className="bg-gray-900 rounded-xl p-8 shadow-lg text-white flex flex-col md:flex-row items-center justify-between border border-gray-800 mt-8 relative overflow-hidden">
+        <div className="absolute right-0 bottom-0 opacity-10 text-9xl pointer-events-none transform translate-x-1/4 translate-y-1/4">💻</div>
+        <div className="mb-6 md:mb-0 relative z-10">
             <h3 className="text-xl font-bold flex items-center text-blue-400">
               <span className="mr-3 text-2xl">💻</span> VS Code Extension
             </h3>
@@ -113,7 +126,7 @@ export default async function Home() {
               After downloading, install via terminal: <span className="text-gray-300 bg-gray-800 px-2 py-1 rounded">code --install-extension tron.vsix</span>
             </p>
         </div>
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0 relative z-10">
            <a 
              href="/tron-vscode-0.0.1.vsix" 
              download="tron-vscode-0.0.1.vsix"
@@ -131,7 +144,7 @@ export default async function Home() {
           
           {workflows.length === 0 ? (
               <div className="bg-white p-8 rounded-xl border border-dashed border-gray-300 text-center shadow-sm">
-                  <span className="text-4xl mb-3 block">🔌</span>
+                  <span className="text-4xl mb-3 block opacity-50">🔌</span>
                   <h3 className="text-lg font-semibold text-gray-700">No repositories connected yet</h3>
                   <p className="text-gray-500 text-sm mt-1">Head over to the Repositories tab to map your first workflow.</p>
               </div>

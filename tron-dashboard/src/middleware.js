@@ -1,7 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 
-// 🌟 Changed back to "middleware"
 export async function middleware(request) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -29,22 +28,38 @@ export async function middleware(request) {
   )
 
   const { data: { user } } = await supabase.auth.getUser()
+  const pathname = request.nextUrl.pathname
 
+  // 1. IF NOT LOGGED IN: Kick them to the login page (unless they are already on auth pages)
   if (
     !user && 
-    !request.nextUrl.pathname.startsWith('/login') && 
-    !request.nextUrl.pathname.startsWith('/signup') && 
-    !request.nextUrl.pathname.startsWith('/auth')
+    !pathname.startsWith('/login') && 
+    !pathname.startsWith('/signup') && 
+    !pathname.startsWith('/auth')
   ) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  if (user && (request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup'))) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/'
-    return NextResponse.redirect(url)
+  // 2. IF LOGGED IN: The Onboarding Check
+  if (user) {
+    // We check if they have a company name in their metadata
+    const hasCompletedOnboarding = !!user.user_metadata?.company_name
+
+    // A. If they HAVEN'T finished onboarding, force them to the /onboarding page
+    if (!hasCompletedOnboarding && !pathname.startsWith('/onboarding') && !pathname.startsWith('/auth')) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/onboarding'
+      return NextResponse.redirect(url)
+    }
+
+    // B. If they HAVE finished onboarding, keep them away from auth and onboarding pages
+    if (hasCompletedOnboarding && (pathname.startsWith('/login') || pathname.startsWith('/signup') || pathname.startsWith('/onboarding'))) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/'
+      return NextResponse.redirect(url)
+    }
   }
 
   return supabaseResponse
