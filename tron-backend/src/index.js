@@ -635,12 +635,8 @@ app.get('/api/auth/basecamp/callback', async (req, res) => {
 
         console.log("🎉 All done! Sending success response.");
 
-        // 🌟 We stop the redirect so you can read the exact database output on your screen!
-        res.json({
-            success: true,
-            message: "Basecamp connected successfully!",
-            insertedRow: upsertData
-        });
+       // Redirect back to the TRON dashboard!
+        res.redirect('http://localhost:3000/integrations');
 
     } catch (error) {
         console.error("❌ Basecamp Callback Error:", error.message || error.response?.data);
