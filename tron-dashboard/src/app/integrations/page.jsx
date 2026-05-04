@@ -4,16 +4,17 @@ import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 
 export default async function IntegrationsPage() {
-    // 1. Initialize Supabase & Get User
+    // 1. Initialize Supabase & Get User securely on the server
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) return redirect('/login');
 
-    // 2. Fetch Organization ID and existing integrations instantly on the server
+    // 2. Fetch Organization ID and existing integrations instantly
     const { data: userData } = await supabase.from('users').select('org_id').eq('id', user.id).single();
     const orgId = userData?.org_id;
 
+    // Fetch connected tools to update the UI
     const { data: integrations } = await supabase.from('integrations').select('*').eq('org_id', orgId);
 
     // Helper to check what is currently connected
@@ -33,20 +34,20 @@ export default async function IntegrationsPage() {
         // Get Org ID securely to send to Render
         const { data: { user } } = await supabaseServer.auth.getUser();
         const { data: userData } = await supabaseServer.from('users').select('org_id').eq('id', user.id).single();
-        const orgId = userData?.org_id;
+        const secureOrgId = userData?.org_id;
 
-        // Pass the data to the Render Engine, let it handle the Supabase Vault and DB insertion!
+        // Pass data to Render Engine to handle the Supabase Vault encryption
         try {
             if (provider === 'github') {
                 await fetch('https://tron-v3.onrender.com/api/admin/save-integration', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ provider: 'github', token: formData.get('token'), orgId })
+                    body: JSON.stringify({ provider: 'github', token: formData.get('token'), orgId: secureOrgId })
                 });
             } 
             else if (provider === 'discord') {
                 await fetch('https://tron-v3.onrender.com/api/admin/discord-token', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token: formData.get('token'), orgId })
+                    body: JSON.stringify({ token: formData.get('token'), orgId: secureOrgId })
                 });
             }
             else if (provider === 'basecamp') {
@@ -56,18 +57,29 @@ export default async function IntegrationsPage() {
                         accountId: formData.get('accountId'),
                         clientId: formData.get('clientId'),
                         clientSecret: formData.get('clientSecret'),
-                        orgId // Passing the Org ID so Render knows who is authenticating
+                        orgId: secureOrgId 
                     })
                 });
-                const data = await res.json();
-                if (data.redirectUrl) redirectUrl = data.redirectUrl;
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.redirectUrl) redirectUrl = data.redirectUrl;
+                } else {
+                    // 🌟 NEW: Read the exact error message from Render!
+                    const errorText = await res.text();
+                    console.error(`🚨 Render Backend Error (${res.status}):`, errorText);
+                }
             }
         } catch (error) {
             console.error(`Failed to sync ${provider} with Render engine:`, error);
         }
 
         revalidatePath('/integrations');
-        if (redirectUrl) redirect(redirectUrl);
+        
+        // Next.js requires redirect() to be called OUTSIDE of try/catch blocks
+        if (redirectUrl) {
+            redirect(redirectUrl);
+        }
     };
 
     // 🌟 SERVER ACTION: Secure Proxy Delete
@@ -78,18 +90,18 @@ export default async function IntegrationsPage() {
 
         const { data: { user } } = await supabaseServer.auth.getUser();
         const { data: userData } = await supabaseServer.from('users').select('org_id').eq('id', user.id).single();
-        const orgId = userData?.org_id;
+        const secureOrgId = userData?.org_id;
 
         // Tell Render to delete the vault secret AND the database row
         try {
             if (provider === 'github') await fetch('https://tron-v3.onrender.com/api/admin/delete-integration/github', { 
-                method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId }) 
+                method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId: secureOrgId }) 
             });
             if (provider === 'discord') await fetch('https://tron-v3.onrender.com/api/admin/discord-token', { 
-                method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId }) 
+                method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId: secureOrgId }) 
             });
             if (provider === 'basecamp') await fetch('https://tron-v3.onrender.com/api/admin/delete-integration/basecamp', { 
-                method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId }) 
+                method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId: secureOrgId }) 
             });
         } catch (e) {
             console.error(`Failed to disconnect ${provider} from Render engine:`, e);
@@ -113,8 +125,6 @@ export default async function IntegrationsPage() {
             <div className="mb-10">
                 <h2 className="text-xl font-bold text-gray-800 mb-6">Version Control</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    
-                    {/* GitHub Inline Card */}
                     <div className={`bg-white p-6 rounded-xl border ${github ? 'border-blue-400 shadow-md ring-1 ring-blue-400' : 'border-gray-200 shadow-sm'} flex flex-col`}>
                         <div className="flex justify-between items-start mb-4">
                             <div className="flex items-center space-x-3">
@@ -152,8 +162,6 @@ export default async function IntegrationsPage() {
             <div>
                 <h2 className="text-xl font-bold text-gray-800 mb-4 border-b border-gray-200 pb-2">Project Management</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    
-                    {/* Basecamp Interactive Card */}
                     <div className={`bg-white p-6 rounded-xl border ${basecamp ? 'border-indigo-400 shadow-md ring-1 ring-indigo-400' : 'border-gray-200 shadow-sm'} flex flex-col`}>
                         <div className="flex justify-between items-start mb-4">
                             <div className="flex items-center space-x-3">
@@ -213,8 +221,6 @@ export default async function IntegrationsPage() {
             <div>
                 <h2 className="text-xl font-bold text-gray-800 mb-4 border-b border-gray-200 pb-2">Communication Channels</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    
-                    {/* Discord Card */}
                     <div className={`bg-white p-6 rounded-xl border ${discord ? 'border-indigo-400 shadow-md ring-1 ring-indigo-400' : 'border-gray-200 shadow-sm'} relative overflow-hidden flex flex-col`}>
                         {discord && <div className="absolute top-0 left-0 w-full h-1 bg-indigo-500"></div>}
                         
@@ -246,7 +252,6 @@ export default async function IntegrationsPage() {
                         )}
                     </div>
 
-                    {/* Slack Card */}
                     <div className={`bg-white p-6 rounded-xl border ${slack ? 'border-teal-400 shadow-md ring-1 ring-teal-400' : 'border-gray-200 shadow-sm'} flex flex-col`}>
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-bold text-gray-900 flex items-center">
@@ -275,7 +280,6 @@ export default async function IntegrationsPage() {
                             </form>
                         )}
                     </div>
-
                 </div>
             </div>
             

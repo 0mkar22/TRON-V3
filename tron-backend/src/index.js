@@ -503,57 +503,50 @@ app.delete('/api/admin/delete-integration/:provider', async (req, res) => {
 
 // 🌟 Start the Basecamp OAuth Dance (State Parameter Edition)
 app.post('/api/auth/basecamp/init', async (req, res) => {
-    const { accountId, clientId, clientSecret } = req.body;
+    // 🌟 FIX 1: Extract orgId directly from the request body!
+    const { accountId, clientId, clientSecret, orgId } = req.body;
 
-    if (!accountId || !clientId || !clientSecret) {
-        return res.status(400).json({ error: "Missing Basecamp credentials." });
+    if (!accountId || !clientId || !clientSecret || !orgId) {
+        return res.status(400).json({ error: "Missing Basecamp credentials or Org ID." });
     }
 
     try {
         console.log("👉 Saving pending Basecamp credentials...");
 
-        // 1. Get the current active org_id (acting as our user session)
-        const { data: masterOrg } = await supabase
-            .from('integrations')
-            .select('org_id')
-            .eq('provider', 'github')
-            .single();
-            
-        const activeOrgId = masterOrg?.org_id || null;
-
-        // 2. Pack the pending credentials
+        // 1. Pack the pending credentials
         const pendingData = JSON.stringify({ accountId, clientId, clientSecret });
 
         const { data: secretId, error: vaultError } = await supabase.rpc('insert_secret', {
-            secret_name: `basecamp_pending_${Date.now()}`,
+            secret_name: `basecamp_pending_${orgId}`, // Tie the vault name directly to the org
             secret_description: `Pending OAuth keys for Basecamp`,
             secret_value: pendingData
         });
 
         if (vaultError || !secretId) throw vaultError;
 
+        // 🌟 FIX 2 & 3: Pass org_id (it is required by the DB) and use the correct onConflict rule!
         const { error: dbError } = await supabase
             .from('integrations')
             .upsert({ 
+                org_id: orgId,
                 provider: 'basecamp_pending', 
                 secret_id: secretId
-                // We no longer save org_id here, we pass it in the URL!
-            }, { onConflict: 'provider' });
+            }, { onConflict: 'org_id, provider' });
 
         if (dbError) throw dbError;
 
-        // 3. Construct the Authorization URL WITH THE STATE PARAMETER
+        // 2. Construct the Authorization URL WITH THE STATE PARAMETER
         const redirectUri = encodeURIComponent("https://tron-v3.onrender.com/api/auth/basecamp/callback");
         
         // Encode the org_id so it safely travels through the browser
-        const stateParam = encodeURIComponent(activeOrgId); 
+        const stateParam = encodeURIComponent(orgId); 
 
         const authUrl = `https://launchpad.37signals.com/authorization/new?type=web_server&client_id=${clientId}&redirect_uri=${redirectUri}&state=${stateParam}`;
 
         res.json({ success: true, redirectUrl: authUrl });
 
     } catch (error) {
-        console.error("❌ Basecamp Init Error:", error.message);
+        console.error("❌ Basecamp Init Error:", error.message || error);
         res.status(500).json({ error: "Failed to initialize Basecamp auth." });
     }
 });
