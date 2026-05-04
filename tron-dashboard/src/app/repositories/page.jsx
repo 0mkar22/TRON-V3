@@ -12,13 +12,14 @@ export default async function RepositoriesPage() {
 
     const { data: userData } = await supabase.from('users').select('org_id').eq('id', user.id).single();
     
-    const { data: workflows } = await supabase
-        .from('workflows')
+    // 🌟 FIXED: Querying the 'repositories' table to match your database schema
+    const { data: repositories } = await supabase
+        .from('repositories')
         .select('*')
         .eq('org_id', userData?.org_id)
         .order('created_at', { ascending: false });
 
-    // 🌟 NEW: Fetch the absolute truth about what is connected from Supabase
+    // Fetch the absolute truth about what is connected from Supabase
     const { data: integrations } = await supabase
         .from('integrations')
         .select('provider')
@@ -38,7 +39,7 @@ export default async function RepositoriesPage() {
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 <div className="lg:col-span-7 bg-white p-8 rounded-xl border border-gray-200 shadow-sm">
-                    {/* 🌟 NEW: Pass the truth to the Client Form */}
+                    {/* Pass the truth to the Client Form */}
                     <ClientForm connectedProviders={connectedProviders} />
                 </div>
 
@@ -47,33 +48,33 @@ export default async function RepositoriesPage() {
                         Active Mappings
                     </h2>
                     
-                    {workflows?.length === 0 ? (
+                    {repositories?.length === 0 ? (
                         <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-10 text-center">
                             <span className="text-4xl block mb-2 opacity-50">📭</span>
                             <h3 className="text-gray-700 font-bold">No mappings found</h3>
                             <p className="text-gray-500 text-sm mt-1">Create your first workflow mapping using the form.</p>
                         </div>
                     ) : (
-                        workflows?.map((workflow) => (
-                            <div key={workflow.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-3 transition-all hover:shadow-md">
+                        repositories?.map((repo) => (
+                            <div key={repo.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-3 transition-all hover:shadow-md">
                                 <div className="flex items-center space-x-2">
                                     <span className="text-xl">🐙</span>
-                                    <span className="font-bold text-gray-900 font-mono text-sm">{workflow.repo_name}</span>
+                                    <span className="font-bold text-gray-900 font-mono text-sm">{repo.repo_name}</span>
                                 </div>
                                 <div className="flex items-center space-x-2 text-sm text-gray-600 bg-gray-50 p-2 rounded">
                                     <span className="text-lg">⛺</span>
-                                    <span className="font-mono text-xs">{workflow.pm_project_id || 'N/A'}</span>
-                                    {workflow.communication_config?.channel_id && (
+                                    <span className="font-mono text-xs">{repo.pm_project_id || 'N/A'}</span>
+                                    {repo.communication_config?.channel_id && (
                                         <>
                                             <span className="ml-2 font-bold text-gray-300">|</span>
                                             <span className="text-lg ml-2">🎮</span>
-                                            <span className="font-mono text-xs">{workflow.communication_config.channel_id}</span>
+                                            <span className="font-mono text-xs">{repo.communication_config.channel_id}</span>
                                         </>
                                     )}
                                 </div>
                                 
                                 <form action={deleteWorkflowAction} className="mt-2 text-right">
-                                    <input type="hidden" name="workflowId" value={workflow.id} />
+                                    <input type="hidden" name="workflowId" value={repo.id} />
                                     <button type="submit" className="text-red-500 hover:text-white hover:bg-red-500 border border-red-200 px-3 py-1 rounded text-xs font-bold transition-colors">
                                         Delete Mapping
                                     </button>
