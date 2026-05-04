@@ -52,8 +52,31 @@
         "command": "tron.viewAIReview",
         "title": "View AI Code Review",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "tron.signIn",
+        "title": "T.R.O.N: Sign In"
+      },
+      {
+        "command": "tron.signOut",
+        "title": "T.R.O.N: Sign Out"
       }
     ],
+    "configuration": {
+      "title": "T.R.O.N.",
+      "properties": {
+        "tron.supabaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Your Supabase project URL (e.g. https://xyz.supabase.co)"
+        },
+        "tron.supabaseAnonKey": {
+          "type": "string",
+          "default": "",
+          "description": "Your Supabase anon/public API key"
+        }
+      }
+    },
     "menus": {
       "view/title": [
         {
@@ -101,6 +124,7 @@
     "webpack-cli": "^6.0.1"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.1",
     "axios": "^1.15.0"
   }
 }
