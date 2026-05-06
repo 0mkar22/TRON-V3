@@ -7,6 +7,7 @@ const path = require('path');
 const yaml = require('js-yaml');
 
 const BasecampAdapter = require('../adapters/basecamp');
+const { createClient } = require('@supabase/supabase-js');
 
 // ==========================================
 // 1. FETCH GITHUB REPOSITORIES
@@ -360,6 +361,63 @@ router.post('/basecamp/people', async (req, res) => {
     } catch (error) {
         console.error('❌ [ADMIN] Basecamp People Error:', error.message);
         res.status(500).json({ error: 'Failed to fetch people from Basecamp.' });
+    }
+});
+
+// 🌟 INITIALIZE ADMIN CLIENT
+// We use the service_role key to safely bypass RLS and trigger admin functions
+const supabaseAdmin = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+// ==========================================
+// 🌟 TEAM MANAGEMENT: INVITE DEVELOPER
+// ==========================================
+router.post('/invite-developer', async (req, res) => {
+    const { email } = req.body;
+    
+    // Grab the orgId from the JWT we set up earlier in the auth middleware!
+    const orgId = req.user?.org_id; 
+
+    if (!email) {
+        return res.status(400).json({ error: "Email is required." });
+    }
+    
+    if (!orgId) {
+        return res.status(401).json({ error: "Unauthorized: Missing Organization ID." });
+    }
+
+    try {
+        console.log(`✉️ [ADMIN] Attempting to invite ${email} to Org: ${orgId}`);
+
+        // 1. Send the invite via Supabase Admin API
+        const { data, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+            data: { org_id: orgId, role: 'developer' },
+            // ⚠️ This is where the developer lands after clicking the email link
+            redirectTo: 'https://tron-v3.onrender.com/onboarding/set-password' 
+        });
+
+        if (inviteError) throw inviteError;
+
+        // 2. Explicitly link them to the Org in your public.users table
+        const { error: dbError } = await supabaseAdmin
+            .from('users')
+            .upsert({ 
+                id: data.user.id, 
+                email: email, 
+                org_id: orgId, 
+                role: 'developer' 
+            }, { onConflict: 'id' });
+
+        if (dbError) throw dbError;
+
+        console.log(`✅ [ADMIN] Successfully invited ${email}`);
+        res.json({ message: `Invite sent to ${email} successfully!` });
+
+    } catch (error) {
+        console.error("❌ [ADMIN] Invite Error:", error.message);
+        res.status(500).json({ error: "Failed to send invite. Check server logs." });
     }
 });
 
