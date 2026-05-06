@@ -54,7 +54,7 @@ class BasecampAdapter {
     }
 
     static getBaseUrl(accountId, projectId) {
-        return `https://3.basecampapi.com/${accountId}/projects/${projectId}`;
+        return `https://3.basecampapi.com/${accountId}/buckets/${projectId}`;;
     }
 
     // ==========================================

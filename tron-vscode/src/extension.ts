@@ -25,7 +25,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // 1. Initialize Secure Supabase Client
     const supabase = createSupabaseClient(context, SUPABASE_URL, SUPABASE_ANON_KEY);
-    const tronProvider = new TronProvider();
+    const tronProvider = new TronProvider(supabase);
     vscode.window.registerTreeDataProvider('tron-tickets', tronProvider);
 
     // 2. The 24-Hour Enforcer
