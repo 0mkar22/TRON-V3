@@ -389,7 +389,8 @@ export function activate(context: vscode.ExtensionContext) {
             const ticketsRes = await axios.get(`${API_BASE_URL}/api/project/${encodedRepo}/tickets`).catch(() => ({ data: { isMapped: false, tickets: [] } }));
 
             // 2. Silently abort if the repo is not connected to the TRON Dashboard!
-            if (ticketsRes.data.isMapped === false) {
+            // 🌟 THE FIX: Aggressively block if it's explicitly false OR if the backend is still running old code
+            if (ticketsRes.data.isMapped === false || ticketsRes.data.isMapped === undefined) {
                 return false; 
             }
 
@@ -468,12 +469,11 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.workspace.onDidSaveTextDocument(async (document) => {
         if (document.uri.scheme !== 'file') {
-                return;
-            }
+            return;
+        }
         if (hasPromptedForTask || isCheckingBranch) {
-                return;
-            }
-
+            return;
+        }
         isCheckingBranch = true; 
 
         try {
@@ -489,15 +489,13 @@ export function activate(context: vscode.ExtensionContext) {
 
             const branchRegex = /^([^/]+)\/(\d+)-(.+)$/;
             if (currentBranch === 'main' || currentBranch === 'master' || !branchRegex.test(currentBranch)) {
+                
+                // 🌟 THE FIX: We mark it as prompted immediately, and we NEVER reset it!
+                // If you hit escape, or if it's an unmapped repo, it will respect your choice and stay quiet.
                 hasPromptedForTask = true; 
                 
-                // 🌟 THE FIX: Pass an argument to let the command know it was triggered by a save.
-                // The popup message was moved inside the command so it won't fire on unmapped repos!
-                const didSelectTask = await vscode.commands.executeCommand('tron.selectTaskPopup', { autoTrigger: true });
+                await vscode.commands.executeCommand('tron.selectTaskPopup', { autoTrigger: true });
                 
-                if (!didSelectTask) {
-                    hasPromptedForTask = false;
-                }
             } else {
                 hasPromptedForTask = true;
             }
