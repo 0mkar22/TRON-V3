@@ -12,6 +12,7 @@ const { getRepoConfigFromDB } = require('./config/db.js');
 // Adapters & Middleware
 const verifyGitHub = require('./middleware/verifyGitHub'); 
 const PMOrchestrator = require('./adapters/pm-orchestrator');
+const { requireAuth } = require('./middleware/auth');
 
 // Routes
 const adminRoutes = require('./routes/admin');
@@ -96,8 +97,8 @@ app.post('/api/discord/channels', async (req, res) => {
     }
 });
 
-// 🌟 NEW: "Silent" route to create a ticket without starting a branch
-app.post('/api/create-task', async (req, res) => {
+// 🌟 SECURED: "Silent" route to create a ticket without starting a branch
+app.post('/api/create-task', requireAuth, async (req, res) => {
     const { taskInput, repoName } = req.body;
     
     try {
@@ -107,7 +108,8 @@ app.post('/api/create-task', async (req, res) => {
              return res.status(400).json({ error: "No PM tool configured in database." });
         }
 
-        const newTaskId = await PMOrchestrator.resolveTask(config.pm_tool, taskInput, config.mapping);
+        // 🌟 THE FIX: Pass verified req.user.org_id to Orchestrator
+        const newTaskId = await PMOrchestrator.resolveTask(config.pm_tool, taskInput, config.mapping, req.user.org_id);
         res.json({ resolvedId: newTaskId });
     } catch (error) {
         console.error("Task creation failed:", error);
@@ -115,8 +117,8 @@ app.post('/api/create-task', async (req, res) => {
     }
 });
 
-// 🌟 NEW: Start Task, Move Column & Assign
-app.post('/api/start-task', async (req, res) => {
+// 🌟 SECURED: Start Task, Move Column & Assign
+app.post('/api/start-task', requireAuth, async (req, res) => {
     const { taskInput, repoName, developer } = req.body;
     
     try {
@@ -124,27 +126,26 @@ app.post('/api/start-task', async (req, res) => {
         let resolvedTaskID = taskInput.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase(); 
 
         if (config && config.pm_tool && config.pm_tool.provider !== "none") {
-            resolvedTaskID = await PMOrchestrator.resolveTask(config.pm_tool, taskInput, config.mapping);
+            // 🌟 THE FIX: Pass verified req.user.org_id to Orchestrator
+            resolvedTaskID = await PMOrchestrator.resolveTask(config.pm_tool, taskInput, config.mapping, req.user.org_id);
             
             const inProgressId = config.mapping.branch_created || config.mapping.in_progress;
             
             if (inProgressId) {
                 console.log(`🚚 [API] Moving task [${resolvedTaskID}] to In Progress column...`);
-                await PMOrchestrator.updateTicketStatus(config.pm_tool, resolvedTaskID, inProgressId);
+                await PMOrchestrator.updateTicketStatus(config.pm_tool, resolvedTaskID, inProgressId, req.user.org_id);
             }
 
-            // 🌟 NEW: Trigger the Auto-Assignment
             if (developer) {
                 console.log(`👤 [API] Attempting to assign developer: ${developer}`);
-                await PMOrchestrator.assignTicket(config.pm_tool, resolvedTaskID, developer);
+                await PMOrchestrator.assignTicket(config.pm_tool, resolvedTaskID, developer, req.user.org_id);
             }
-        }
-
-        // Fire the Background Worker Event
-        await redis.lpush('tron:webhook_queue', JSON.stringify({
+            // Fire the Background Worker Event
+            await redis.lpush('tron:webhook_queue', JSON.stringify({
             eventType: 'local_start',
             payload: { taskId: resolvedTaskID, repository: { full_name: repoName } }
         }));
+        }
 
         res.json({ resolvedId: resolvedTaskID });
 
@@ -172,18 +173,20 @@ app.get('/api/projects', async (req, res) => {
     }
 });
 
-// 🌟 NEW: Fetch Tickets for Go Daemon
-app.get('/api/project/:encodedRepo/tickets', async (req, res) => {
+// 🌟 SECURED: Fetch Tickets for VS Code
+app.get('/api/project/:encodedRepo/tickets', requireAuth, async (req, res) => {
     const repo = decodeURIComponent(req.params.encodedRepo);
     
     try {
         const config = await getRepoConfigFromDB(repo);
-        if (!config || config.pm_tool.provider === "none") {
-            return res.json({ tickets: [] });
+        
+        // 🌟 THE FIX: Explicitly tell VS Code if this repo is NOT connected
+        if (!config || !config.pm_tool || config.pm_tool.provider === "none") {
+            return res.json({ isMapped: false, tickets: [] });
         }
 
-        const activeTickets = await PMOrchestrator.getTickets(config.pm_tool, config.mapping);
-        res.json({ tickets: activeTickets }); 
+        const activeTickets = await PMOrchestrator.getTickets(config.pm_tool, config.mapping, req.user.org_id);
+        res.json({ isMapped: true, tickets: activeTickets }); 
     } catch (error) {
         console.error("❌ Failed to fetch tickets:", error.message);
         res.status(500).json({ error: "Failed to fetch tickets." });
@@ -195,8 +198,8 @@ app.get('/api/project/:encodedRepo/tickets', async (req, res) => {
 // AI & WEBHOOK QUEUE
 // ==========================================
 
-// ✨ AI TASK SUGGESTIONS API
-app.post('/api/suggest-tasks', async (req, res) => {
+// 🌟 SECURED: AI TASK SUGGESTIONS API
+app.post('/api/suggest-tasks', requireAuth, async (req, res) => {
     const { codeDiff } = req.body;
     
     if (!codeDiff || codeDiff.trim().length === 0) {
@@ -266,7 +269,7 @@ app.post('/api/repositories', async (req, res) => {
 });
 
 // 🌟 FETCH AI REVIEW FOR VS CODE
-app.get('/api/review/:taskId', async (req, res) => {
+app.get('/api/review/:taskId', requireAuth, async (req, res) => {
     try {
         const { taskId } = req.params;
         const review = await redis.get(`ai_review:${taskId}`);
