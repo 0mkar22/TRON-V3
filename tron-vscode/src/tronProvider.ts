@@ -70,6 +70,14 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
         try {
             const encodedRepo = encodeURIComponent(repoName);
             const response = await axios.get(`${API_BASE_URL}/api/project/${encodedRepo}/tickets`);
+            
+            // 🌟 THE FIX: Tell the user exactly why no tickets are loading
+            if (response.data.isMapped === false) {
+                const unmappedItem = new vscode.TreeItem("⚠️ This repository is not mapped in TRON", vscode.TreeItemCollapsibleState.None);
+                unmappedItem.description = "Link it in the TRON dashboard";
+                return [unmappedItem];
+            }
+
             const tickets = response.data.tickets || [];
 
             if (tickets.length === 0) {
@@ -89,7 +97,7 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
                 (item as any).taskId = t.id;
                 (item as any).rawTitle = t.title;
                 
-                // 🌟 THE FIX: Make the entire ticket clickable!
+                // Make the entire ticket clickable!
                 item.command = {
                     command: 'tron.startTaskFromTree',
                     title: 'Start Task',

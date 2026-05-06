@@ -179,13 +179,14 @@ app.get('/api/project/:encodedRepo/tickets', requireAuth, async (req, res) => {
     
     try {
         const config = await getRepoConfigFromDB(repo);
-        if (!config || config.pm_tool.provider === "none") {
-            return res.json({ tickets: [] });
+        
+        // 🌟 THE FIX: Explicitly tell VS Code if this repo is NOT connected
+        if (!config || !config.pm_tool || config.pm_tool.provider === "none") {
+            return res.json({ isMapped: false, tickets: [] });
         }
 
-        // 🌟 THE FIX: Pass the verified req.user.org_id to the Orchestrator!
         const activeTickets = await PMOrchestrator.getTickets(config.pm_tool, config.mapping, req.user.org_id);
-        res.json({ tickets: activeTickets }); 
+        res.json({ isMapped: true, tickets: activeTickets }); 
     } catch (error) {
         console.error("❌ Failed to fetch tickets:", error.message);
         res.status(500).json({ error: "Failed to fetch tickets." });

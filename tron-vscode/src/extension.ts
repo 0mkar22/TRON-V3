@@ -367,23 +367,40 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    let quickPickCmd = vscode.commands.registerCommand('tron.selectTaskPopup', async () => {
+    // 🌟 THE FIX: Re-engineered AI Popup Flow
+    let quickPickCmd = vscode.commands.registerCommand('tron.selectTaskPopup', async (args: any) => {
         try {
             const workspaceFolders = vscode.workspace.workspaceFolders;
             if (!workspaceFolders) {
                 return false;
             }
+            
             const cwd = workspaceFolders[0].uri.fsPath;
-
             const { stdout: remoteOut } = await execAsync('git config --get remote.origin.url', { cwd });
             const repoMatch = remoteOut.trim().match(/github\.com[:\/](.+?\.git|.+)/);
             if (!repoMatch) {
                 return false;
             }
+            
             const repoName = repoMatch[1].replace('.git', '');
+            const encodedRepo = encodeURIComponent(repoName);
+
+            // 1. Fetch tickets FIRST to verify mapping status
+            const ticketsRes = await axios.get(`${API_BASE_URL}/api/project/${encodedRepo}/tickets`).catch(() => ({ data: { isMapped: false, tickets: [] } }));
+
+            // 2. Silently abort if the repo is not connected to the TRON Dashboard!
+            if (ticketsRes.data.isMapped === false) {
+                return false; 
+            }
+
+            // 3. ONLY show the unlinked warning if it is an officially connected TRON repo
+            if (args && args.autoTrigger) {
+                vscode.window.showInformationMessage(`T.R.O.N: Unlinked code changes detected. What are you working on?`);
+            }
 
             vscode.window.showInformationMessage('✨ T.R.O.N: Analyzing your uncommitted code...');
 
+            // 4. Generate Diff
             let codeDiff = "";
             try {
                 const { stdout: diffOut } = await execAsync('git diff', { cwd });
@@ -392,15 +409,16 @@ export function activate(context: vscode.ExtensionContext) {
                 // Proceed safely
             }
 
-            const encodedRepo = encodeURIComponent(repoName);
-            const [ticketsRes, aiRes] = await Promise.all([
-                axios.get(`${API_BASE_URL}/api/project/${encodedRepo}/tickets`).catch(() => ({ data: { tickets: [] } })),
-                codeDiff ? axios.post(`${API_BASE_URL}/api/suggest-tasks`, { codeDiff }).catch(() => ({ data: { suggestions: [] } })) : Promise.resolve({ data: { suggestions: [] } })
-            ]);
+            // 5. Ask AI for suggestions ONLY because we know this is a connected repo
+            let aiSuggestions: string[] = [];
+            if (codeDiff) {
+                try {
+                    const aiRes = await axios.post(`${API_BASE_URL}/api/suggest-tasks`, { codeDiff });
+                    aiSuggestions = aiRes.data.suggestions || [];
+                } catch (e) {}
+            }
 
             const tickets = ticketsRes.data.tickets || [];
-            const aiSuggestions = aiRes.data.suggestions || [];
-
             const quickPickItems: TaskQuickPickItem[] = [];
 
             aiSuggestions.forEach((suggestion: string) => {
@@ -450,11 +468,11 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.workspace.onDidSaveTextDocument(async (document) => {
         if (document.uri.scheme !== 'file') {
-            return;
-        }
+                return;
+            }
         if (hasPromptedForTask || isCheckingBranch) {
-            return;
-        }
+                return;
+            }
 
         isCheckingBranch = true; 
 
@@ -472,9 +490,11 @@ export function activate(context: vscode.ExtensionContext) {
             const branchRegex = /^([^/]+)\/(\d+)-(.+)$/;
             if (currentBranch === 'main' || currentBranch === 'master' || !branchRegex.test(currentBranch)) {
                 hasPromptedForTask = true; 
-                vscode.window.showInformationMessage(`T.R.O.N: Unlinked code changes detected. What are you working on?`);
                 
-                const didSelectTask = await vscode.commands.executeCommand('tron.selectTaskPopup');
+                // 🌟 THE FIX: Pass an argument to let the command know it was triggered by a save.
+                // The popup message was moved inside the command so it won't fire on unmapped repos!
+                const didSelectTask = await vscode.commands.executeCommand('tron.selectTaskPopup', { autoTrigger: true });
+                
                 if (!didSelectTask) {
                     hasPromptedForTask = false;
                 }
