@@ -89,6 +89,14 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
                 (item as any).taskId = t.id;
                 (item as any).rawTitle = t.title;
                 
+                // 🌟 THE FIX: Make the entire ticket clickable!
+                item.command = {
+                    command: 'tron.startTaskFromTree',
+                    title: 'Start Task',
+                    // Pass the exact data the command needs
+                    arguments: [{ taskId: t.id, rawTitle: t.title }] 
+                };
+                
                 return item;
             });
 
