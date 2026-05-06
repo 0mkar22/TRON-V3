@@ -8,6 +8,7 @@ const yaml = require('js-yaml');
 
 const BasecampAdapter = require('../adapters/basecamp');
 const { createClient } = require('@supabase/supabase-js');
+const { requireAuth } = require('../middleware/auth');
 
 // ==========================================
 // 1. FETCH GITHUB REPOSITORIES
@@ -374,7 +375,7 @@ const supabaseAdmin = createClient(
 // ==========================================
 // 🌟 TEAM MANAGEMENT: INVITE DEVELOPER
 // ==========================================
-router.post('/invite-developer', async (req, res) => {
+router.post('/invite-developer', requireAuth, async (req, res) => {
     const { email } = req.body;
     
     // Grab the orgId from the JWT we set up earlier in the auth middleware!
