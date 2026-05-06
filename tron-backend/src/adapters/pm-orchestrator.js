@@ -5,19 +5,21 @@ const MondayAdapter = require('./monday');
 
 class PMOrchestrator {
     
-    static async getTickets(pmConfig = {}, mapping = {}) {
+    // 🌟 V3: Added orgId parameter
+    static async getTickets(pmConfig = {}, mapping = {}, orgId) {
         const provider = pmConfig.provider || pmConfig.pm_provider || 'none';
         const projectId = pmConfig.project_id || pmConfig.pm_project_id || pmConfig.board_id;
         
         try {
             if (provider === 'basecamp') {
-                // 🌟 FIX: Updated to V3 database key 'todo'
+                if (!orgId) throw new Error("Missing orgId for Basecamp request.");
+                
                 const todoTasks = mapping.todo 
-                    ? await BasecampAdapter.fetchActiveTasks(projectId, mapping.todo) 
+                    ? await BasecampAdapter.fetchActiveTasks(projectId, mapping.todo, orgId) 
                     : [];
                 
                 const inProgressTasks = mapping.branch_created 
-                    ? await BasecampAdapter.fetchActiveTasks(projectId, mapping.branch_created) 
+                    ? await BasecampAdapter.fetchActiveTasks(projectId, mapping.branch_created, orgId) 
                     : [];
                 
                 return [
@@ -35,7 +37,8 @@ class PMOrchestrator {
         return [];
     }
 
-    static async updateTicketStatus(pmConfig = {}, ticketId, newStatusID) {
+    // 🌟 V3: Added orgId parameter
+    static async updateTicketStatus(pmConfig = {}, ticketId, newStatusID, orgId) {
         const provider = pmConfig.provider || pmConfig.pm_provider || 'none';
         const projectId = pmConfig.project_id || pmConfig.pm_project_id || pmConfig.board_id;
         
@@ -46,7 +49,8 @@ class PMOrchestrator {
 
         try {
             if (provider === 'basecamp') {
-                await BasecampAdapter.updateTicketStatus(ticketId, newStatusID, projectId); 
+                if (!orgId) throw new Error("Missing orgId for Basecamp request.");
+                await BasecampAdapter.updateTicketStatus(ticketId, newStatusID, projectId, orgId); 
             } else if (provider === 'jira') {
                 await JiraAdapter.updateTicketStatus(ticketId, newStatusID);
             } else if (provider === 'monday') { 
@@ -58,15 +62,16 @@ class PMOrchestrator {
         }
     }
 
-    static async resolveTask(pmConfig = {}, taskName, mapping = {}) {
+    // 🌟 V3: Added orgId parameter
+    static async resolveTask(pmConfig = {}, taskName, mapping = {}, orgId) {
         const provider = pmConfig.provider || pmConfig.pm_provider || 'none';
         const projectId = pmConfig.project_id || pmConfig.pm_project_id || pmConfig.board_id;
         const fallbackId = taskName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
 
         try {
             if (provider === 'basecamp') {
-                // 🌟 FIX: Updated to V3 database key 'todo'
-                return await BasecampAdapter.resolveTask(projectId, mapping.todo, taskName);
+                if (!orgId) throw new Error("Missing orgId for Basecamp request.");
+                return await BasecampAdapter.resolveTask(projectId, mapping.todo, taskName, orgId);
             } else if (provider === 'jira' || provider === 'monday') {
                 return fallbackId; 
             }
@@ -77,18 +82,18 @@ class PMOrchestrator {
         return fallbackId;
     }
 
-    static async assignTicket(pmConfig = {}, ticketId, developer) {
+    // 🌟 V3: Added orgId parameter
+    static async assignTicket(pmConfig = {}, ticketId, developer, orgId) {
         const provider = pmConfig.provider || pmConfig.pm_provider || 'none';
         const projectId = pmConfig.project_id || pmConfig.pm_project_id || pmConfig.board_id;
         
-        // If the extension failed to get a git username, it defaults to 'dev'. Skip in this case.
         if (!developer || developer === 'dev') return; 
 
         try {
             if (provider === 'basecamp') {
-                await BasecampAdapter.assignDeveloper(projectId, ticketId, developer); 
+                if (!orgId) throw new Error("Missing orgId for Basecamp request.");
+                await BasecampAdapter.assignDeveloper(projectId, ticketId, developer, orgId); 
             }
-            // (You can add Jira/Monday assignment logic here in the future)
         } catch (error) {
             console.error(`❌ [ORCHESTRATOR] Failed to assign ticket for ${provider}:`, error.message);
         }

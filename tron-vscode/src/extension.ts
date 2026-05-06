@@ -8,8 +8,12 @@ import { createSupabaseClient } from './supabaseClient';
 const execAsync = promisify(exec);
 const API_BASE_URL = 'https://tron-v3.onrender.com';
 const DAEMON_API_KEY = 'tron_v3_super_secret_key_123';
-const SUPABASE_URL = 'https://your-project.supabase.co';
-const SUPABASE_ANON_KEY = 'your-anon-key';
+const SUPABASE_URL = 'https://kobhfwjnbmbtgcikeulp.supabase.co'; // ⚠️ ADD YOUR URL
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvYmhmd2puYm1idGdjaWtldWxwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MzU3NzIsImV4cCI6MjA5MjQxMTc3Mn0.mopgJImaUiLfxCxSW-VSCcGkr4rUtEYvOrHJDMZsL4A'; // ⚠️ ADD YOUR KEY
+
+// 🌟 NEW: 24-Hour Expiry Constants
+const LOGIN_EXPIRY_MS = 24 * 60 * 60 * 1000; 
+const LOGIN_TIMESTAMP_KEY = 'tron.loginTimestamp';
 
 interface TaskQuickPickItem extends vscode.QuickPickItem {
     taskId: string;
@@ -19,35 +23,78 @@ interface TaskQuickPickItem extends vscode.QuickPickItem {
 export function activate(context: vscode.ExtensionContext) {
     axios.defaults.headers.common['x-api-key'] = DAEMON_API_KEY;
 
+    // 1. Initialize Secure Supabase Client
     const supabase = createSupabaseClient(context, SUPABASE_URL, SUPABASE_ANON_KEY);
+    const tronProvider = new TronProvider();
+    vscode.window.registerTreeDataProvider('tron-tickets', tronProvider);
 
+    // 2. The 24-Hour Enforcer
+    const enforceLoginExpiry = async () => {
+        const loginTime = context.globalState.get<number>(LOGIN_TIMESTAMP_KEY);
+        if (loginTime) {
+            const timeElapsed = Date.now() - loginTime;
+            if (timeElapsed > LOGIN_EXPIRY_MS) {
+                // The 24-hour time bomb triggered!
+                await supabase.auth.signOut();
+                await context.globalState.update(LOGIN_TIMESTAMP_KEY, undefined); 
+                tronProvider.refresh(); // Lock the sidebar
+                vscode.window.showWarningMessage('T.R.O.N: Session expired (24 hours). Please sign in again with your Developer ID.');
+            }
+        }
+    };
+
+    // Check on startup & set background loop
+    enforceLoginExpiry(); 
+    const expiryCheckInterval = setInterval(enforceLoginExpiry, 5 * 60 * 1000); 
+    context.subscriptions.push({ dispose: () => clearInterval(expiryCheckInterval) });
+
+    // 3. Axios Interceptor: Attach Secure Token & Check Expiry before EVERY request
+    axios.interceptors.request.use(async (config) => {
+        await enforceLoginExpiry(); 
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.access_token) {
+            config.headers.Authorization = `Bearer ${session.access_token}`;
+        }
+        return config;
+    });
+
+    // Startup Welcome Message
     supabase.auth.getSession().then(({ data: { session } }) => {
         if (session?.user) {
             vscode.window.showInformationMessage(`T.R.O.N: Signed in as ${session.user.email}`);
         }
     });
 
+    // --- AUTHENTICATION COMMANDS ---
+
     const signInCmd = vscode.commands.registerCommand('tron.signIn', async () => {
-        const email = await vscode.window.showInputBox({ prompt: 'Enter your email', placeHolder: 'you@example.com' });
+        const email = await vscode.window.showInputBox({ prompt: 'Enter your Developer ID (Email)', placeHolder: 'dev@company.com' });
         if (!email) { return; }
-        const password = await vscode.window.showInputBox({ prompt: 'Enter your password', password: true });
+        
+        const password = await vscode.window.showInputBox({ prompt: 'Enter your Password', password: true });
         if (!password) { return; }
 
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
             vscode.window.showErrorMessage(`T.R.O.N: Sign in failed — ${error.message}`);
         } else {
-            vscode.window.showInformationMessage(`T.R.O.N: Signed in as ${data.user.email}`);
+            // Start the 24-hour clock!
+            await context.globalState.update(LOGIN_TIMESTAMP_KEY, Date.now());
+            vscode.window.showInformationMessage(`T.R.O.N: Signed in successfully as ${data.user.email}. Fetching your tickets...`);
+            tronProvider.refresh();
         }
     });
 
     const signOutCmd = vscode.commands.registerCommand('tron.signOut', async () => {
         await supabase.auth.signOut();
+        // Kill the clock
+        await context.globalState.update(LOGIN_TIMESTAMP_KEY, undefined); 
         vscode.window.showInformationMessage('T.R.O.N: Signed out.');
+        tronProvider.refresh();
     });
 
-    const tronProvider = new TronProvider();
-    vscode.window.registerTreeDataProvider('tron-tickets', tronProvider);
+    // --- WORKFLOW COMMANDS ---
 
     let refreshCmd = vscode.commands.registerCommand('tron.refreshTickets', () => {
         tronProvider.refresh();
@@ -62,10 +109,6 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             const taskTitle = task.title || task.rawTitle || `Task ${taskId}`;
-
-            if (!taskId) {
-                return;
-            }
 
             const userChoice = await vscode.window.showWarningMessage(
                 `Start working on "${taskTitle}"? \n\nThis will automatically stash your current work, create a new branch, and assign you on Basecamp.`,
