@@ -12,6 +12,7 @@ const { getRepoConfigFromDB } = require('./config/db.js');
 // Adapters & Middleware
 const verifyGitHub = require('./middleware/verifyGitHub'); 
 const PMOrchestrator = require('./adapters/pm-orchestrator');
+const { requireAuth } = require('./middleware/auth');
 
 // Routes
 const adminRoutes = require('./routes/admin');
@@ -172,8 +173,8 @@ app.get('/api/projects', async (req, res) => {
     }
 });
 
-// 🌟 NEW: Fetch Tickets for Go Daemon
-app.get('/api/project/:encodedRepo/tickets', async (req, res) => {
+// 🌟 SECURED: Fetch Tickets for VS Code
+app.get('/api/project/:encodedRepo/tickets', requireAuth, async (req, res) => {
     const repo = decodeURIComponent(req.params.encodedRepo);
     
     try {
@@ -182,7 +183,8 @@ app.get('/api/project/:encodedRepo/tickets', async (req, res) => {
             return res.json({ tickets: [] });
         }
 
-        const activeTickets = await PMOrchestrator.getTickets(config.pm_tool, config.mapping);
+        // 🌟 THE FIX: Pass the verified req.user.org_id to the Orchestrator!
+        const activeTickets = await PMOrchestrator.getTickets(config.pm_tool, config.mapping, req.user.org_id);
         res.json({ tickets: activeTickets }); 
     } catch (error) {
         console.error("❌ Failed to fetch tickets:", error.message);
