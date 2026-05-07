@@ -1,8 +1,6 @@
 import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
 import ClientForm from './ClientForm';
-// 🌟 IMPORTED the fetchers to get the names
 import { deleteWorkflowAction, fetchBasecampProjects, fetchDiscordChannels } from './actions';
 
 export default async function RepositoriesPage() {
@@ -19,7 +17,6 @@ export default async function RepositoriesPage() {
         .eq('org_id', userData?.org_id)
         .order('created_at', { ascending: false });
 
-    // Fetch the absolute truth about what is connected from Supabase
     const { data: integrations } = await supabase
         .from('integrations')
         .select('provider')
@@ -27,79 +24,85 @@ export default async function RepositoriesPage() {
         
     const connectedProviders = integrations?.map(i => i.provider) || [];
 
-    // 🌟 NEW: Fetch Project and Channel lists in parallel to get their real names
     const [basecampProjects, discordChannels] = await Promise.all([
         fetchBasecampProjects(),
         fetchDiscordChannels()
     ]);
 
     return (
-        <div className="max-w-7xl mx-auto space-y-10 pb-12 pt-8 px-4 sm:px-6 lg:px-8">
-            <div className="mb-8">
-                <Link href="/" className="text-sm font-bold text-green-600 hover:text-green-700 mb-2 inline-block">
-                    ← Back to Dashboard
-                </Link>
-                <h1 className="text-3xl font-extrabold text-gray-900">📦 Workflow Mapping</h1>
+        <div className="max-w-6xl mx-auto p-6 lg:p-8 font-sans">
+            <div className="mb-10">
+                <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Workflow Mapping</h1>
                 <p className="text-gray-500 mt-2 text-lg">Map your GitHub repositories to your Project Management boards.</p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                <div className="lg:col-span-7 bg-white p-8 rounded-xl border border-gray-200 shadow-sm">
-                    {/* Pass the truth to the Client Form */}
-                    <ClientForm connectedProviders={connectedProviders} />
-                </div>
-
-                <div className="lg:col-span-5 space-y-4">
-                    <h2 className="text-lg font-bold text-gray-900 mb-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                        Active Mappings
-                    </h2>
-                    
-                    {repositories?.length === 0 ? (
-                        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-10 text-center">
-                            <span className="text-4xl block mb-2 opacity-50">📭</span>
-                            <h3 className="text-gray-700 font-bold">No mappings found</h3>
-                            <p className="text-gray-500 text-sm mt-1">Create your first workflow mapping using the form.</p>
+                
+                {/* Form Side */}
+                <div className="lg:col-span-7">
+                    <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
+                        <div className="p-6 sm:p-8 border-b border-gray-100 bg-gray-50/50">
+                            <h2 className="text-xl font-bold text-gray-900">Create Mapping</h2>
+                            <p className="text-sm text-gray-500 mt-1">Configure automation rules for a repository.</p>
                         </div>
-                    ) : (
-                        repositories?.map((repo) => {
-                            // 🌟 NEW: Find the human-readable names! If not found, gracefully fallback to the ID.
-                            const projectName = basecampProjects?.find(p => p.id.toString() === repo.pm_project_id)?.name || repo.pm_project_id;
-                            const channelName = discordChannels?.find(c => c.id === repo.communication_config?.channel_id)?.name || repo.communication_config?.channel_id;
-
-                            return (
-                                <div key={repo.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-3 transition-all hover:shadow-md">
-                                    <div className="flex items-center space-x-2">
-                                        <span className="text-xl">🐙</span>
-                                        <span className="font-bold text-gray-900 font-mono text-sm">{repo.repo_name}</span>
-                                    </div>
-                                    <div className="flex items-center space-x-2 text-sm text-gray-600 bg-gray-50 p-2 rounded">
-                                        <span className="text-lg">⛺</span>
-                                        {/* 🌟 Swapped the raw ID for our new projectName variable */}
-                                        <span className="font-semibold text-xs text-gray-800">{projectName || 'N/A'}</span>
-                                        
-                                        {repo.communication_config?.channel_id && (
-                                            <>
-                                                <span className="ml-2 font-bold text-gray-300">|</span>
-                                                <span className="text-lg ml-2">🎮</span>
-                                                {/* 🌟 Swapped the raw ID for our new channelName variable, and added a '#' for style */}
-                                                <span className="font-semibold text-xs text-indigo-600">
-                                                    #{channelName}
-                                                </span>
-                                            </>
-                                        )}
-                                    </div>
-                                    
-                                    <form action={deleteWorkflowAction} className="mt-2 text-right">
-                                        <input type="hidden" name="workflowId" value={repo.id} />
-                                        <button type="submit" className="text-red-500 hover:text-white hover:bg-red-500 border border-red-200 px-3 py-1 rounded text-xs font-bold transition-colors">
-                                            Delete Mapping
-                                        </button>
-                                    </form>
-                                </div>
-                            );
-                        })
-                    )}
+                        <div className="p-6 sm:p-8">
+                            <ClientForm connectedProviders={connectedProviders} />
+                        </div>
+                    </div>
                 </div>
+
+                {/* Active Mappings Side */}
+                <div className="lg:col-span-5">
+                    <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden h-full">
+                        <div className="p-6 sm:p-8 border-b border-gray-100 bg-gray-50/50">
+                            <h2 className="text-xl font-bold text-gray-900">Active Mappings</h2>
+                            <p className="text-sm text-gray-500 mt-1">Currently syncing repositories.</p>
+                        </div>
+                        
+                        <div className="p-6 sm:p-8 space-y-4">
+                            {repositories?.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <span className="text-4xl block mb-3 opacity-50">📭</span>
+                                    <h3 className="text-gray-900 font-bold">No mappings found</h3>
+                                    <p className="text-gray-500 text-sm mt-1">Create your first workflow mapping.</p>
+                                </div>
+                            ) : (
+                                repositories?.map((repo) => {
+                                    const projectName = basecampProjects?.find(p => p.id.toString() === repo.pm_project_id)?.name || repo.pm_project_id;
+                                    const channelName = discordChannels?.find(c => c.id === repo.communication_config?.channel_id)?.name || repo.communication_config?.channel_id;
+
+                                    return (
+                                        <div key={repo.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-4 hover:border-indigo-300 hover:shadow-md transition-all">
+                                            <div className="flex items-center space-x-3 border-b border-gray-100 pb-3">
+                                                <span className="text-2xl">🐙</span>
+                                                <span className="font-bold text-gray-900">{repo.repo_name}</span>
+                                            </div>
+                                            
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="inline-flex items-center px-3 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-bold">
+                                                    ⛺ {projectName || 'N/A'}
+                                                </span>
+                                                {repo.communication_config?.channel_id && (
+                                                    <span className="inline-flex items-center px-3 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold">
+                                                        🎮 #{channelName}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            
+                                            <form action={deleteWorkflowAction} className="mt-1">
+                                                <input type="hidden" name="workflowId" value={repo.id} />
+                                                <button type="submit" className="w-full text-center text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 py-2 rounded-lg text-sm font-bold transition-colors">
+                                                    Delete Mapping
+                                                </button>
+                                            </form>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
     );
