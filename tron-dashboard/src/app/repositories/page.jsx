@@ -9,7 +9,13 @@ export default async function RepositoriesPage() {
 
     if (!user) return redirect('/login');
 
-    const { data: userData } = await supabase.from('users').select('org_id').eq('id', user.id).single();
+    // 🌟 UPDATED: Fetch 'role' alongside 'org_id'
+    const { data: userData } = await supabase.from('users').select('org_id, role').eq('id', user.id).single();
+    
+    // 🌟 THE BOUNCER: Kick out developers
+    if (userData?.role !== 'admin') {
+        redirect('/');
+    }
     
     const { data: repositories } = await supabase
         .from('repositories')

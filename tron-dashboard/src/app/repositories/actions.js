@@ -8,11 +8,15 @@ export async function saveWorkflowAction(payload) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Unauthorized");
 
-    // Securely grab the user's Org ID
-    const { data: userData } = await supabase.from('users').select('org_id').eq('id', user.id).single();
-    const orgId = userData?.org_id;
+    // 🌟 THE VAULT: Securely grab the user's Org ID AND Role
+    const { data: userData } = await supabase.from('users').select('org_id, role').eq('id', user.id).single();
+    
+    // 🌟 THE VAULT: Block developers instantly
+    if (userData?.role !== 'admin') {
+        throw new Error("Unauthorized: Only admins can manage workflows.");
+    }
 
-    // 🌟 ADD THIS LINE RIGHT HERE:
+    const orgId = userData?.org_id;
     if (!orgId) throw new Error("No Organization ID found. Cannot map repository.");
 
     // 1. Dual-Write: Sync with your Render Engine
@@ -48,7 +52,15 @@ export async function saveWorkflowAction(payload) {
 export async function deleteWorkflowAction(formData) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    const { data: userData } = await supabase.from('users').select('org_id').eq('id', user.id).single();
+    if (!user) throw new Error("Unauthorized");
+
+    // 🌟 THE VAULT: Securely grab the user's Org ID AND Role
+    const { data: userData } = await supabase.from('users').select('org_id, role').eq('id', user.id).single();
+    
+    // 🌟 THE VAULT: Block developers instantly
+    if (userData?.role !== 'admin') {
+        throw new Error("Unauthorized: Only admins can delete workflows.");
+    }
     
     // Extract ID from the form data
     const workflowId = formData.get('workflowId');

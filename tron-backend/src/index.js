@@ -30,6 +30,8 @@ app.use(express.json({
 
 const port = process.env.PORT || 3000;
 
+let connectedClients = [];
+
 // ==========================================
 // INITIALIZE SERVICES
 // ==========================================
@@ -968,6 +970,47 @@ app.get('/api/admin/dashboard-workflows', async (req, res) => {
 app.listen(port, () => {
     console.log(`\n🌐 T.R.O.N. V3 Cloud Router listening at http://localhost:${port}`);
 });
+
+// ==========================================
+// REAL-TIME LOG STREAMING WITH SSE
+// ==========================================
+
+// 1. The SSE Endpoint that your frontend is trying to connect to
+app.get('/api/logs/stream', (req, res) => {
+    // These headers keep the connection open!
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
+    // Optional: Send an initial heartbeat so it connects immediately
+    res.write(`data: ${JSON.stringify({
+        id: 'connected',
+        time: new Date().toLocaleTimeString('en-US', { hour12: false }),
+        source: 'System',
+        message: 'Connected to TRON Live Stream...',
+        color: 'text-emerald-500'
+    })}\n\n`);
+
+    connectedClients.push(res);
+
+    req.on('close', () => {
+        connectedClients = connectedClients.filter(client => client !== res);
+    });
+});
+
+// 2. A helper function you can call anywhere in your backend to push logs!
+const broadcastLog = (source, message, color = 'text-gray-300') => {
+    const logEntry = {
+        id: Date.now().toString(),
+        time: new Date().toLocaleTimeString('en-US', { hour12: false }),
+        source,
+        message,
+        color
+    };
+    connectedClients.forEach(client => {
+        client.write(`data: ${JSON.stringify(logEntry)}\n\n`);
+    });
+};
 
 // 🛡️ THE FREE TIER HACK: Run the worker in the same process!
 console.log('🚀 Booting up the integrated Background Worker...');

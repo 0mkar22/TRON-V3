@@ -9,8 +9,14 @@ export default async function IntegrationsPage() {
 
     if (!user) return redirect('/login');
 
-    // 2. Fetch Organization ID and existing integrations instantly
-    const { data: userData } = await supabase.from('users').select('org_id').eq('id', user.id).single();
+    // 🌟 UPDATED: Fetch 'role' alongside 'org_id'
+    const { data: userData } = await supabase.from('users').select('org_id, role').eq('id', user.id).single();
+    
+    // 🌟 THE BOUNCER: Kick out developers
+    if (userData?.role !== 'admin') {
+        redirect('/');
+    }
+
     const orgId = userData?.org_id;
 
     // Fetch connected tools to update the UI
@@ -23,7 +29,7 @@ export default async function IntegrationsPage() {
     const discord = getIntegration('discord');
     const slack = getIntegration('slack');
 
-    // 🌟 SERVER ACTION: Secure Proxy
+    // 🌟 SERVER ACTION: Secure Proxy (No direct DB writes!)
     const saveIntegration = async (formData) => {
         'use server';
         const supabaseServer = await createClient();
@@ -31,7 +37,13 @@ export default async function IntegrationsPage() {
         let redirectUrl = null;
 
         const { data: { user } } = await supabaseServer.auth.getUser();
-        const { data: userData } = await supabaseServer.from('users').select('org_id').eq('id', user.id).single();
+        
+        // 🌟 THE VAULT: Fetch the role and block developers!
+        const { data: userData } = await supabaseServer.from('users').select('org_id, role').eq('id', user.id).single();
+        if (userData?.role !== 'admin') {
+            throw new Error("Unauthorized: Only admins can configure integrations.");
+        }
+        
         const secureOrgId = userData?.org_id;
 
         try {
@@ -81,7 +93,13 @@ export default async function IntegrationsPage() {
         const provider = formData.get('provider');
 
         const { data: { user } } = await supabaseServer.auth.getUser();
-        const { data: userData } = await supabaseServer.from('users').select('org_id').eq('id', user.id).single();
+        
+        // 🌟 THE VAULT: Fetch the role and block developers!
+        const { data: userData } = await supabaseServer.from('users').select('org_id, role').eq('id', user.id).single();
+        if (userData?.role !== 'admin') {
+            throw new Error("Unauthorized: Only admins can delete integrations.");
+        }
+        
         const secureOrgId = userData?.org_id;
 
         try {
