@@ -396,7 +396,7 @@ router.post('/invite-developer', requireAuth, async (req, res) => {
         const { data, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
             data: { org_id: orgId, role: 'developer' },
             // ⚠️ This is where the developer lands after clicking the email link
-            redirectTo: 'https://tron-v3.onrender.com/onboarding/set-password' 
+            redirectTo: 'http://localhost:3000/onboarding/set-password'
         });
 
         if (inviteError) throw inviteError;
