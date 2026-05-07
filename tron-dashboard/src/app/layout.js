@@ -41,8 +41,11 @@ export default function RootLayout({ children }) {
                 <Link href="/repositories" className="hover:text-green-200 transition-colors font-medium">
                   Workflow Mapping
                 </Link>
+                <Link href="/team" className="hover:text-green-200 transition-colors font-medium">
+                  Team Management
+                </Link>
                 {/* 🌟 NEW: Mission Control Link */}
-                <Link href="/activity" className="hover:text-green-200 transition-colors font-bold border-b-2 border-transparent hover:border-green-200 pb-1">
+                <Link href="/activity" className="hover:text-green-200 transition-colors font-medium">
                   Activity Log
                 </Link>
               </nav>
