@@ -4,16 +4,9 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 
 export default function LiveTerminal() {
-    // Start with one initial system log
-    const [logs, setLogs] = useState([
-        { 
-            id: 'init',
-            time: new Date().toLocaleTimeString('en-US', { hour12: false }), 
-            source: 'System', 
-            message: 'TRON Engine initialized. Connecting to live stream...', 
-            color: 'text-emerald-400' 
-        }
-    ]);
+    // We start empty to prevent the hydration error
+    /** @type {React.MutableRefObject<any[]> | any} */
+    const [logs, setLogs] = useState([]);
     
     const terminalEndRef = useRef(null);
 
@@ -23,18 +16,27 @@ export default function LiveTerminal() {
     }, [logs]);
 
     useEffect(() => {
-        // 🌟 Connect to your Render backend's SSE endpoint
-        // Change this to your live Render URL in production!
-        const API_URL = process.env.NODE_ENV === 'production' 
-            ? 'https://tron-v3.onrender.com/api/logs/stream'
-            : 'http://localhost:5000/api/logs/stream';
+        // Inject the initial log only AFTER the component mounts on the client
+        setLogs([{ 
+            id: 'init',
+            time: new Date().toLocaleTimeString('en-US', { hour12: false }), 
+            source: 'System', 
+            message: 'TRON Engine initialized. Connecting to live stream...', 
+            color: 'text-emerald-400' 
+        }]);
+
+        // Connect to your Render backend's SSE endpoint
+        const API_URL = 'https://tron-v3.onrender.com/api/logs/stream';
 
         const eventSource = new EventSource(API_URL);
 
         eventSource.onmessage = (event) => {
             const newLog = JSON.parse(event.data);
             
-            // Add the new log to the feed, keeping only the last 50 to prevent memory leaks
+            // 🌟 THE FIX: Override the server's UTC time with the developer's local browser time
+            newLog.time = new Date().toLocaleTimeString('en-US', { hour12: false });
+            
+            // Add the new log to the feed, keeping only the last 50
             setLogs(prevLogs => {
                 const updated = [...prevLogs, newLog];
                 return updated.slice(-50); 
