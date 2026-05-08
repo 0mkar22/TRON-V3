@@ -3,34 +3,58 @@
 import { createClient } from '@/utils/supabase/server';
 import { revalidatePath } from 'next/cache';
 
-export async function saveWorkflowAction(payload) {
+// ==========================================
+// 🛡️ THE VAULT: Secure Identity Management
+// ==========================================
+/**
+ * Ensures the requester is an authenticated Admin and securely retrieves their Organization ID.
+ * This prevents Developer accounts or unauthenticated users from hitting your Render backend.
+ */
+async function getSecureAdminOrgId() {
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("Unauthorized");
-
-    // 🌟 THE VAULT: Securely grab the user's Org ID AND Role
-    const { data: userData } = await supabase.from('users').select('org_id, role').eq('id', user.id).single();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
     
-    // 🌟 THE VAULT: Block developers instantly
-    if (userData?.role !== 'admin') {
-        throw new Error("Unauthorized: Only admins can manage workflows.");
+    if (authError || !user) {
+        throw new Error("Unauthorized: No active session.");
     }
 
-    const orgId = userData?.org_id;
-    if (!orgId) throw new Error("No Organization ID found. Cannot map repository.");
+    const { data: userData, error: dbError } = await supabase
+        .from('users')
+        .select('org_id, role')
+        .eq('id', user.id)
+        .single();
+    
+    if (dbError || userData?.role !== 'admin') {
+        throw new Error("Unauthorized: Only administrators can perform this action.");
+    }
+    
+    if (!userData.org_id) {
+        throw new Error("Configuration Error: No Organization ID found for this account.");
+    }
+
+    return userData.org_id;
+}
+
+// ==========================================
+// 💾 WORKFLOW MUTATIONS
+// ==========================================
+
+export async function saveWorkflowAction(payload) {
+    const orgId = await getSecureAdminOrgId(); // 🔒 Securely grab context
 
     // 1. Dual-Write: Sync with your Render Engine
     try {
         await fetch('https://tron-v3.onrender.com/api/repositories', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...payload, orgId }) // Injecting Org ID securely!
+            body: JSON.stringify({ ...payload, orgId }) // Injecting Org ID securely
         });
     } catch (e) {
         console.error("Failed to sync with Render Engine:", e);
     }
 
-    // 2. Save securely to Supabase (Using the correct 'repositories' table and 'mapping' column)
+    // 2. Save securely to Supabase
+    const supabase = await createClient();
     const { error } = await supabase.from('repositories').upsert({
         org_id: orgId,
         repo_name: payload.repoName,
@@ -42,7 +66,6 @@ export async function saveWorkflowAction(payload) {
 
     if (error) throw new Error(error.message);
 
-    // Refresh the pages to show the new data instantly
     revalidatePath('/repositories');
     revalidatePath('/');
     
@@ -50,35 +73,25 @@ export async function saveWorkflowAction(payload) {
 }
 
 export async function deleteWorkflowAction(formData) {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("Unauthorized");
-
-    // 🌟 THE VAULT: Securely grab the user's Org ID AND Role
-    const { data: userData } = await supabase.from('users').select('org_id, role').eq('id', user.id).single();
-    
-    // 🌟 THE VAULT: Block developers instantly
-    if (userData?.role !== 'admin') {
-        throw new Error("Unauthorized: Only admins can delete workflows.");
-    }
-    
-    // Extract ID from the form data
+    const orgId = await getSecureAdminOrgId(); // 🔒 Securely grab context
     const workflowId = formData.get('workflowId');
-
-    // Delete from repositories table
-    await supabase.from('repositories').delete().match({ id: workflowId, org_id: userData.org_id });
+    
+    const supabase = await createClient();
+    await supabase.from('repositories').delete().match({ id: workflowId, org_id: orgId });
     
     revalidatePath('/repositories');
     revalidatePath('/');
 }
 
 // ==========================================
-// 🔌 RESTORED PROXY FETCHERS
+// 🔌 V3 SECURE PROXY FETCHERS (Multi-Tenant)
 // ==========================================
 
 export async function fetchGithubRepos() {
     try {
-        const res = await fetch('https://tron-v3.onrender.com/api/admin/github-repos', { cache: 'no-store' });
+        const orgId = await getSecureAdminOrgId();
+        // 🌟 FIX: Append orgId as a query parameter so the backend knows whose PAT to use
+        const res = await fetch(`https://tron-v3.onrender.com/api/admin/github-repos?orgId=${orgId}`, { cache: 'no-store' });
         const data = await res.json();
         return data.repos || [];
     } catch (e) {
@@ -89,7 +102,9 @@ export async function fetchGithubRepos() {
 
 export async function fetchBasecampProjects() {
     try {
-        const res = await fetch('https://tron-v3.onrender.com/api/admin/basecamp-projects', { cache: 'no-store' });
+        const orgId = await getSecureAdminOrgId();
+        // 🌟 FIX: Append orgId as a query parameter
+        const res = await fetch(`https://tron-v3.onrender.com/api/admin/basecamp-projects?orgId=${orgId}`, { cache: 'no-store' });
         const data = await res.json();
         return data.projects || [];
     } catch (e) {
@@ -100,7 +115,9 @@ export async function fetchBasecampProjects() {
 
 export async function fetchDiscordChannels() {
     try {
-        const res = await fetch('https://tron-v3.onrender.com/api/admin/discord-status', { cache: 'no-store' });
+        const orgId = await getSecureAdminOrgId();
+        // 🌟 FIX: Append orgId as a query parameter
+        const res = await fetch(`https://tron-v3.onrender.com/api/admin/discord-status?orgId=${orgId}`, { cache: 'no-store' });
         const data = await res.json();
         return data.channels || [];
     } catch (e) {
@@ -111,10 +128,11 @@ export async function fetchDiscordChannels() {
 
 export async function fetchBasecampColumns(projectId) {
     try {
+        const orgId = await getSecureAdminOrgId();
         const res = await fetch('https://tron-v3.onrender.com/api/admin/basecamp-columns', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectId })
+            body: JSON.stringify({ projectId, orgId }) // 🌟 FIX: Inject orgId into the POST body
         });
         const data = await res.json();
         return data.columns || [];
