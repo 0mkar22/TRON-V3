@@ -1,6 +1,9 @@
 const axios = require('axios');
 const { supabase } = require('../config/supabase');
 
+/**
+ * Broadcasts the AI Executive Summary to the team's communication channel
+ */
 async function broadcastSummary(communicationConfig, prTitle, prUrl, report, orgId) { 
     if (!communicationConfig) return;
 
@@ -15,27 +18,24 @@ async function broadcastSummary(communicationConfig, prTitle, prUrl, report, org
             if (!channel_id) throw new Error("Missing channel_id");
             if (!orgId) throw new Error("Missing orgId to fetch Discord token");
 
-            // 🐛 DEBUG TRAP: What are we actually asking the database for?
-            console.log(`\n🐛 [DEBUG MESSENGER] Hunting for token...`);
-            console.log(`🐛 [DEBUG MESSENGER] Searching for org_id: '${orgId}' and provider: 'discord_bot'`);
-
-            // Fetch the bot token from the DB dynamically based on the Organization
+            // 🌟 THE FIX: Use .select('*') to prevent "column does not exist" crashes
             const { data: integration, error } = await supabase
                 .from('integrations')
-                .select('token, secret_id')
+                .select('*') 
                 .eq('org_id', orgId)
                 .in('provider', ['discord', 'discord_bot'])
                 .limit(1)
                 .single();
 
-            // 🐛 DEBUG TRAP: What did Supabase say?
-            console.log(`🐛 [DEBUG MESSENGER] Supabase Error:`, error ? error.message : 'None');
-            console.log(`🐛 [DEBUG MESSENGER] Supabase Data returned:`, integration ? 'Found a row!' : 'NULL');
+            if (error && error.code !== 'PGRST116') {
+                console.error(`⚠️ [Messenger] DB Warning:`, error.message);
+            }
 
-            let actualBotToken = integration?.token || bot_token;
+            // Check all possible column names your database might be using
+            let actualBotToken = integration?.token || integration?.bot_token || integration?.access_token || bot_token;
 
             // Secure Vault Fallback
-            if (integration?.secret_id && !integration?.token) {
+            if (integration?.secret_id && (!actualBotToken || actualBotToken === undefined)) {
                 const { data: decryptedJson } = await supabase.rpc('get_decrypted_secret', {
                     p_secret_id: integration.secret_id
                 });
@@ -44,10 +44,6 @@ async function broadcastSummary(communicationConfig, prTitle, prUrl, report, org
                     actualBotToken = creds.botToken || creds.bot_token || creds.token || actualBotToken;
                 }
             }
-
-            // 🐛 DEBUG TRAP: Did we extract a token string?
-            console.log(`🐛 [DEBUG MESSENGER] actualBotToken variable is:`, actualBotToken ? 'Present (Hidden for security)' : 'UNDEFINED/NULL');
-            console.log(`----------------------------------------\n`);
 
             if (!actualBotToken) throw new Error("Missing bot_token in database for this organization.");
             
