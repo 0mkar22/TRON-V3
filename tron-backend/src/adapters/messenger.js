@@ -18,7 +18,6 @@ async function broadcastSummary(communicationConfig, prTitle, prUrl, report, org
             if (!channel_id) throw new Error("Missing channel_id");
             if (!orgId) throw new Error("Missing orgId to fetch Discord token");
 
-            // 🌟 THE FIX: Use .select('*') to prevent "column does not exist" crashes
             const { data: integration, error } = await supabase
                 .from('integrations')
                 .select('*') 
@@ -31,17 +30,23 @@ async function broadcastSummary(communicationConfig, prTitle, prUrl, report, org
                 console.error(`⚠️ [Messenger] DB Warning:`, error.message);
             }
 
-            // Check all possible column names your database might be using
             let actualBotToken = integration?.token || integration?.bot_token || integration?.access_token || bot_token;
 
-            // Secure Vault Fallback
+            // 🌟 THE FIX: Smart Vault Fallback (Handles both JSON and Raw Strings)
             if (integration?.secret_id && (!actualBotToken || actualBotToken === undefined)) {
-                const { data: decryptedJson } = await supabase.rpc('get_decrypted_secret', {
+                const { data: decryptedSecret } = await supabase.rpc('get_decrypted_secret', {
                     p_secret_id: integration.secret_id
                 });
-                if (decryptedJson) {
-                    const creds = JSON.parse(decryptedJson);
-                    actualBotToken = creds.botToken || creds.bot_token || creds.token || actualBotToken;
+                
+                if (decryptedSecret) {
+                    try {
+                        // Try to parse it as JSON first
+                        const creds = JSON.parse(decryptedSecret);
+                        actualBotToken = creds.botToken || creds.bot_token || creds.token || actualBotToken;
+                    } catch (e) {
+                        // If it fails, it means the secret IS the raw token!
+                        actualBotToken = decryptedSecret; 
+                    }
                 }
             }
 
