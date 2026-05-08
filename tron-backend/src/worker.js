@@ -88,7 +88,10 @@ async function startWorker() {
                         const prUrl = job.payload.pull_request.html_url;
                         
                         if (projectConfig.communication) {
-                            // 🌟 BROADCAST WITH ORG ID
+                            // 🐛 DEBUG TRAP: Check what the worker thinks the org_id is before passing it!
+                            console.log(`\n🐛 [DEBUG WORKER] About to broadcast...`);
+                            console.log(`🐛 [DEBUG WORKER] Found org_id:`, projectConfig.org_id);
+                            
                             await messengerAdapter.broadcastSummary(projectConfig.communication, prTitle, prUrl, intelligenceReport, projectConfig.org_id);
                             console.log(`✅ [Messenger] Broadcasted AI Intel to communication channel.`);
                         }

@@ -1,9 +1,6 @@
 const axios = require('axios');
 const { supabase } = require('../config/supabase');
 
-/**
- * Broadcasts the AI Executive Summary to the team's communication channel
- */
 async function broadcastSummary(communicationConfig, prTitle, prUrl, report, orgId) { 
     if (!communicationConfig) return;
 
@@ -18,6 +15,10 @@ async function broadcastSummary(communicationConfig, prTitle, prUrl, report, org
             if (!channel_id) throw new Error("Missing channel_id");
             if (!orgId) throw new Error("Missing orgId to fetch Discord token");
 
+            // 🐛 DEBUG TRAP: What are we actually asking the database for?
+            console.log(`\n🐛 [DEBUG MESSENGER] Hunting for token...`);
+            console.log(`🐛 [DEBUG MESSENGER] Searching for org_id: '${orgId}' and provider: 'discord_bot'`);
+
             // Fetch the bot token from the DB dynamically based on the Organization
             const { data: integration, error } = await supabase
                 .from('integrations')
@@ -26,6 +27,10 @@ async function broadcastSummary(communicationConfig, prTitle, prUrl, report, org
                 .in('provider', ['discord', 'discord_bot'])
                 .limit(1)
                 .single();
+
+            // 🐛 DEBUG TRAP: What did Supabase say?
+            console.log(`🐛 [DEBUG MESSENGER] Supabase Error:`, error ? error.message : 'None');
+            console.log(`🐛 [DEBUG MESSENGER] Supabase Data returned:`, integration ? 'Found a row!' : 'NULL');
 
             let actualBotToken = integration?.token || bot_token;
 
@@ -39,6 +44,10 @@ async function broadcastSummary(communicationConfig, prTitle, prUrl, report, org
                     actualBotToken = creds.botToken || creds.bot_token || creds.token || actualBotToken;
                 }
             }
+
+            // 🐛 DEBUG TRAP: Did we extract a token string?
+            console.log(`🐛 [DEBUG MESSENGER] actualBotToken variable is:`, actualBotToken ? 'Present (Hidden for security)' : 'UNDEFINED/NULL');
+            console.log(`----------------------------------------\n`);
 
             if (!actualBotToken) throw new Error("Missing bot_token in database for this organization.");
             
@@ -66,7 +75,7 @@ async function sendDiscordBot(botToken, channelId, prTitle, prUrl, report) {
         embeds: [{
             title: `🤖 T.R.O.N. Intel: ${prTitle}`,
             url: prUrl,
-            color: 3447003, // TRON Blue
+            color: 3447003, 
             fields: [
                 { name: '🏷️ Category', value: report.intent || 'Unknown' },
                 { name: '📝 Summary', value: report.executive_summary || 'No summary provided.' },
