@@ -1,9 +1,10 @@
 const axios = require('axios');
+const { supabase } = require('../config/supabase'); // 🌟 NEW: Import Supabase for dynamic token lookup
 
 /**
  * Broadcasts the AI Executive Summary to the team's communication channel
  */
-async function broadcastSummary(communicationConfig, prTitle, prUrl, report) {
+async function broadcastSummary(communicationConfig, prTitle, prUrl, report, orgId) { // 🌟 Added orgId parameter
     if (!communicationConfig) return;
 
     // V3: Extract all possible keys from your database JSON
@@ -15,11 +16,36 @@ async function broadcastSummary(communicationConfig, prTitle, prUrl, report) {
             await sendDiscord(webhook_url, prTitle, prUrl, report);
             
         } else if (provider === 'discord_bot') {
-            // 🌟 NEW: Route for custom Discord Bot
+            // 🌟 NEW: Route for custom Discord Bot with Dynamic DB Token Lookup
             if (!channel_id) throw new Error("Missing channel_id");
-            if (!bot_token) throw new Error("Missing bot_token");
+            if (!orgId) throw new Error("Missing orgId to fetch Discord token");
+
+            // Fetch the bot token from the DB dynamically based on the Organization
+            const { data: integration, error } = await supabase
+                .from('integrations')
+                .select('token, secret_id')
+                .eq('org_id', orgId)
+                .in('provider', ['discord', 'discord_bot'])
+                .limit(1)
+                .single();
+
+            // Prioritize the DB token, fallback to config if migrating
+            let actualBotToken = integration?.token || bot_token;
+
+            // V3 Secure Vault Fallback (if Discord tokens are encrypted like Basecamp)
+            if (integration?.secret_id && !integration?.token) {
+                const { data: decryptedJson } = await supabase.rpc('get_decrypted_secret', {
+                    p_secret_id: integration.secret_id
+                });
+                if (decryptedJson) {
+                    const creds = JSON.parse(decryptedJson);
+                    actualBotToken = creds.botToken || creds.bot_token || creds.token || actualBotToken;
+                }
+            }
+
+            if (!actualBotToken) throw new Error("Missing bot_token in database for this organization.");
             
-            await sendDiscordBot(bot_token, channel_id, prTitle, prUrl, report);
+            await sendDiscordBot(actualBotToken, channel_id, prTitle, prUrl, report);
             
         } else if (provider === 'slack') {
             if (!webhook_url) throw new Error("Missing webhook_url");
@@ -57,7 +83,7 @@ async function sendDiscordBot(botToken, channelId, prTitle, prUrl, report) {
 
     await axios.post(url, payload, {
         headers: {
-            'Authorization': `Bot ${botToken}`, // Uses the dynamic token from your dashboard!
+            'Authorization': `Bot ${botToken}`, // Uses the dynamic token from your database!
             'Content-Type': 'application/json'
         }
     });

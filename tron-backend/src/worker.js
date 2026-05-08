@@ -58,7 +58,8 @@ async function startWorker() {
 
                 if (newStatus && taskIdentifier && pmTool && pmTool.provider !== "none") {
                     try {
-                        await PMOrchestrator.updateTicketStatus(pmTool, taskIdentifier, newStatus);
+                        // 🌟 FIX 1: Pass projectConfig.org_id here
+                        await PMOrchestrator.updateTicketStatus(pmTool, taskIdentifier, newStatus, projectConfig.org_id);
                         console.log(`✅ [PM] Moved ticket [${taskIdentifier}] to ${newStatus}`);
                     } catch (error) {
                         console.error(`⚠️ [PM] Failed to move ticket:`, error.message);
@@ -88,7 +89,8 @@ async function startWorker() {
                         const prUrl = job.payload.pull_request.html_url;
                         
                         if (projectConfig.communication) {
-                            await messengerAdapter.broadcastSummary(projectConfig.communication, prTitle, prUrl, intelligenceReport);
+                            // 🌟 FIX 2: Pass projectConfig.org_id here
+                            await messengerAdapter.broadcastSummary(projectConfig.communication, prTitle, prUrl, intelligenceReport, projectConfig.org_id);
                             console.log(`✅ [Messenger] Broadcasted AI Intel to communication channel.`);
                         }
                     } catch (aiError) {
@@ -108,7 +110,8 @@ async function startWorker() {
                 if (!newStatus) continue;
 
                 try {
-                    await PMOrchestrator.updateTicketStatus(pmTool, taskID, newStatus);
+                    // 🌟 FIX 3: Pass projectConfig.org_id here
+                    await PMOrchestrator.updateTicketStatus(pmTool, taskID, newStatus, projectConfig.org_id);
                     console.log(`✅ [PM] Moved ticket [${taskID}] to branch_created status.`); 
                 } catch (error) {
                     console.error(`❌ [PM] Failed to update status:`, error.message);
@@ -143,7 +146,8 @@ async function startWorker() {
 
                     if (newStatus && pmTool && pmTool.provider !== "none") {
                         try {
-                            await PMOrchestrator.updateTicketStatus(pmTool, taskIdentifier, newStatus);
+                            // 🌟 FIX 4: Pass projectConfig.org_id here
+                            await PMOrchestrator.updateTicketStatus(pmTool, taskIdentifier, newStatus, projectConfig.org_id);
                             console.log(`✅ [PM] Moved ticket [${taskIdentifier}] on branch creation.`);
                         } catch (error) {
                             console.error(`⚠️ [PM] Failed to move ticket:`, error.message);
