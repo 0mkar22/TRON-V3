@@ -1,6 +1,6 @@
 require('dotenv').config();
 const Redis = require('ioredis');
-const { supabase } = require('./config/supabase.js');
+const { supabase } = require('../config/supabase.js');
 const PMOrchestrator = require('./adapters/pm-orchestrator');
 const githubAdapter = require('./adapters/github'); 
 const aiAdapter = require('./adapters/ai');
