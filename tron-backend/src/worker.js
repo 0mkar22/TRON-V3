@@ -58,7 +58,6 @@ async function startWorker() {
 
                 if (newStatus && taskIdentifier && pmTool && pmTool.provider !== "none") {
                     try {
-                        // 🌟 FIX 1: Pass projectConfig.org_id here
                         await PMOrchestrator.updateTicketStatus(pmTool, taskIdentifier, newStatus, projectConfig.org_id);
                         console.log(`✅ [PM] Moved ticket [${taskIdentifier}] to ${newStatus}`);
                     } catch (error) {
@@ -89,7 +88,7 @@ async function startWorker() {
                         const prUrl = job.payload.pull_request.html_url;
                         
                         if (projectConfig.communication) {
-                            // 🌟 FIX 2: Pass projectConfig.org_id here
+                            // 🌟 BROADCAST WITH ORG ID
                             await messengerAdapter.broadcastSummary(projectConfig.communication, prTitle, prUrl, intelligenceReport, projectConfig.org_id);
                             console.log(`✅ [Messenger] Broadcasted AI Intel to communication channel.`);
                         }
@@ -110,7 +109,6 @@ async function startWorker() {
                 if (!newStatus) continue;
 
                 try {
-                    // 🌟 FIX 3: Pass projectConfig.org_id here
                     await PMOrchestrator.updateTicketStatus(pmTool, taskID, newStatus, projectConfig.org_id);
                     console.log(`✅ [PM] Moved ticket [${taskID}] to branch_created status.`); 
                 } catch (error) {
@@ -146,7 +144,6 @@ async function startWorker() {
 
                     if (newStatus && pmTool && pmTool.provider !== "none") {
                         try {
-                            // 🌟 FIX 4: Pass projectConfig.org_id here
                             await PMOrchestrator.updateTicketStatus(pmTool, taskIdentifier, newStatus, projectConfig.org_id);
                             console.log(`✅ [PM] Moved ticket [${taskIdentifier}] on branch creation.`);
                         } catch (error) {

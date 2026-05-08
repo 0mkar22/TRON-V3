@@ -1,13 +1,12 @@
 const axios = require('axios');
-const { supabase } = require('../config/supabase'); // 🌟 NEW: Import Supabase for dynamic token lookup
+const { supabase } = require('../config/supabase');
 
 /**
  * Broadcasts the AI Executive Summary to the team's communication channel
  */
-async function broadcastSummary(communicationConfig, prTitle, prUrl, report, orgId) { // 🌟 Added orgId parameter
+async function broadcastSummary(communicationConfig, prTitle, prUrl, report, orgId) { 
     if (!communicationConfig) return;
 
-    // V3: Extract all possible keys from your database JSON
     const { provider, webhook_url, channel_id, bot_token } = communicationConfig;
 
     try {
@@ -16,7 +15,6 @@ async function broadcastSummary(communicationConfig, prTitle, prUrl, report, org
             await sendDiscord(webhook_url, prTitle, prUrl, report);
             
         } else if (provider === 'discord_bot') {
-            // 🌟 NEW: Route for custom Discord Bot with Dynamic DB Token Lookup
             if (!channel_id) throw new Error("Missing channel_id");
             if (!orgId) throw new Error("Missing orgId to fetch Discord token");
 
@@ -29,10 +27,9 @@ async function broadcastSummary(communicationConfig, prTitle, prUrl, report, org
                 .limit(1)
                 .single();
 
-            // Prioritize the DB token, fallback to config if migrating
             let actualBotToken = integration?.token || bot_token;
 
-            // V3 Secure Vault Fallback (if Discord tokens are encrypted like Basecamp)
+            // Secure Vault Fallback
             if (integration?.secret_id && !integration?.token) {
                 const { data: decryptedJson } = await supabase.rpc('get_decrypted_secret', {
                     p_secret_id: integration.secret_id
@@ -60,10 +57,9 @@ async function broadcastSummary(communicationConfig, prTitle, prUrl, report, org
 }
 
 // ==========================================
-// 🌟 NEW: The Discord Bot API Route
+// 🌟 The Discord Bot API Route
 // ==========================================
 async function sendDiscordBot(botToken, channelId, prTitle, prUrl, report) {
-    // The official Discord REST API endpoint for sending messages
     const url = `https://discord.com/api/v10/channels/${channelId}/messages`;
 
     const payload = {
@@ -83,7 +79,7 @@ async function sendDiscordBot(botToken, channelId, prTitle, prUrl, report) {
 
     await axios.post(url, payload, {
         headers: {
-            'Authorization': `Bot ${botToken}`, // Uses the dynamic token from your database!
+            'Authorization': `Bot ${botToken}`, 
             'Content-Type': 'application/json'
         }
     });
@@ -99,7 +95,7 @@ async function sendDiscord(webhookUrl, prTitle, prUrl, report) {
         embeds: [{
             title: `🤖 T.R.O.N. Intel: ${prTitle}`,
             url: prUrl,
-            color: 3447003, // TRON Blue
+            color: 3447003, 
             fields: [
                 { name: '🏷️ Category', value: report.intent || 'Unknown' },
                 { name: '📝 Summary', value: report.executive_summary || 'No summary provided.' },

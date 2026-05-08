@@ -31,7 +31,7 @@ async function getRepoConfigFromDB(repoFullName) {
 
         return {
             repo: repoConfig.repo_name,
-            org_id: repoConfig.org_id, // 🌟 THE FIX: Expose the org_id to the worker!
+            org_id: repoConfig.org_id, // 🌟 EXPOSED FOR THE WORKER
             pm_tool: {
                 provider: repoConfig.pm_provider,
                 project_id: repoConfig.pm_project_id,
