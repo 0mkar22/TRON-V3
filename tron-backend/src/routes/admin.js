@@ -23,7 +23,6 @@ router.get('/github-repos', async (req, res) => {
     try {
         console.log(`🔍 [ADMIN] Fetching GitHub repos for Org: ${orgId}`);
         
-        // Securely fetch token from DB
         const { data, error } = await supabaseAdmin
             .from('integrations')
             .select('token')
@@ -44,7 +43,7 @@ router.get('/github-repos', async (req, res) => {
         const repos = response.data.map(repo => ({
             id: repo.id,
             name: repo.name,
-            full_name: repo.full_name, // Important: Frontend expects this key
+            full_name: repo.full_name, 
             private: repo.private,
             url: repo.html_url
         }));
@@ -66,7 +65,6 @@ router.get('/basecamp-projects', async (req, res) => {
     try {
         console.log(`🔍 [ADMIN] Fetching Basecamp projects for Org: ${orgId}`);
         
-        // BasecampAdapter handles the DB lookup and token refresh automatically!
         const response = await BasecampAdapter.executeWithRetry(orgId, (creds) => 
             axios.get(
                 `https://3.basecampapi.com/${creds.accountId}/projects.json`,
@@ -83,7 +81,7 @@ router.get('/basecamp-projects', async (req, res) => {
         res.json({ projects });
     } catch (error) {
         console.error('❌ [ADMIN] Basecamp API Error:', error.message);
-        res.json({ projects: [] }); // Return empty array so UI doesn't crash
+        res.json({ projects: [] }); 
     }
 });
 
@@ -100,13 +98,11 @@ router.post('/basecamp-columns', async (req, res) => {
         const response = await BasecampAdapter.executeWithRetry(orgId, async (creds) => {
             const headers = BasecampAdapter.getBaseConfig(creds.accessToken);
             
-            // 1. Fetch project dock to find the tool
             const projectRes = await axios.get(`https://3.basecampapi.com/${creds.accountId}/projects/${projectId}.json`, headers);
             let tool = projectRes.data.dock.find(t => t.name === 'kanban_board' || t.name === 'card_table' || t.name === 'todoset');
             
             if (!tool) throw new Error('No Card Table or To-Do list found.');
 
-            // 2. Fetch the specific tool to get columns
             return axios.get(tool.url, headers);
         });
 
@@ -150,7 +146,6 @@ router.get('/discord-status', async (req, res) => {
         const guildId = guildsRes.data[0].id;
         const channelsRes = await axios.get(`https://discord.com/api/v10/guilds/${guildId}/channels`, { headers });
         
-        // Only return text channels
         const channels = channelsRes.data
             .filter(c => c.type === 0)
             .map(c => ({ id: c.id, name: c.name }));
@@ -163,22 +158,55 @@ router.get('/discord-status', async (req, res) => {
 });
 
 // ==========================================
-// 5. SECURE INTEGRATION SAVING
+// 5. SECURE INTEGRATION SAVING (🌟 FIXED)
 // ==========================================
 router.post('/save-integration', async (req, res) => {
     const { provider, token, orgId } = req.body;
     if (!provider || !token || !orgId) return res.status(400).json({ error: 'Missing data' });
     
-    await supabaseAdmin.from('integrations').upsert({ provider, token, org_id: orgId }, { onConflict: 'org_id, provider' });
-    res.json({ success: true });
+    try {
+        // Safe Find-and-Update bypasses the need for strict DB constraints
+        const { data: existing } = await supabaseAdmin
+            .from('integrations')
+            .select('id')
+            .eq('org_id', orgId)
+            .eq('provider', provider)
+            .single();
+
+        if (existing) {
+            await supabaseAdmin.from('integrations').update({ token }).eq('id', existing.id);
+        } else {
+            await supabaseAdmin.from('integrations').insert({ provider, token, org_id: orgId });
+        }
+        res.json({ success: true });
+    } catch (error) {
+        console.error(`❌ [ADMIN] Failed to save ${provider}:`, error.message);
+        res.status(500).json({ error: "Database save failed" });
+    }
 });
 
 router.post('/discord-token', async (req, res) => {
     const { token, orgId } = req.body;
     if (!token || !orgId) return res.status(400).json({ error: 'Missing data' });
     
-    await supabaseAdmin.from('integrations').upsert({ provider: 'discord', token, org_id: orgId }, { onConflict: 'org_id, provider' });
-    res.json({ success: true });
+    try {
+        const { data: existing } = await supabaseAdmin
+            .from('integrations')
+            .select('id')
+            .eq('org_id', orgId)
+            .eq('provider', 'discord')
+            .single();
+
+        if (existing) {
+            await supabaseAdmin.from('integrations').update({ token }).eq('id', existing.id);
+        } else {
+            await supabaseAdmin.from('integrations').insert({ provider: 'discord', token, org_id: orgId });
+        }
+        res.json({ success: true });
+    } catch (error) {
+        console.error(`❌ [ADMIN] Failed to save Discord token:`, error.message);
+        res.status(500).json({ error: "Database save failed" });
+    }
 });
 
 router.delete('/delete-integration/:provider', async (req, res) => {
@@ -210,7 +238,7 @@ router.post('/invite-developer', requireAuth, async (req, res) => {
 
         const { data, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
             data: { org_id: orgId, role: 'developer' },
-            redirectTo: 'https://tron-v3.vercel.app/onboarding/set-password' // Note: Update this to your live frontend URL!
+            redirectTo: 'https://tron-v3.vercel.app/onboarding/set-password' 
         });
 
         if (inviteError) throw inviteError;
