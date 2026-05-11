@@ -33,20 +33,19 @@ router.get('/github-repos', async (req, res) => {
 
         let actualToken = integration?.token;
 
-        // 🌟 THE FIX: Decrypt from Vault if secret_id exists
+        // 🌟 THE FIX: Decrypt from Vault using the Secure RPC Tunnel!
         if (integration?.secret_id && !actualToken) {
-            console.log(`🐛 [DEBUG ADMIN] Accessing Vault for GitHub Secret...`);
-            const { data: secret } = await supabaseAdmin
-                .from('vault.decrypted_secrets')
-                .select('decrypted_secret')
-                .eq('id', integration.secret_id)
-                .maybeSingle();
+            console.log(`🐛 [DEBUG ADMIN] Accessing Vault for GitHub Secret via RPC...`);
+            const { data: decryptedSecret, error: rpcError } = await supabaseAdmin.rpc('get_decrypted_secret', {
+                p_secret_id: integration.secret_id
+            });
             
-            if (secret) {
-                actualToken = secret.decrypted_secret;
+            if (decryptedSecret) {
+                actualToken = decryptedSecret;
                 console.log(`🐛 [DEBUG ADMIN] Vault Decryption: SUCCESS`);
             } else {
-                console.log(`🐛 [DEBUG ADMIN] Vault Decryption: FAILED (Secret not found)`);
+                console.log(`🐛 [DEBUG ADMIN] Vault Decryption: FAILED`);
+                if (rpcError) console.error(rpcError.message);
             }
         }
 
@@ -154,7 +153,6 @@ router.get('/discord-status', async (req, res) => {
         console.log(`\n==========================================`);
         console.log(`🐛 [DEBUG ADMIN] Fetching Discord channels for Org: ${orgId}`);
 
-        // 🌟 THE FIX: Use .limit(1) to avoid crashing when both discord and discord_bot rows exist!
         const { data: integrations, error } = await supabaseAdmin
             .from('integrations')
             .select('*')
@@ -165,26 +163,25 @@ router.get('/discord-status', async (req, res) => {
         const integration = integrations?.[0];
         let actualToken = integration?.token;
 
-        // 🌟 THE FIX: Decrypt from Vault if secret_id exists
+        // 🌟 THE FIX: Decrypt from Vault using the Secure RPC Tunnel!
         if (integration?.secret_id && !actualToken) {
-            console.log(`🐛 [DEBUG ADMIN] Accessing Vault for Discord Secret...`);
-            const { data: secret } = await supabaseAdmin
-                .from('vault.decrypted_secrets')
-                .select('decrypted_secret')
-                .eq('id', integration.secret_id)
-                .maybeSingle();
+            console.log(`🐛 [DEBUG ADMIN] Accessing Vault for Discord Secret via RPC...`);
+            const { data: decryptedSecret, error: rpcError } = await supabaseAdmin.rpc('get_decrypted_secret', {
+                p_secret_id: integration.secret_id
+            });
             
-            if (secret) {
+            if (decryptedSecret) {
                 // Determine if the secret is raw or JSON wrapped
                 try {
-                    const creds = JSON.parse(secret.decrypted_secret);
-                    actualToken = creds.botToken || creds.bot_token || creds.token || secret.decrypted_secret;
+                    const creds = JSON.parse(decryptedSecret);
+                    actualToken = creds.botToken || creds.bot_token || creds.token || decryptedSecret;
                 } catch (e) {
-                    actualToken = secret.decrypted_secret; // It was a raw string
+                    actualToken = decryptedSecret; // It was a raw string
                 }
                 console.log(`🐛 [DEBUG ADMIN] Vault Decryption: SUCCESS`);
             } else {
-                console.log(`🐛 [DEBUG ADMIN] Vault Decryption: FAILED (Secret not found)`);
+                console.log(`🐛 [DEBUG ADMIN] Vault Decryption: FAILED`);
+                if (rpcError) console.error(rpcError.message);
             }
         }
 
