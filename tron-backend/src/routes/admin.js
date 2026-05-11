@@ -28,7 +28,7 @@ router.get('/github-repos', async (req, res) => {
             .select('token')
             .eq('org_id', orgId)
             .eq('provider', 'github')
-            .single();
+            .maybeSingle();
 
         if (error || !data?.token) return res.json({ repos: [] });
 
@@ -134,7 +134,7 @@ router.get('/discord-status', async (req, res) => {
             .select('token')
             .eq('org_id', orgId)
             .in('provider', ['discord', 'discord_bot'])
-            .single();
+            .maybeSingle();
 
         if (error || !data?.token) return res.json({ channels: [] });
 
@@ -165,13 +165,15 @@ router.post('/save-integration', async (req, res) => {
     if (!provider || !token || !orgId) return res.status(400).json({ error: 'Missing data' });
     
     try {
-        // Safe Find-and-Update bypasses the need for strict DB constraints
-        const { data: existing } = await supabaseAdmin
+        // 🌟 THE FIX: Using maybeSingle() handles the "not found" case gracefully!
+        const { data: existing, error } = await supabaseAdmin
             .from('integrations')
             .select('id')
             .eq('org_id', orgId)
             .eq('provider', provider)
-            .single();
+            .maybeSingle();
+
+        if (error) throw error;
 
         if (existing) {
             await supabaseAdmin.from('integrations').update({ token }).eq('id', existing.id);
@@ -190,12 +192,15 @@ router.post('/discord-token', async (req, res) => {
     if (!token || !orgId) return res.status(400).json({ error: 'Missing data' });
     
     try {
-        const { data: existing } = await supabaseAdmin
+        // 🌟 THE FIX: Using maybeSingle() handles the "not found" case gracefully!
+        const { data: existing, error } = await supabaseAdmin
             .from('integrations')
             .select('id')
             .eq('org_id', orgId)
             .eq('provider', 'discord')
-            .single();
+            .maybeSingle();
+
+        if (error) throw error;
 
         if (existing) {
             await supabaseAdmin.from('integrations').update({ token }).eq('id', existing.id);
