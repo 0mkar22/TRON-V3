@@ -1,4 +1,5 @@
 import { createClient } from '@/utils/supabase/server';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 
@@ -9,7 +10,6 @@ export default async function IntegrationsPage() {
 
     if (!user) return redirect('/login');
 
-    // Fetch 'role' alongside 'org_id'
     const { data: userData } = await supabase.from('users').select('org_id, role').eq('id', user.id).single();
     
     // THE BOUNCER: Kick out developers
@@ -18,18 +18,17 @@ export default async function IntegrationsPage() {
     }
 
     const orgId = userData?.org_id;
-
-    // Fetch connected tools to update the UI
     const { data: integrations } = await supabase.from('integrations').select('*').eq('org_id', orgId);
 
-    // Helper to check what is currently connected
     const getIntegration = (provider) => integrations?.find(i => i.provider === provider);
     const github = getIntegration('github');
     const basecamp = getIntegration('basecamp');
     const discord = getIntegration('discord');
     const slack = getIntegration('slack');
 
-    // SERVER ACTION: Secure Proxy (No direct DB writes!)
+    // ==========================================
+    // 🌟 SECURE VAULT SERVER ACTIONS
+    // ==========================================
     const saveIntegration = async (formData) => {
         'use server';
         const supabaseServer = await createClient();
@@ -37,29 +36,13 @@ export default async function IntegrationsPage() {
         let redirectUrl = null;
 
         const { data: { user } } = await supabaseServer.auth.getUser();
-        
-        // THE VAULT: Fetch the role and block developers!
         const { data: userData } = await supabaseServer.from('users').select('org_id, role').eq('id', user.id).single();
-        if (userData?.role !== 'admin') {
-            throw new Error("Unauthorized: Only admins can configure integrations.");
-        }
         
+        if (userData?.role !== 'admin') throw new Error("Unauthorized");
         const secureOrgId = userData?.org_id;
 
-        try {
-            if (provider === 'github') {
-                await fetch('https://tron-v3.onrender.com/api/admin/save-integration', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ provider: 'github', token: formData.get('token'), orgId: secureOrgId })
-                });
-            } 
-            else if (provider === 'discord') {
-                await fetch('https://tron-v3.onrender.com/api/admin/discord-token', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token: formData.get('token'), orgId: secureOrgId })
-                });
-            }
-            else if (provider === 'basecamp') {
+        if (provider === 'basecamp') {
+            try {
                 const res = await fetch('https://tron-v3.onrender.com/api/auth/basecamp/init', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -69,48 +52,108 @@ export default async function IntegrationsPage() {
                         orgId: secureOrgId 
                     })
                 });
-                
                 if (res.ok) {
                     const data = await res.json();
                     if (data.redirectUrl) redirectUrl = data.redirectUrl;
-                } else {
-                    const errorText = await res.text();
-                    console.error(`🚨 Render Backend Error (${res.status}):`, errorText);
                 }
+            } catch (error) {
+                console.error(`Failed to init Basecamp via Render:`, error);
             }
-        } catch (error) {
-            console.error(`Failed to sync ${provider} with Render engine:`, error);
+        } else {
+            const rawToken = formData.get('token');
+            
+            // 🌟 INITIALIZE ADMIN CLIENT FOR VAULT ACCESS
+            const supabaseAdmin = createAdminClient(
+                process.env.SUPABASE_URL,
+                process.env.SUPABASE_SERVICE_ROLE_KEY
+            );
+
+            try {
+                // Guarantee a unique name in the Vault
+                const uniqueSecretName = `TRON ${provider} token for ${secureOrgId} - ${Date.now()}`;
+
+                // 1. ENCRYPT TOKEN VIA SECURE RPC TUNNEL
+                const { data: newSecretId, error: vaultError } = await supabaseAdmin.rpc('create_integration_secret', {
+                    secret_value: rawToken,
+                    secret_desc: uniqueSecretName
+                });
+
+                if (vaultError) throw vaultError;
+
+                // 2. LINK SECRET_ID IN PUBLIC TABLE (Self-Healing from Duplicates)
+                const { data: existingRecords } = await supabaseAdmin
+                    .from('integrations')
+                    .select('id')
+                    .eq('org_id', secureOrgId)
+                    .eq('provider', provider);
+
+                if (existingRecords && existingRecords.length > 0) {
+                    // Update the primary row
+                    const { error: updateError } = await supabaseAdmin
+                        .from('integrations')
+                        .update({ secret_id: newSecretId }) 
+                        .eq('id', existingRecords[0].id);
+                        
+                    if (updateError) throw updateError;
+
+                    // Self-Heal: Delete any stray duplicates
+                    if (existingRecords.length > 1) {
+                        const duplicateIds = existingRecords.slice(1).map(r => r.id);
+                        await supabaseAdmin.from('integrations').delete().in('id', duplicateIds);
+                    }
+                } else {
+                    const { error: insertError } = await supabaseAdmin
+                        .from('integrations')
+                        .insert({ org_id: secureOrgId, provider, secret_id: newSecretId }); 
+                        
+                    if (insertError) throw insertError;
+                }
+
+                // Auto-sync Discord Bot alias (Self-Healing from Duplicates)
+                if (provider === 'discord') {
+                    const { data: botRecords } = await supabaseAdmin
+                        .from('integrations')
+                        .select('id')
+                        .eq('org_id', secureOrgId)
+                        .eq('provider', 'discord_bot');
+
+                    if (botRecords && botRecords.length > 0) {
+                        await supabaseAdmin.from('integrations').update({ secret_id: newSecretId }).eq('id', botRecords[0].id); 
+                        
+                        // Clean up stray bot alias duplicates
+                        if (botRecords.length > 1) {
+                            const botDupes = botRecords.slice(1).map(r => r.id);
+                            await supabaseAdmin.from('integrations').delete().in('id', botDupes);
+                        }
+                    } else {
+                        await supabaseAdmin.from('integrations').insert({ org_id: secureOrgId, provider: 'discord_bot', secret_id: newSecretId }); 
+                    }
+                }
+            } catch (error) {
+                console.error(`Failed to save ${provider} integration:`, error.message);
+            }
         }
 
         revalidatePath('/integrations');
         if (redirectUrl) redirect(redirectUrl);
     };
 
-    // SERVER ACTION: Secure Proxy Delete
     const deleteIntegration = async (formData) => {
         'use server';
         const supabaseServer = await createClient();
         const provider = formData.get('provider');
 
         const { data: { user } } = await supabaseServer.auth.getUser();
-        
         const { data: userData } = await supabaseServer.from('users').select('org_id, role').eq('id', user.id).single();
-        if (userData?.role !== 'admin') {
-            throw new Error("Unauthorized: Only admins can delete integrations.");
-        }
+        if (userData?.role !== 'admin') throw new Error("Unauthorized");
         
         const secureOrgId = userData?.org_id;
 
         try {
-            if (provider === 'github') await fetch('https://tron-v3.onrender.com/api/admin/delete-integration/github', { 
-                method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId: secureOrgId }) 
-            });
-            if (provider === 'discord') await fetch('https://tron-v3.onrender.com/api/admin/discord-token', { 
-                method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId: secureOrgId }) 
-            });
-            if (provider === 'basecamp') await fetch('https://tron-v3.onrender.com/api/admin/delete-integration/basecamp', { 
-                method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId: secureOrgId }) 
-            });
+            await supabaseServer.from('integrations').delete().match({ provider, org_id: secureOrgId });
+            if (provider === 'discord') {
+                await supabaseServer.from('integrations').delete().match({ provider: 'discord_bot', org_id: secureOrgId });
+            }
         } catch (e) {
             console.error(`Failed to disconnect ${provider}:`, e);
         }
