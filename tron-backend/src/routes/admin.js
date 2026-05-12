@@ -204,7 +204,7 @@ router.get('/dashboard-workflows', async (req, res) => {
 
     try {
         const { data: workflows, error } = await supabaseAdmin
-            .from('workflows') // IMPORTANT: Make sure this matches your actual table name!
+            .from('repositories') // IMPORTANT: Make sure this matches your actual table name!
             .select('*')
             .eq('org_id', orgId); // 🔒 Ensure it only fetches this tenant's workflows
 
