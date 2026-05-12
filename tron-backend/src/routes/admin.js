@@ -7,8 +7,6 @@ const BasecampAdapter = require('../adapters/basecamp');
 const { createClient } = require('@supabase/supabase-js');
 const { requireAuth } = require('../middleware/auth');
 
-const redisClient = require('../path/to/your/redis/file'); // Update this path! 
-
 // 🌟 INITIALIZE ADMIN CLIENT FOR VAULT ACCESS
 const supabaseAdmin = createClient(
     process.env.SUPABASE_URL,
@@ -263,7 +261,6 @@ router.get('/system-status', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch system status' });
     }
 });
-
 
 // ==========================================
 // 7. TEAM MANAGEMENT: INVITE DEVELOPER
