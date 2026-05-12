@@ -1,6 +1,5 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
-import { headers } from 'next/headers'
 import Link from 'next/link'
 
 export default async function LoginPage({ searchParams }) {
@@ -21,25 +20,6 @@ export default async function LoginPage({ searchParams }) {
     return redirect('/')
   }
 
-  // 🌟 SERVER ACTION: GitHub OAuth
-  const signInWithGithub = async () => {
-    'use server'
-    const supabase = await createClient()
-    
-    // 🌟 THE FIX: Await the headers!
-    const headersList = await headers()
-    const origin = headersList.get('origin')
-
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'github',
-      options: {
-        redirectTo: `${origin}/auth/callback`,
-      },
-    })
-
-    if (data.url) redirect(data.url)
-  }
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-xl shadow-md border border-gray-100">
@@ -54,17 +34,6 @@ export default async function LoginPage({ searchParams }) {
             {resolvedParams.message}
           </div>
         )}
-
-        <form action={signInWithGithub}>
-          <button className="w-full flex justify-center py-2.5 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors">
-            <span className="mr-2 text-lg">🐙</span> Continue with GitHub
-          </button>
-        </form>
-
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-300" /></div>
-          <div className="relative flex justify-center text-sm"><span className="px-2 bg-white text-gray-500">Or continue with email</span></div>
-        </div>
 
         <form className="mt-8 space-y-6" action={login}>
           <div className="rounded-md shadow-sm space-y-4">
