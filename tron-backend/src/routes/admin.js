@@ -7,6 +7,8 @@ const BasecampAdapter = require('../adapters/basecamp');
 const { createClient } = require('@supabase/supabase-js');
 const { requireAuth } = require('../middleware/auth');
 
+const redisClient = require('../path/to/your/redis/file'); // Update this path! 
+
 // 🌟 INITIALIZE ADMIN CLIENT FOR VAULT ACCESS
 const supabaseAdmin = createClient(
     process.env.SUPABASE_URL,
@@ -204,7 +206,7 @@ router.get('/dashboard-workflows', async (req, res) => {
 
     try {
         const { data: workflows, error } = await supabaseAdmin
-            .from('repositories') // IMPORTANT: Make sure this matches your actual table name!
+            .from('repositories') 
             .select('*')
             .eq('org_id', orgId); // 🔒 Ensure it only fetches this tenant's workflows
 
@@ -229,20 +231,27 @@ router.get('/system-status', async (req, res) => {
     }
 
     try {
-        // 🚨 IMPORTANT NOTE: If your backend relies on a Redis Cache (e.g., redisClient.get('...')) 
-        // you will need to filter the returned arrays by orgId here.
-        // Assuming your backend uses Supabase tables for tasks/reviews, here is the secure query:
-
+        // Fetch Queue Data from Supabase (safely filtered by org_id)
         const { data: queueData, error: queueError } = await supabaseAdmin
-            .from('tasks') // Replace with your actual queue table name
+            .from('tasks') // Make sure you have a 'tasks' table in Supabase!
             .select('*')
             .eq('org_id', orgId);
 
+        if (queueError && queueError.code !== '42P01') { 
+            console.error("Queue fetch error:", queueError.message);
+        }
+
+        // Fetch AI Reviews from Supabase (safely filtered by org_id)
         const { data: reviewsData, error: reviewError } = await supabaseAdmin
-            .from('ai_reviews') // Replace with your actual reviews table name
+            .from('ai_reviews') // Make sure you have an 'ai_reviews' table in Supabase!
             .select('*')
             .eq('org_id', orgId);
 
+        if (reviewError && reviewError.code !== '42P01') {
+            console.error("Review fetch error:", reviewError.message);
+        }
+
+        // Send the secure data back to the frontend
         res.json({
             queue: queueData || [],
             reviews: reviewsData || [],
