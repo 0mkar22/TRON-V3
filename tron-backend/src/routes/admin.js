@@ -33,7 +33,6 @@ router.get('/github-repos', async (req, res) => {
 
         let actualToken = integration?.token;
 
-        // 🌟 THE FIX: Decrypt from Vault using the Secure RPC Tunnel!
         if (integration?.secret_id && !actualToken) {
             console.log(`🐛 [DEBUG ADMIN] Accessing Vault for GitHub Secret via RPC...`);
             const { data: decryptedSecret, error: rpcError } = await supabaseAdmin.rpc('get_decrypted_secret', {
@@ -143,17 +142,14 @@ router.post('/basecamp-columns', async (req, res) => {
 });
 
 // ==========================================
-// 4. DISCORD CHANNELS (Vault Secured)
+// 4. DISCORD CHANNELS
 // ==========================================
 router.get('/discord-status', async (req, res) => {
     const orgId = req.query.orgId;
     if (!orgId) return res.status(400).json({ error: 'Missing orgId query parameter.' });
 
     try {
-        console.log(`\n==========================================`);
-        console.log(`🐛 [DEBUG ADMIN] Fetching Discord channels for Org: ${orgId}`);
-
-        const { data: integrations, error } = await supabaseAdmin
+        const { data: integrations } = await supabaseAdmin
             .from('integrations')
             .select('*')
             .eq('org_id', orgId)
@@ -163,68 +159,105 @@ router.get('/discord-status', async (req, res) => {
         const integration = integrations?.[0];
         let actualToken = integration?.token;
 
-        // 🌟 THE FIX: Decrypt from Vault using the Secure RPC Tunnel!
         if (integration?.secret_id && !actualToken) {
-            console.log(`🐛 [DEBUG ADMIN] Accessing Vault for Discord Secret via RPC...`);
-            const { data: decryptedSecret, error: rpcError } = await supabaseAdmin.rpc('get_decrypted_secret', {
+            const { data: decryptedSecret } = await supabaseAdmin.rpc('get_decrypted_secret', {
                 p_secret_id: integration.secret_id
             });
             
             if (decryptedSecret) {
-                // Determine if the secret is raw or JSON wrapped
                 try {
                     const creds = JSON.parse(decryptedSecret);
                     actualToken = creds.botToken || creds.bot_token || creds.token || decryptedSecret;
                 } catch (e) {
-                    actualToken = decryptedSecret; // It was a raw string
+                    actualToken = decryptedSecret; 
                 }
-                console.log(`🐛 [DEBUG ADMIN] Vault Decryption: SUCCESS`);
-            } else {
-                console.log(`🐛 [DEBUG ADMIN] Vault Decryption: FAILED`);
-                if (rpcError) console.error(rpcError.message);
             }
         }
 
-        if (!actualToken) {
-            console.log(`🐛 [DEBUG ADMIN] No valid token found, returning empty channels.`);
-            return res.json({ channels: [] });
-        }
+        if (!actualToken) return res.json({ channels: [] });
 
         const headers = { 'Authorization': `Bot ${actualToken}` };
-        
         const guildsRes = await axios.get('https://discord.com/api/v10/users/@me/guilds', { headers });
-        if (guildsRes.data.length === 0) {
-            console.log(`🐛 [DEBUG ADMIN] Bot is not inside any Discord servers.`);
-            return res.json({ channels: [] });
-        }
+        if (guildsRes.data.length === 0) return res.json({ channels: [] });
 
         const guildId = guildsRes.data[0].id;
         const channelsRes = await axios.get(`https://discord.com/api/v10/guilds/${guildId}/channels`, { headers });
         
-        const channels = channelsRes.data
-            .filter(c => c.type === 0)
-            .map(c => ({ id: c.id, name: c.name }));
-
-        console.log(`🐛 [DEBUG ADMIN] Successfully fetched ${channels.length} text channels!`);
-        console.log(`==========================================\n`);
-
+        const channels = channelsRes.data.filter(c => c.type === 0).map(c => ({ id: c.id, name: c.name }));
         res.json({ channels });
     } catch (error) {
-        console.error('❌ [ADMIN] Discord Fetch Error:', error.response?.data || error.message);
+        console.error('❌ [ADMIN] Discord Fetch Error:', error.message);
         res.json({ channels: [] });
     }
 });
 
 // ==========================================
-// 5. LEGACY RENDER ROUTES (Unused, kept for fallback)
+// 5. SECURE DASHBOARD WORKFLOWS 
 // ==========================================
-router.post('/save-integration', async (req, res) => res.json({ success: true }));
-router.post('/discord-token', async (req, res) => res.json({ success: true }));
-router.delete('/delete-integration/:provider', async (req, res) => res.json({ success: true }));
-router.delete('/discord-token', async (req, res) => res.json({ success: true }));
+router.get('/dashboard-workflows', async (req, res) => {
+    const orgId = req.query.orgId;
+    
+    // 🔒 THE LOCK: Reject if orgId is missing
+    if (!orgId) {
+        return res.status(400).json({ error: 'Unauthorized: Missing orgId query parameter.' });
+    }
+
+    try {
+        const { data: workflows, error } = await supabaseAdmin
+            .from('workflows') // IMPORTANT: Make sure this matches your actual table name!
+            .select('*')
+            .eq('org_id', orgId); // 🔒 Ensure it only fetches this tenant's workflows
+
+        if (error) throw error;
+
+        res.json({ workflows: workflows || [] });
+    } catch (error) {
+        console.error('❌ [ADMIN] Fetch Workflows Error:', error.message);
+        res.json({ workflows: [] });
+    }
+});
 
 // ==========================================
-// 6. TEAM MANAGEMENT: INVITE DEVELOPER
+// 6. SECURE SYSTEM STATUS (Mission Control)
+// ==========================================
+router.get('/system-status', async (req, res) => {
+    const orgId = req.query.orgId;
+    
+    // 🔒 THE LOCK: Reject if orgId is missing
+    if (!orgId) {
+        return res.status(400).json({ error: 'Unauthorized: Missing orgId query parameter.' });
+    }
+
+    try {
+        // 🚨 IMPORTANT NOTE: If your backend relies on a Redis Cache (e.g., redisClient.get('...')) 
+        // you will need to filter the returned arrays by orgId here.
+        // Assuming your backend uses Supabase tables for tasks/reviews, here is the secure query:
+
+        const { data: queueData, error: queueError } = await supabaseAdmin
+            .from('tasks') // Replace with your actual queue table name
+            .select('*')
+            .eq('org_id', orgId);
+
+        const { data: reviewsData, error: reviewError } = await supabaseAdmin
+            .from('ai_reviews') // Replace with your actual reviews table name
+            .select('*')
+            .eq('org_id', orgId);
+
+        res.json({
+            queue: queueData || [],
+            reviews: reviewsData || [],
+            queueCount: (queueData || []).length,
+            reviewCount: (reviewsData || []).length
+        });
+    } catch (error) {
+        console.error('❌ [ADMIN] System Status Error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch system status' });
+    }
+});
+
+
+// ==========================================
+// 7. TEAM MANAGEMENT: INVITE DEVELOPER
 // ==========================================
 router.post('/invite-developer', requireAuth, async (req, res) => {
     const { email } = req.body;
@@ -256,7 +289,7 @@ router.post('/invite-developer', requireAuth, async (req, res) => {
 
     } catch (error) {
         console.error("❌ [ADMIN] Invite Error:", error.message);
-        res.status(500).json({ error: "Failed to send invite. Check server logs." });
+        res.status(500).json({ error: "Failed to send invite." });
     }
 });
 
