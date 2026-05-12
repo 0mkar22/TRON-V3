@@ -9,18 +9,23 @@ export default async function Home() {
 
   if (!user) return redirect('/login');
 
-  const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();
+  // 🌟 FIX 1: Explicitly fetch org_id alongside the role
+  const { data: userData } = await supabase.from('users').select('role, org_id').eq('id', user.id).single();
   const isAdmin = userData?.role === 'admin';
+  const orgId = userData?.org_id;
 
   const fullName = user?.user_metadata?.full_name || 'User';
   const companyName = user?.user_metadata?.company_name || 'Personal Workspace';
 
   let workflows = [];
   try {
-      const res = await fetch('https://tron-v3.onrender.com/api/admin/dashboard-workflows', { cache: 'no-store' });
-      if (res.ok) {
-          const data = await res.json();
-          workflows = data.workflows || [];
+      // 🌟 FIX 2: Only fetch if we have an orgId, and pass it securely in the URL!
+      if (orgId) {
+          const res = await fetch(`https://tron-v3.onrender.com/api/admin/dashboard-workflows?orgId=${orgId}`, { cache: 'no-store' });
+          if (res.ok) {
+              const data = await res.json();
+              workflows = data.workflows || [];
+          }
       }
   } catch (error) {
       console.error("Failed to fetch workflows:", error);

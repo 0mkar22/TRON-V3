@@ -1,22 +1,50 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { createClient } from '@/utils/supabase/client'; // 🌟 NEW: Client-side Supabase import
 
 export default function ActivityDashboard() {
     const [status, setStatus] = useState({ queue: [], reviews: [] });
     const [loading, setLoading] = useState(true);
-    const [selectedReview, setSelectedReview] = useState(null); // State for the modal
+    const [selectedReview, setSelectedReview] = useState(null);
+    
+    // 🌟 NEW: Use a ref to store orgId securely so the interval can always read it
+    const orgIdRef = useRef(null);
 
     useEffect(() => {
-        const fetchStatus = async () => {
+        const supabase = createClient();
+        let interval;
+
+        const setupAndFetch = async () => {
             try {
-                // ⚠️ Make sure this URL points to wherever your backend is actively running!
-                const res = await fetch('https://tron-v3.onrender.com/api/admin/system-status');
+                // 1. Fetch the user's orgId securely on mount
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    const { data: userData } = await supabase.from('users').select('org_id').eq('id', user.id).single();
+                    orgIdRef.current = userData?.org_id;
+                }
+
+                // 2. Run the first fetch immediately
+                await fetchStatus();
+
+                // 3. Start the polling interval
+                interval = setInterval(fetchStatus, 5000);
+            } catch (err) {
+                console.error("Failed to initialize Mission Control:", err);
+                setLoading(false);
+            }
+        };
+
+        const fetchStatus = async () => {
+            // 🌟 FIX 1: If we don't have an orgId yet, do not make the request!
+            if (!orgIdRef.current) return;
+
+            try {
+                // 🌟 FIX 2: Append the orgId to the backend request URL
+                const res = await fetch(`https://tron-v3.onrender.com/api/admin/system-status?orgId=${orgIdRef.current}`);
                 const data = await res.json();
                 
-                // Only update if the response is actually successful
                 if (res.ok) {
                     setStatus({
-                        // The || [] guarantees it will ALWAYS be an array, preventing the .length crash
                         queue: data.queue || [],
                         reviews: data.reviews || [],
                         queueCount: data.queueCount || 0,
@@ -32,14 +60,12 @@ export default function ActivityDashboard() {
             }
         };
 
-        // Call it immediately once...
-        fetchStatus();
-        
-        // ...then set it to run every 5 seconds
-        const interval = setInterval(fetchStatus, 5000);
-        
+        setupAndFetch();
+
         // Cleanup the interval when you navigate away from the page
-        return () => clearInterval(interval);
+        return () => {
+            if (interval) clearInterval(interval);
+        };
     }, []);
 
     if (loading) {
@@ -106,7 +132,6 @@ export default function ActivityDashboard() {
                     ) : (
                         <ul className="space-y-3">
                             {status.reviews.map((review, idx) => (
-                                // 🌟 UPDATED: Added onClick, cursor-pointer, and group classes
                                 <li 
                                     key={idx} 
                                     onClick={() => setSelectedReview(review)}
@@ -119,7 +144,6 @@ export default function ActivityDashboard() {
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-3">
-                                        {/* 🌟 NEW: "View Details" text that appears on hover */}
                                         <span className="text-xs text-indigo-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
                                             View Details
                                         </span>
@@ -134,7 +158,7 @@ export default function ActivityDashboard() {
                 </div>
             </div>
 
-            {/* 🌟 NEW: The AI Review Modal */}
+            {/* The AI Review Modal */}
             {selectedReview && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
@@ -162,7 +186,6 @@ export default function ActivityDashboard() {
                             <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Payload Data</h4>
                                 <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono bg-gray-50 p-4 rounded border border-gray-200 overflow-x-auto">
-                                    {/* Will try to render just the review text, or format the whole JSON object if not found */}
                                     {selectedReview.details?.review || JSON.stringify(selectedReview.details, null, 2)}
                                 </pre>
                             </div>
@@ -181,7 +204,6 @@ export default function ActivityDashboard() {
                     </div>
                 </div>
             )}
-
         </div>
     );
 }
