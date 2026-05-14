@@ -115,42 +115,38 @@ router.post('/basecamp-columns', async (req, res) => {
     if (!projectId || !orgId) return res.status(400).json({ error: 'Missing Project ID or Org ID.' });
 
     try {
-        const response = await BasecampAdapter.executeWithRetry(orgId, async (creds) => {
+        const columns = await BasecampAdapter.executeWithRetry(orgId, async (creds) => {
             const headers = BasecampAdapter.getBaseConfig(creds.accessToken);
             
+            // 1. Fetch the project dock
             const projectRes = await axios.get(`https://3.basecampapi.com/${creds.accountId}/projects/${projectId}.json`, headers);
             
-            // ==========================================
-            // 🐛 THE DEBUG TRAP
-            // ==========================================
-            console.log("\n==========================================");
-            console.log("🐛 [DEBUG ADMIN] FULL BASECAMP DOCK DATA:");
-            console.log(JSON.stringify(projectRes.data.dock.map(t => ({ name: t.name, title: t.title, url: t.url })), null, 2));
-            console.log("==========================================\n");
-
-            // 🌟 STRICT PRIORITY LOGIC
-            // Priority 1: Specifically look for the Card Table (Kanban Board) first
+            // 2. STRICT PRIORITY: Grab Kanban Board first, fall back to To-Do set
             let tool = projectRes.data.dock.find(t => t.name === 'kanban_board' || t.name === 'card_table');
-            
-            // Priority 2: ONLY if there is no Kanban Board, fall back to the To-Do list
-            if (!tool) {
-                console.log("⚠️ [DEBUG ADMIN] No Card Table found. Falling back to To-Do Set...");
-                tool = projectRes.data.dock.find(t => t.name === 'todoset');
-            }
-            
+            if (!tool) tool = projectRes.data.dock.find(t => t.name === 'todoset');
             if (!tool || !tool.url) throw new Error('No Card Table or To-Do list found.');
 
-            return axios.get(tool.url, headers);
-        });
+            // 3. Fetch the metadata for the specific tool
+            const toolRes = await axios.get(tool.url, headers);
+            
+            let rawLists = toolRes.data.lists || toolRes.data.columns || toolRes.data.todolists;
+            
+            // 🌟 THE FIX: If Basecamp hides the columns behind a 'lists_url', follow it!
+            const targetUrl = toolRes.data.lists_url || toolRes.data.todolists_url;
+            if (!rawLists && targetUrl) {
+                console.log(`👉 Following Basecamp lists_url: ${targetUrl}`);
+                const listsRes = await axios.get(targetUrl, headers);
+                rawLists = listsRes.data;
+            }
 
-        const toolData = response.data;
-        // Handle variations in how Basecamp names the lists array
-        const rawLists = toolData.lists || toolData.todolists || toolData.columns || []; 
-        
-        const columns = rawLists.map(list => ({
-            id: list.id.toString(),
-            name: list.title || list.name
-        }));
+            if (!rawLists) rawLists = [];
+            
+            // 4. Format and return to the frontend
+            return rawLists.map(list => ({
+                id: list.id.toString(),
+                name: list.title || list.name
+            }));
+        });
 
         res.json({ columns });
     } catch (error) {
