@@ -636,7 +636,7 @@ app.get('/api/auth/basecamp/callback', async (req, res) => {
         console.log("🎉 All done! Sending success response.");
 
        // Redirect back to the TRON dashboard!
-        res.redirect('http://localhost:3000/integrations');
+        res.redirect('https://tron-v3.vercel.app/integrations');
 
     } catch (error) {
         console.error("❌ Basecamp Callback Error:", error.message || error.response?.data);
