@@ -110,8 +110,10 @@ app.post('/api/create-task', requireAuth, async (req, res) => {
              return res.status(400).json({ error: "No PM tool configured in database." });
         }
 
-        // 🌟 THE FIX: Pass verified req.user.org_id to Orchestrator
-        const newTaskId = await PMOrchestrator.resolveTask(config.pm_tool, taskInput, config.mapping, req.user.org_id);
+        // 🌟 THE FIX: Safely extract orgId for invited developers
+        const orgId = req.user?.org_id || req.user?.user_metadata?.org_id;
+
+        const newTaskId = await PMOrchestrator.resolveTask(config.pm_tool, taskInput, config.mapping, orgId);
         res.json({ resolvedId: newTaskId });
     } catch (error) {
         console.error("Task creation failed:", error);
@@ -128,25 +130,27 @@ app.post('/api/start-task', requireAuth, async (req, res) => {
         let resolvedTaskID = taskInput.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase(); 
 
         if (config && config.pm_tool && config.pm_tool.provider !== "none") {
-            // 🌟 THE FIX: Pass verified req.user.org_id to Orchestrator
-            resolvedTaskID = await PMOrchestrator.resolveTask(config.pm_tool, taskInput, config.mapping, req.user.org_id);
+            // 🌟 THE FIX: Safely extract orgId for invited developers
+            const orgId = req.user?.org_id || req.user?.user_metadata?.org_id;
+
+            resolvedTaskID = await PMOrchestrator.resolveTask(config.pm_tool, taskInput, config.mapping, orgId);
             
             const inProgressId = config.mapping.branch_created || config.mapping.in_progress;
             
             if (inProgressId) {
                 console.log(`🚚 [API] Moving task [${resolvedTaskID}] to In Progress column...`);
-                await PMOrchestrator.updateTicketStatus(config.pm_tool, resolvedTaskID, inProgressId, req.user.org_id);
+                await PMOrchestrator.updateTicketStatus(config.pm_tool, resolvedTaskID, inProgressId, orgId);
             }
 
             if (developer) {
                 console.log(`👤 [API] Attempting to assign developer: ${developer}`);
-                await PMOrchestrator.assignTicket(config.pm_tool, resolvedTaskID, developer, req.user.org_id);
+                await PMOrchestrator.assignTicket(config.pm_tool, resolvedTaskID, developer, orgId);
             }
-            // Fire the Background Worker Event
+            
             await redis.lpush('tron:webhook_queue', JSON.stringify({
-            eventType: 'local_start',
-            payload: { taskId: resolvedTaskID, repository: { full_name: repoName } }
-        }));
+                eventType: 'local_start',
+                payload: { taskId: resolvedTaskID, repository: { full_name: repoName } }
+            }));
         }
 
         res.json({ resolvedId: resolvedTaskID });
@@ -182,12 +186,14 @@ app.get('/api/project/:encodedRepo/tickets', requireAuth, async (req, res) => {
     try {
         const config = await getRepoConfigFromDB(repo);
         
-        // 🌟 THE FIX: Explicitly tell VS Code if this repo is NOT connected
         if (!config || !config.pm_tool || config.pm_tool.provider === "none") {
             return res.json({ isMapped: false, tickets: [] });
         }
 
-        const activeTickets = await PMOrchestrator.getTickets(config.pm_tool, config.mapping, req.user.org_id);
+        // 🌟 THE FIX: Safely extract orgId for invited developers
+        const orgId = req.user?.org_id || req.user?.user_metadata?.org_id;
+
+        const activeTickets = await PMOrchestrator.getTickets(config.pm_tool, config.mapping, orgId);
         res.json({ isMapped: true, tickets: activeTickets }); 
     } catch (error) {
         console.error("❌ Failed to fetch tickets:", error.message);
@@ -909,12 +915,17 @@ app.post('/api/admin/basecamp-columns', async (req, res) => {
         console.log("👉 1. Fetching Project:", projectUrl);
         const projectRes = await axios.get(projectUrl, { headers: basecampHeaders });
 
-        // 4. Look through the project "dock" to find the kanban_board
+        // 4. Look through the project "dock" to find the Card Table / Kanban Board
         console.log("🛠️ Available tools:", projectRes.data.dock.map(t => t.name).join(', '));
-        const kanbanTool = projectRes.data.dock.find(tool => tool.name === 'kanban_board');
+        
+        // 🌟 THE FIX: Support all of Basecamp's internal naming conventions!
+        const kanbanTool = projectRes.data.dock.find(tool => 
+            tool.name === 'kanban_board' || 
+            tool.name === 'card_table'
+        );
         
         if (!kanbanTool || !kanbanTool.url) {
-            return res.status(404).json({ error: "Kanban Board not found in this project." });
+            return res.status(404).json({ error: "No Card Table or To-Do list found in this Basecamp project." });
         }
 
         // 5. Fetch the Kanban Board directly
