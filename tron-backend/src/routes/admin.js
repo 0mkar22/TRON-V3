@@ -119,15 +119,33 @@ router.post('/basecamp-columns', async (req, res) => {
             const headers = BasecampAdapter.getBaseConfig(creds.accessToken);
             
             const projectRes = await axios.get(`https://3.basecampapi.com/${creds.accountId}/projects/${projectId}.json`, headers);
-            let tool = projectRes.data.dock.find(t => t.name === 'kanban_board' || t.name === 'card_table' || t.name === 'todoset');
             
-            if (!tool) throw new Error('No Card Table or To-Do list found.');
+            // ==========================================
+            // 🐛 THE DEBUG TRAP
+            // ==========================================
+            console.log("\n==========================================");
+            console.log("🐛 [DEBUG ADMIN] FULL BASECAMP DOCK DATA:");
+            console.log(JSON.stringify(projectRes.data.dock.map(t => ({ name: t.name, title: t.title, url: t.url })), null, 2));
+            console.log("==========================================\n");
+
+            // 🌟 STRICT PRIORITY LOGIC
+            // Priority 1: Specifically look for the Card Table (Kanban Board) first
+            let tool = projectRes.data.dock.find(t => t.name === 'kanban_board' || t.name === 'card_table');
+            
+            // Priority 2: ONLY if there is no Kanban Board, fall back to the To-Do list
+            if (!tool) {
+                console.log("⚠️ [DEBUG ADMIN] No Card Table found. Falling back to To-Do Set...");
+                tool = projectRes.data.dock.find(t => t.name === 'todoset');
+            }
+            
+            if (!tool || !tool.url) throw new Error('No Card Table or To-Do list found.');
 
             return axios.get(tool.url, headers);
         });
 
         const toolData = response.data;
-        const rawLists = toolData.lists || toolData.todolists || [];
+        // Handle variations in how Basecamp names the lists array
+        const rawLists = toolData.lists || toolData.todolists || toolData.columns || []; 
         
         const columns = rawLists.map(list => ({
             id: list.id.toString(),
