@@ -915,22 +915,33 @@ app.post('/api/admin/basecamp-columns', async (req, res) => {
         console.log("👉 1. Fetching Project:", projectUrl);
         const projectRes = await axios.get(projectUrl, { headers: basecampHeaders });
 
-        // 4. Look through the project "dock" to find the Card Table / Kanban Board
-        console.log("🛠️ Available tools:", projectRes.data.dock.map(t => t.name).join(', '));
-        
-        // 🌟 THE FIX: Support all of Basecamp's internal naming conventions!
-        const kanbanTool = projectRes.data.dock.find(tool => 
-            tool.name === 'kanban_board' || 
-            tool.name === 'card_table'
+        // ==========================================
+        // 🐛 THE DEBUG TRAP
+        // ==========================================
+        console.log("\n==========================================");
+        console.log("🐛 [DEBUG] FULL BASECAMP DOCK DATA:");
+        console.log(JSON.stringify(projectRes.data.dock.map(t => ({ name: t.name, title: t.title, url: t.url })), null, 2));
+        console.log("==========================================\n");
+
+        // 4. Look through the project "dock" with STRICT PRIORITY!
+        // Priority 1: Specifically look for the Card Table (Kanban Board) first
+        let targetTool = projectRes.data.dock.find(tool => 
+            tool.name === 'kanban_board' || tool.name === 'card_table'
         );
         
-        if (!kanbanTool || !kanbanTool.url) {
+        // Priority 2: ONLY if there is no Kanban Board, fall back to the To-Do list
+        if (!targetTool) {
+            console.log("⚠️ [BASECAMP] No Card Table found. Falling back to To-Do Set...");
+            targetTool = projectRes.data.dock.find(tool => tool.name === 'todoset');
+        }
+        
+        if (!targetTool || !targetTool.url) {
             return res.status(404).json({ error: "No Card Table or To-Do list found in this Basecamp project." });
         }
 
-        // 5. Fetch the Kanban Board directly
-        console.log("👉 2. Fetching Kanban Board:", kanbanTool.url);
-        const kanbanRes = await axios.get(kanbanTool.url, { headers: basecampHeaders });
+        // 5. Fetch the Board/List directly using the dynamically found URL
+        console.log("👉 2. Fetching Target Tool:", targetTool.url);
+        const kanbanRes = await axios.get(targetTool.url, { headers: basecampHeaders });
         
         // 6. Extract the columns smartly!
         let lists = kanbanRes.data.lists || kanbanRes.data.columns; 
