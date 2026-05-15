@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
-import LiveTerminal from '@/components/LiveTerminal';
 
 export default async function Home() {
   const supabase = await createClient();
@@ -15,7 +14,7 @@ export default async function Home() {
   const orgId = userData?.org_id;
 
   const fullName = user?.user_metadata?.full_name || 'User';
-  const companyName = user?.user_metadata?.company_name || 'Personal Workspace';
+  const companyName = user?.user_metadata?.company_name || 'Developers Workspace';
 
   let workflows = [];
   try {
@@ -151,7 +150,7 @@ export default async function Home() {
   // 💻 DEVELOPER VIEW (The Tailored Workspace)
   // ==========================================
   return (
-    <div className="max-w-6xl mx-auto p-6 lg:p-8 font-sans space-y-8 pb-16">
+    <div className="max-w-4xl mx-auto p-6 lg:p-8 font-sans space-y-8 pb-16">
       
       {/* Dev Hero & Metrics */}
       <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
@@ -188,72 +187,63 @@ export default async function Home() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <div className="space-y-8">
           
-          {/* Left Column: Editor Toolkit & Connected Repos */}
-          <div className="lg:col-span-7 space-y-8">
-              
-              {/* VS Code Toolkit Banner */}
-              <div className="bg-slate-900 rounded-2xl p-8 shadow-xl text-white relative overflow-hidden">
-                <div className="absolute right-0 bottom-0 w-64 h-64 bg-indigo-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 pointer-events-none transform translate-x-1/2 translate-y-1/2"></div>
-                
-                <div className="relative z-10">
-                    <div className="inline-flex items-center justify-center bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-md text-xs font-bold tracking-wider mb-4 border border-indigo-500/30">
-                        ESSENTIAL TOOLKIT
-                    </div>
-                    <h3 className="text-2xl font-bold flex items-center text-white mb-2">
-                      <span className="mr-3 text-2xl">💻</span> TRON VS Code Extension
-                    </h3>
-                    <p className="text-slate-400 mt-2 text-sm leading-relaxed mb-6">
-                      Sync your Basecamp tickets directly to your editor. Generate new branches with 1-click and automate column movements without leaving VS Code.
-                    </p>
-                    <div className="flex flex-col sm:flex-row gap-3">
-                        <a href="/tron-vscode-0.0.1.vsix" download="tron-vscode-0.0.1.vsix" className="bg-indigo-600 hover:bg-indigo-500 px-6 py-3 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center shadow-lg">
-                            <span className="mr-2">⬇️</span> Download .vsix
-                        </a>
-                        <div className="flex items-center px-4 py-3 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-300 text-xs font-mono">
-                            Press F1 → &apos;T.R.O.N: Sign In&apos;
-                        </div>
+          {/* VS Code Toolkit Banner */}
+          <div className="bg-slate-900 rounded-2xl p-8 shadow-xl text-white relative overflow-hidden">
+            <div className="absolute right-0 bottom-0 w-64 h-64 bg-indigo-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 pointer-events-none transform translate-x-1/2 translate-y-1/2"></div>
+            
+            <div className="relative z-10">
+                <div className="inline-flex items-center justify-center bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-md text-xs font-bold tracking-wider mb-4 border border-indigo-500/30">
+                    ESSENTIAL TOOLKIT
+                </div>
+                <h3 className="text-2xl font-bold flex items-center text-white mb-2">
+                  <span className="mr-3 text-2xl">💻</span> TRON VS Code Extension
+                </h3>
+                <p className="text-slate-400 mt-2 text-sm leading-relaxed mb-6">
+                  Sync your Basecamp tickets directly to your editor. Generate new branches with 1-click and automate column movements without leaving VS Code.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3">
+                    <a href="/tron-vscode-0.0.1.vsix" download="tron-vscode-0.0.1.vsix" className="bg-indigo-600 hover:bg-indigo-500 px-6 py-3 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center shadow-lg">
+                        <span className="mr-2">⬇️</span> Download .vsix
+                    </a>
+                    <div className="flex items-center px-4 py-3 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-300 text-xs font-mono">
+                        Press F1 → &apos;T.R.O.N: Sign In&apos;
                     </div>
                 </div>
-              </div>
-
-              {/* Developer Repositories Table */}
-              <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
-                 <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
-                     <h2 className="text-lg font-bold text-gray-900">Your Connected Workspaces</h2>
-                 </div>
-                 {workflows.length === 0 ? (
-                     <div className="p-8 text-center text-gray-500 text-sm">No repositories have been assigned by an admin.</div>
-                 ) : (
-                     <ul className="divide-y divide-gray-50">
-                         {workflows.map((workflow) => (
-                             <li key={workflow.id} className="p-6 flex items-center justify-between hover:bg-gray-50/50 transition-colors">
-                                 <div className="flex items-center">
-                                     <span className="text-3xl mr-4 drop-shadow-sm">🐙</span>
-                                     <div>
-                                         <p className="font-bold text-gray-900">{workflow.repo_name}</p>
-                                         <div className="flex items-center mt-1 space-x-2">
-                                             <span className="inline-flex items-center text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">⛺ {workflow.pm_provider}</span>
-                                             <span className="inline-flex items-center text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full shadow-sm">
-                                                 <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5"></span> Syncing
-                                             </span>
-                                         </div>
-                                     </div>
-                                 </div>
-                                 <a href={`https://github.com/${workflow.repo_name}`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-4 py-2 rounded-lg transition-all">
-                                     View Code ↗
-                                 </a>
-                             </li>
-                         ))}
-                     </ul>
-                 )}
-              </div>
+            </div>
           </div>
 
-          {/* 🌟 NEW: Real-time Mission Control Activity Feed */}
-          <div className="lg:col-span-5 h-full">
-              <LiveTerminal />
+          {/* Developer Repositories Table */}
+          <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
+             <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                 <h2 className="text-lg font-bold text-gray-900">Your Connected Workspaces</h2>
+             </div>
+             {workflows.length === 0 ? (
+                 <div className="p-8 text-center text-gray-500 text-sm">No repositories have been assigned by an admin.</div>
+             ) : (
+                 <ul className="divide-y divide-gray-50">
+                     {workflows.map((workflow) => (
+                         <li key={workflow.id} className="p-6 flex items-center justify-between hover:bg-gray-50/50 transition-colors">
+                             <div className="flex items-center">
+                                 <span className="text-3xl mr-4 drop-shadow-sm">🐙</span>
+                                 <div>
+                                     <p className="font-bold text-gray-900">{workflow.repo_name}</p>
+                                     <div className="flex items-center mt-1 space-x-2">
+                                         <span className="inline-flex items-center text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">⛺ {workflow.pm_provider}</span>
+                                         <span className="inline-flex items-center text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full shadow-sm">
+                                             <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5"></span> Syncing
+                                         </span>
+                                     </div>
+                                 </div>
+                             </div>
+                             <a href={`https://github.com/${workflow.repo_name}`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-4 py-2 rounded-lg transition-all">
+                                 View Code ↗
+                             </a>
+                         </li>
+                     ))}
+                 </ul>
+             )}
           </div>
       </div>
     </div>
