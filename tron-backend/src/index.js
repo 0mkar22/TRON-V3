@@ -110,7 +110,6 @@ app.post('/api/create-task', requireAuth, async (req, res) => {
              return res.status(400).json({ error: "No PM tool configured in database." });
         }
 
-        // 🌟 THE FIX: Safely extract orgId for invited developers
         const orgId = req.user?.org_id || req.user?.user_metadata?.org_id;
 
         const newTaskId = await PMOrchestrator.resolveTask(config.pm_tool, taskInput, config.mapping, orgId);
@@ -130,7 +129,6 @@ app.post('/api/start-task', requireAuth, async (req, res) => {
         let resolvedTaskID = taskInput.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase(); 
 
         if (config && config.pm_tool && config.pm_tool.provider !== "none") {
-            // 🌟 THE FIX: Safely extract orgId for invited developers
             const orgId = req.user?.org_id || req.user?.user_metadata?.org_id;
 
             resolvedTaskID = await PMOrchestrator.resolveTask(config.pm_tool, taskInput, config.mapping, orgId);
@@ -190,7 +188,6 @@ app.get('/api/project/:encodedRepo/tickets', requireAuth, async (req, res) => {
             return res.json({ isMapped: false, tickets: [] });
         }
 
-        // 🌟 THE FIX: Safely extract orgId for invited developers
         const orgId = req.user?.org_id || req.user?.user_metadata?.org_id;
 
         const activeTickets = await PMOrchestrator.getTickets(config.pm_tool, config.mapping, orgId);
@@ -237,9 +234,13 @@ app.post('/webhook', /* verifyGitHub, */ async (req, res) => {
 
     await redis.expire(`delivery:${deliveryId}`, 172800);
 
+    // Permit installation events (GitHub App) alongside pull_requests
     if (eventType === 'pull_request') {
         const action = payload.action;
         if (!['opened', 'closed', 'reopened'].includes(action)) return;
+    } else if (eventType !== 'installation') {
+        // Discard unnecessary events to save queue processing time
+        return;
     }
 
     console.log(`\n📥 Received Valid GitHub Event: [${eventType}] | Delivery ID: [${deliveryId}]`);
@@ -252,7 +253,6 @@ app.post('/webhook', /* verifyGitHub, */ async (req, res) => {
 
 // 🌟 UPDATED: Link a GitHub Repository to a PM Tool & Save Comm Config
 app.post('/api/repositories', async (req, res) => {
-    // 🌟 Notice we extract communication_config here now!
     const { orgId, repoName, pmProvider, pmProjectId, mapping, communication_config } = req.body; 
     
     try {
@@ -264,7 +264,7 @@ app.post('/api/repositories', async (req, res) => {
                 pm_provider: pmProvider,
                 pm_project_id: pmProjectId,
                 mapping: mapping,
-                communication_config: communication_config // 🌟 Added to DB!
+                communication_config: communication_config
             }], { onConflict: 'repo_name' }); 
 
         if (error) throw error;
@@ -293,221 +293,10 @@ app.get('/api/review/:taskId', requireAuth, async (req, res) => {
 });
 
 // ==========================================
-// DASHBOARD & ADMIN ROUTES
+// DASHBOARD & ADMIN AUTH ROUTES
 // ==========================================
 
-// 🌟 BULLETPROOF: Mission Control - Fetch Redis Queue & AI Reviews
-app.get('/api/admin/system-status', async (req, res) => {
-    try {
-        // ⚠️ Change 'redis' here to match whatever is at the top of your file!
-        const queueItems = await redis.lrange('tron:v3_secret_queue', 0, -1);
-        
-        // Safely parse the queue
-        const parsedQueue = queueItems.map(item => {
-            try { return JSON.parse(item); } 
-            catch (e) { return { eventType: 'Unknown', payload: { repository: { full_name: 'Corrupted Task' } } }; }
-        });
-
-        // 2. Fetch AI Review History Keys
-        const reviewKeys = await redis.keys('ai_review:*');
-        const reviews = [];
-
-        for (const key of reviewKeys) {
-            try {
-                const dataString = await redis.get(key);
-                
-                if (dataString) {
-                    let data;
-                    
-                    // SMART PARSE: Try JSON first. If it's raw text, catch the error and wrap it!
-                    try {
-                        data = JSON.parse(dataString);
-                    } catch (e) {
-                        // It's raw text! Wrap it in an object so the frontend modal can read it
-                        data = { review: dataString };
-                    }
-
-                    const taskId = key.split(':')[1];
-                    
-                    reviews.push({ 
-                        taskId: taskId, 
-                        key: key,
-                        details: data 
-                    });
-                }
-            } catch (redisError) {
-                console.error(`⚠️ Failed to read key ${key}:`, redisError.message);
-            }
-        }
-
-        res.json({
-            queue: parsedQueue,
-            reviews: reviews,
-            queueCount: parsedQueue.length,
-            reviewCount: reviews.length
-        });
-    } catch (error) {
-        console.error("❌ System Status Error:", error);
-        res.status(500).json({ error: "Failed to fetch system status." });
-    }
-});
-
-// 1. Save GitHub Token
-app.post('/api/admin/save-integration', async (req, res) => {
-    const { provider, token, orgId } = req.body;
-
-    if (!provider || !token || !orgId) {
-        return res.status(400).json({ error: "Missing provider, token, or orgId" });
-    }
-
-    try {
-        console.log(`👉 Saving ${provider} token for Org: ${orgId}`);
-
-        // 1. Save the raw token to the Vault
-        const { data: secretId, error: vaultError } = await supabase.rpc('insert_secret', {
-            secret_name: `${provider}_token_${orgId}_${Date.now()}`,
-            secret_description: `Access token for ${provider}`,
-            secret_value: token // Just the raw string, no JSON parsing needed for a simple token
-        });
-
-        if (vaultError || !secretId) throw new Error(`Vault Error: ${vaultError?.message}`);
-
-        // 2. Tie it to the organization in the DB
-        const { error: dbError } = await supabase
-            .from('integrations')
-            .upsert({ 
-                org_id: orgId,
-                provider: provider, 
-                secret_id: secretId 
-            }, { onConflict: 'org_id, provider' });
-
-        if (dbError) throw new Error(`DB Error: ${dbError.message}`);
-
-        res.json({ success: true, message: `${provider} connected successfully!` });
-
-    } catch (error) {
-        console.error(`❌ ${provider} Save Error:`, error.message);
-        res.status(500).json({ error: `Failed to save ${provider} integration.` });
-    }
-});
-
-// 🌟 NEW: Fetch GitHub Repositories for the Dropdown
-app.get('/api/admin/github-repos', async (req, res) => {
-    try {
-        // 1. Find the GitHub integration in the database
-        const { data: integration, error: intError } = await supabase
-            .from('integrations')
-            .select('secret_id')
-            .eq('provider', 'github')
-            .single();
-
-        if (intError || !integration || !integration.secret_id) {
-            return res.json({ isConnected: false, repos: [] });
-        }
-
-        // 2. Decrypt the PAT using Vault
-        const { data: githubPat, error: secError } = await supabase.rpc('get_decrypted_secret', {
-            p_secret_id: integration.secret_id
-        });
-
-        if (secError || !githubPat) {
-            return res.json({ isConnected: false, repos: [] });
-        }
-
-        // 3. Call the GitHub API to get the user's repositories
-        const response = await axios.get('https://api.github.com/user/repos', {
-            headers: {
-                Authorization: `token ${githubPat}`,
-                Accept: 'application/vnd.github.v3+json'
-            },
-            params: {
-                per_page: 100, // Fetch up to 100 recent repos
-                sort: 'updated' // Show the most recently active ones first
-            }
-        });
-
-        // 4. Map the response to just the data the frontend needs
-        const repos = response.data.map(repo => ({
-            id: repo.id,
-            full_name: repo.full_name // e.g., "Omkar22/git-playground"
-        }));
-
-        res.json({ isConnected: true, repos: repos });
-
-    } catch (error) {
-        console.error("❌ GitHub Fetch Error:", error.response?.data || error.message);
-        res.status(500).json({ error: "Failed to fetch repositories from GitHub." });
-    }
-});
-
-// 🌟 NEW: Check GitHub Connection Status for the Integrations Page
-app.get('/api/admin/github-status', async (req, res) => {
-    try {
-        // Just check if a row exists for 'github'
-        const { data, error } = await supabase
-            .from('integrations')
-            .select('id')
-            .eq('provider', 'github')
-            .single();
-
-        if (error || !data) {
-            return res.json({ isConnected: false });
-        }
-
-        res.json({ isConnected: true });
-    } catch (error) {
-        console.error("❌ GitHub Status Error:", error.message);
-        res.json({ isConnected: false });
-    }
-});
-
-// 🌟 NEW: Check GitHub Connection Status for the Integrations Page
-app.get('/api/admin/basecamp-status', async (req, res) => {
-    try {
-        // Just check if a row exists for 'github'
-        const { data, error } = await supabase
-            .from('integrations')
-            .select('id')
-            .eq('provider', 'basecamp')
-            .single();
-
-        if (error || !data) {
-            return res.json({ isConnected: false });
-        }
-
-        res.json({ isConnected: true });
-    } catch (error) {
-        console.error("❌ basecamp-status Error:", error.message);
-        res.json({ isConnected: false });
-    }
-});
-
-// 3. Delete Integrations (GitHub & Basecamp)
-app.delete('/api/admin/delete-integration/:provider', async (req, res) => {
-    const { provider } = req.params;
-    const { orgId } = req.body;
-
-    if (!orgId) return res.status(400).json({ error: "Missing orgId" });
-
-    try {
-        console.log(`🗑️ Disconnecting ${provider} for Org: ${orgId}`);
-        
-        // When we delete the row, Supabase Vault unfortunately doesn't auto-delete the secret.
-        // We just delete the row here. A true production app would run a cron-job to clear orphaned Vault secrets.
-        await supabase
-            .from('integrations')
-            .delete()
-            .eq('provider', provider)
-            .eq('org_id', orgId);
-
-        res.json({ success: true, message: `${provider} disconnected.` });
-    } catch (error) {
-        console.error(`❌ Disconnect Error (${provider}):`, error.message);
-        res.status(500).json({ error: `Failed to disconnect ${provider}.` });
-    }
-});
-
-// 🌟 Start the Basecamp OAuth Dance (Diagnostic Edition)
+// 🌟 Start the Basecamp OAuth Dance
 app.post('/api/auth/basecamp/init', async (req, res) => {
     const { accountId, clientId, clientSecret, orgId } = req.body;
 
@@ -520,7 +309,6 @@ app.post('/api/auth/basecamp/init', async (req, res) => {
 
         const pendingData = JSON.stringify({ accountId, clientId, clientSecret });
 
-        // 1. Save to Vault (Added Date.now() back to prevent duplicate name crashes!)
         const { data: secretId, error: vaultError } = await supabase.rpc('insert_secret', {
             secret_name: `basecamp_pending_${orgId}_${Date.now()}`,
             secret_description: `Pending OAuth keys for Basecamp`,
@@ -530,7 +318,6 @@ app.post('/api/auth/basecamp/init', async (req, res) => {
         if (vaultError) throw new Error(`Vault Error: ${vaultError.message}`);
         if (!secretId) throw new Error(`Vault Error: No secret_id returned`);
 
-        // 2. Save to Integrations table
         const { error: dbError } = await supabase
             .from('integrations')
             .upsert({ 
@@ -541,7 +328,6 @@ app.post('/api/auth/basecamp/init', async (req, res) => {
 
         if (dbError) throw new Error(`DB Error: ${dbError.message}`);
 
-        // 3. Construct URL
         const redirectUri = encodeURIComponent("https://tron-v3.onrender.com/api/auth/basecamp/callback");
         const stateParam = encodeURIComponent(orgId); 
         const authUrl = `https://launchpad.37signals.com/authorization/new?type=web_server&client_id=${clientId}&redirect_uri=${redirectUri}&state=${stateParam}`;
@@ -550,8 +336,6 @@ app.post('/api/auth/basecamp/init', async (req, res) => {
 
     } catch (error) {
         console.error("❌ Basecamp Init Error:", error.message);
-        
-        // 🌟 FIX: Stop hiding the error! Send the exact details to the frontend.
         res.status(500).json({ 
             error: "Failed to initialize Basecamp auth.",
             details: error.message 
@@ -559,7 +343,7 @@ app.post('/api/auth/basecamp/init', async (req, res) => {
     }
 });
 
-// 🌟 Catch the Basecamp OAuth Redirect (Diagnostic Edition)
+// 🌟 Catch the Basecamp OAuth Redirect
 app.get('/api/auth/basecamp/callback', async (req, res) => {
     const { code, state } = req.query;
 
@@ -619,7 +403,6 @@ app.get('/api/auth/basecamp/callback', async (req, res) => {
 
         console.log("✅ Saved to Vault. Upserting to integrations table...");
 
-        // 🌟 Adding .select() forces Supabase to return the newly created row!
         const { data: upsertData, error: upsertError } = await supabase
             .from('integrations')
             .upsert({
@@ -641,8 +424,8 @@ app.get('/api/auth/basecamp/callback', async (req, res) => {
 
         console.log("🎉 All done! Sending success response.");
 
-       // Redirect back to the TRON dashboard!
-        res.redirect('https://tron-v3.vercel.app/integrations');
+        const frontendUrl = process.env.FRONTEND_URL || 'https://tron-v3.vercel.app';
+        res.redirect(`${frontendUrl}/integrations`);
 
     } catch (error) {
         console.error("❌ Basecamp Callback Error:", error.message || error.response?.data);
@@ -650,342 +433,6 @@ app.get('/api/auth/basecamp/callback', async (req, res) => {
             error: "Failed to complete Basecamp authentication.",
             details: error.message || error.response?.data
         });
-    }
-});
-
-// 🌟 NEW: Fetch Basecamp Projects for the Mapping Dropdown
-app.get('/api/admin/basecamp-projects', async (req, res) => {
-    try {
-        // 1. Find the Basecamp integration in the database
-        const { data: integration, error: intError } = await supabase
-            .from('integrations')
-            .select('secret_id')
-            .eq('provider', 'basecamp')
-            .single();
-
-        if (intError || !integration || !integration.secret_id) {
-            return res.json({ isConnected: false, projects: [] });
-        }
-
-        // 2. Decrypt the Vault Secret
-        const { data: decryptedJson, error: secError } = await supabase.rpc('get_decrypted_secret', {
-            p_secret_id: integration.secret_id
-        });
-
-        if (secError || !decryptedJson) {
-            return res.json({ isConnected: false, projects: [] });
-        }
-
-        // Parse the JSON object we saved during the OAuth dance
-        const { accountId, accessToken } = JSON.parse(decryptedJson);
-
-        // 3. Call the Basecamp API using the decrypted token
-        const response = await axios.get(`https://3.basecampapi.com/${accountId}/projects.json`, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'User-Agent': 'TRON-V3-Engine (obhogate48@gmail.com)' // Ensure this matches your email
-            }
-        });
-
-        // 4. Map the response to just the ID and Name for the frontend dropdown
-        const projects = response.data.map(proj => ({
-            id: proj.id.toString(),
-            name: proj.name
-        }));
-
-        res.json({ isConnected: true, projects });
-
-    } catch (error) {
-        console.error("❌ Basecamp Projects Fetch Error:", error.response?.data || error.message);
-        res.status(500).json({ error: "Failed to fetch Basecamp projects." });
-    }
-});
-
-// 🌟 NEW: Fetch dynamically connected Basecamp boards from the database
-app.get('/api/admin/basecamp-boards', async (req, res) => {
-    try {
-        // Query Supabase for all repositories that use Basecamp
-        const { data, error } = await supabase
-            .from('repositories')
-            .select('repo_name, pm_project_id')
-            .eq('pm_provider', 'basecamp');
-
-        if (error) throw error;
-
-        // Format the data for the frontend
-        // We use a Set to remove duplicates just in case multiple repos point to the same board
-        const uniqueBoardsMap = new Map();
-        
-        data.forEach(row => {
-            if (row.pm_project_id) {
-                // If multiple repos share a board, we append the repo names
-                if (uniqueBoardsMap.has(row.pm_project_id)) {
-                    const existing = uniqueBoardsMap.get(row.pm_project_id);
-                    existing.repos.push(row.repo_name);
-                } else {
-                    uniqueBoardsMap.set(row.pm_project_id, {
-                        id: row.pm_project_id,
-                        repos: [row.repo_name]
-                    });
-                }
-            }
-        });
-
-        const formattedBoards = Array.from(uniqueBoardsMap.values()).map(board => ({
-            id: board.id,
-            name: `Linked to: ${board.repos.join(', ')}` // Dynamically name it based on the repo!
-        }));
-
-        res.json({ boards: formattedBoards });
-    } catch (error) {
-        console.error("❌ Failed to fetch Basecamp boards:", error);
-        res.status(500).json({ error: "Database query failed." });
-    }
-});
-    // 🌟 IN-MEMORY CACHE: Prevent Discord Rate Limits
-let cachedDiscordChannels = null;
-let lastDiscordFetch = 0;
-
-// Global Discord Status Fetcher
-app.get('/api/admin/discord-status', async (req, res) => {
-    try {
-        // 1. Fetch the Discord secret_id
-        const { data: integration, error: intError } = await supabase
-            .from('integrations') 
-            .select('secret_id')
-            .eq('provider', 'discord')
-            .single();
-
-        if (intError || !integration || !integration.secret_id) {
-            return res.json({ isConnected: false });
-        }
-
-        // 2. Use an RPC call to decrypt
-        const { data: botToken, error: secError } = await supabase.rpc('get_decrypted_secret', {
-            p_secret_id: integration.secret_id
-        });
-
-        if (secError || !botToken) {
-            return res.json({ isConnected: false });
-        }
-
-        // 🌟 3. CACHE CHECK: If we fetched less than 60 seconds ago, use the cache!
-        if (cachedDiscordChannels && (Date.now() - lastDiscordFetch < 60000)) {
-            console.log("⚡ Serving Discord channels from TRON cache!");
-            return res.json({ isConnected: true, channels: cachedDiscordChannels });
-        }
-
-        // 4. Ask Discord which servers (guilds) this bot is inside
-        const guildResponse = await axios.get('https://discord.com/api/v10/users/@me/guilds', {
-            headers: { Authorization: `Bot ${botToken}` }
-        });
-
-        const guilds = guildResponse.data;
-        if (guilds.length === 0) {
-            return res.json({ isConnected: true, channels: [] }); 
-        }
-
-        // 5. Grab the text channels from the first server the bot is in
-        const guildId = guilds[0].id;
-        const channelResponse = await axios.get(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
-            headers: { Authorization: `Bot ${botToken}` }
-        });
-
-        // 6. Filter for standard text channels (type 0)
-        const textChannels = channelResponse.data
-            .filter(channel => channel.type === 0)
-            .map(channel => ({
-                id: channel.id,
-                name: channel.name
-            }));
-
-        // 🌟 7. SAVE TO CACHE for the next 60 seconds
-        cachedDiscordChannels = textChannels;
-        lastDiscordFetch = Date.now();
-
-        res.json({ 
-            isConnected: true, 
-            channels: textChannels 
-        });
-
-    } catch (error) {
-        // If we hit a rate limit, gracefully return the cache if we have it!
-        if (error.response?.status === 429 && cachedDiscordChannels) {
-            console.log("⚠️ Discord rate limited us, falling back to cache.");
-            return res.json({ isConnected: true, channels: cachedDiscordChannels });
-        }
-        
-        console.error("❌ Discord Status Error:", error.response?.data || error.message);
-        res.json({ isConnected: false }); 
-    }
-});
-
-// 2. Save Discord Webhook/Bot Token
-// (Your frontend uses a specific route name for Discord, so we catch it here!)
-app.post('/api/admin/discord-token', async (req, res) => {
-    const { token, orgId } = req.body;
-
-    if (!token || !orgId) return res.status(400).json({ error: "Missing token or orgId" });
-
-    // We can just reuse the exact same logic, hardcoding the provider as 'discord'
-    try {
-        console.log(`👉 Saving discord token for Org: ${orgId}`);
-
-        const { data: secretId, error: vaultError } = await supabase.rpc('insert_secret', {
-            secret_name: `discord_token_${orgId}_${Date.now()}`,
-            secret_description: `Webhook/Bot token for Discord`,
-            secret_value: token
-        });
-
-        if (vaultError || !secretId) throw new Error(`Vault Error: ${vaultError?.message}`);
-
-        const { error: dbError } = await supabase
-            .from('integrations')
-            .upsert({ 
-                org_id: orgId,
-                provider: 'discord', 
-                secret_id: secretId 
-            }, { onConflict: 'org_id, provider' });
-
-        if (dbError) throw new Error(`DB Error: ${dbError.message}`);
-
-        res.json({ success: true, message: "Discord connected successfully!" });
-
-    } catch (error) {
-        console.error("❌ Discord Save Error:", error.message);
-        res.status(500).json({ error: "Failed to save Discord integration." });
-    }
-});
-
-// 4. Delete Discord
-app.delete('/api/admin/discord-token', async (req, res) => {
-    const { orgId } = req.body;
-    if (!orgId) return res.status(400).json({ error: "Missing orgId" });
-
-    try {
-        console.log(`🗑️ Disconnecting discord for Org: ${orgId}`);
-        await supabase.from('integrations').delete().eq('provider', 'discord').eq('org_id', orgId);
-        res.json({ success: true, message: "Discord disconnected." });
-    } catch (error) {
-        console.error("❌ Discord Disconnect Error:", error.message);
-        res.status(500).json({ error: "Failed to disconnect Discord." });
-    }
-});
-
-// 🌟 PRODUCTION EDITION (BULLETPROOF): Fetch Real Basecamp Columns
-app.post('/api/admin/basecamp-columns', async (req, res) => {
-    let { projectId } = req.body;
-
-    if (!projectId) {
-        return res.status(400).json({ error: "Project ID is required." });
-    }
-
-    try {
-        // 1. SMART CLEANUP: In case you pasted a full URL or it has spaces, just extract the digits!
-        projectId = projectId.toString().match(/\d+/g)?.pop() || projectId.trim();
-
-        // 2. Fetch the encrypted Basecamp token
-        const { data: integration, error: intError } = await supabase
-            .from('integrations') 
-            .select('secret_id')
-            .eq('provider', 'basecamp')
-            .single();
-
-        if (intError || !integration) {
-            return res.status(400).json({ error: "Basecamp is not connected globally." });
-        }
-
-        const { data: decryptedJson, error: secError } = await supabase.rpc('get_decrypted_secret', {
-            p_secret_id: integration.secret_id
-        });
-
-        if (secError || !decryptedJson) throw new Error("Failed to decrypt Basecamp token");
-
-        // 🌟 THE FIX: Parse the JSON to get the real token AND dynamically get the account ID!
-        const { accountId, accessToken } = JSON.parse(decryptedJson);
-
-        const basecampHeaders = {
-            'Authorization': `Bearer ${accessToken}`, // Now we are sending just the clean token!
-            'User-Agent': 'TRON-V3-Engine (obhogate48@gmail.com)', // ⚠️ UPDATE THIS EMAIL
-            'Accept': 'application/json' 
-        };
-
-        // 3. Check Project Link
-        const projectUrl = `https://3.basecampapi.com/${accountId}/buckets/${projectId}.json`;
-        console.log("👉 1. Fetching Project:", projectUrl);
-        const projectRes = await axios.get(projectUrl, { headers: basecampHeaders });
-
-        // ==========================================
-        // 🐛 THE DEBUG TRAP
-        // ==========================================
-        console.log("\n==========================================");
-        console.log("🐛 [DEBUG] FULL BASECAMP DOCK DATA:");
-        console.log(JSON.stringify(projectRes.data.dock.map(t => ({ name: t.name, title: t.title, url: t.url })), null, 2));
-        console.log("==========================================\n");
-
-        // 4. Look through the project "dock" with STRICT PRIORITY!
-        // Priority 1: Specifically look for the Card Table (Kanban Board) first
-        let targetTool = projectRes.data.dock.find(tool => 
-            tool.name === 'kanban_board' || tool.name === 'card_table'
-        );
-        
-        // Priority 2: ONLY if there is no Kanban Board, fall back to the To-Do list
-        if (!targetTool) {
-            console.log("⚠️ [BASECAMP] No Card Table found. Falling back to To-Do Set...");
-            targetTool = projectRes.data.dock.find(tool => tool.name === 'todoset');
-        }
-        
-        if (!targetTool || !targetTool.url) {
-            return res.status(404).json({ error: "No Card Table or To-Do list found in this Basecamp project." });
-        }
-
-        // 5. Fetch the Board/List directly using the dynamically found URL
-        console.log("👉 2. Fetching Target Tool:", targetTool.url);
-        const kanbanRes = await axios.get(targetTool.url, { headers: basecampHeaders });
-        
-        // 6. Extract the columns smartly!
-        let lists = kanbanRes.data.lists || kanbanRes.data.columns; 
-        
-        if (!lists && kanbanRes.data.lists_url) {
-            console.log("👉 3. Following lists_url:", kanbanRes.data.lists_url);
-            const listsRes = await axios.get(kanbanRes.data.lists_url, { headers: basecampHeaders });
-            lists = listsRes.data;
-        }
-
-        if (!lists) {
-            console.log("❌ Kanban Response Dump:", Object.keys(kanbanRes.data));
-            throw new Error("Found the Kanban Board, but couldn't locate the columns.");
-        }
-
-        // 7. Format the data for our Next.js frontend dropdowns
-        const realColumns = lists.map(list => ({
-            id: list.id.toString(), 
-            name: list.title || list.name 
-        }));
-
-        console.log("✅ Success! Found columns:", realColumns.map(c => c.name).join(', '));
-        res.json({ columns: realColumns });
-
-    } catch (error) {
-        console.error("❌ Basecamp API Error:", error.response?.data || error.message);
-        res.status(500).json({ error: "Failed to communicate with Basecamp API." });
-    }
-});
-// 🌟 NEW: Fetch Active Workflows for Dashboard
-app.get('/api/admin/dashboard-workflows', async (req, res) => {
-    try {
-        // Fetch all mapped repositories
-        const { data: workflows, error } = await supabase
-            .from('repositories') // ⚠️ Change this if your table is named differently!
-            .select('*')
-            .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        res.json({ workflows: workflows || [] });
-    } catch (error) {
-        console.error("❌ Failed to fetch dashboard workflows:", error.message);
-        res.status(500).json({ error: "Failed to fetch workflows." });
     }
 });
 
@@ -997,14 +444,11 @@ app.listen(port, () => {
 // REAL-TIME LOG STREAMING WITH SSE
 // ==========================================
 
-// 1. The SSE Endpoint that your frontend is trying to connect to
 app.get('/api/logs/stream', (req, res) => {
-    // These headers keep the connection open!
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     
-    // Optional: Send an initial heartbeat so it connects immediately
     res.write(`data: ${JSON.stringify({
         id: 'connected',
         time: new Date().toLocaleTimeString('en-US', { hour12: false }),
@@ -1020,7 +464,6 @@ app.get('/api/logs/stream', (req, res) => {
     });
 });
 
-// 2. A helper function you can call anywhere in your backend to push logs!
 const broadcastLog = (source, message, color = 'text-gray-300') => {
     const logEntry = {
         id: Date.now().toString(),

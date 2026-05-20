@@ -3,7 +3,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 
-export default async function IntegrationsPage() {
+export default async function IntegrationsPage({ searchParams }) {
     // 1. Initialize Supabase & Get User securely on the server
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -17,8 +17,42 @@ export default async function IntegrationsPage() {
         redirect('/');
     }
 
-    const orgId = userData?.org_id;
-    const { data: integrations } = await supabase.from('integrations').select('*').eq('org_id', orgId);
+    const secureOrgId = userData?.org_id;
+
+    // ==========================================
+    // 🌟 GITHUB APP: AUTO-CATCH INSTALLATION ID
+    // ==========================================
+    // When GitHub redirects back here, it will append ?installation_id=xxxx
+    if (searchParams?.installation_id) {
+        const supabaseAdmin = createAdminClient(
+            process.env.SUPABASE_URL,
+            process.env.SUPABASE_SERVICE_ROLE_KEY
+        );
+
+        try {
+            const uniqueSecretName = `TRON github app install for ${secureOrgId}`;
+            
+            // We store the installation_id securely in the vault just like we did the PAT
+            const { data: newSecretId, error: vaultError } = await supabaseAdmin.rpc('create_integration_secret', {
+                secret_value: searchParams.installation_id,
+                secret_desc: uniqueSecretName
+            });
+
+            if (!vaultError && newSecretId) {
+                // Upsert to integrations table
+                await supabaseAdmin
+                    .from('integrations')
+                    .upsert({ org_id: secureOrgId, provider: 'github', secret_id: newSecretId }, { onConflict: 'org_id, provider' });
+            }
+        } catch (error) {
+            console.error("Failed to save GitHub Installation ID:", error);
+        }
+
+        // Clean the URL so the user doesn't see the query parameters anymore
+        redirect('/integrations');
+    }
+
+    const { data: integrations } = await supabase.from('integrations').select('*').eq('org_id', secureOrgId);
 
     const getIntegration = (provider) => integrations?.find(i => i.provider === provider);
     const github = getIntegration('github');
@@ -39,7 +73,7 @@ export default async function IntegrationsPage() {
         const { data: userData } = await supabaseServer.from('users').select('org_id, role').eq('id', user.id).single();
         
         if (userData?.role !== 'admin') throw new Error("Unauthorized");
-        const secureOrgId = userData?.org_id;
+        const actionOrgId = userData?.org_id;
 
         if (provider === 'basecamp') {
             try {
@@ -49,7 +83,7 @@ export default async function IntegrationsPage() {
                         accountId: formData.get('accountId'),
                         clientId: formData.get('clientId'),
                         clientSecret: formData.get('clientSecret'),
-                        orgId: secureOrgId 
+                        orgId: actionOrgId 
                     })
                 });
                 if (res.ok) {
@@ -61,18 +95,10 @@ export default async function IntegrationsPage() {
             }
         } else {
             const rawToken = formData.get('token');
-            
-            // 🌟 INITIALIZE ADMIN CLIENT FOR VAULT ACCESS
-            const supabaseAdmin = createAdminClient(
-                process.env.SUPABASE_URL,
-                process.env.SUPABASE_SERVICE_ROLE_KEY
-            );
+            const supabaseAdmin = createAdminClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
             try {
-                // Guarantee a unique name in the Vault
-                const uniqueSecretName = `TRON ${provider} token for ${secureOrgId} - ${Date.now()}`;
-
-                // 1. ENCRYPT TOKEN VIA SECURE RPC TUNNEL
+                const uniqueSecretName = `TRON ${provider} token for ${actionOrgId} - ${Date.now()}`;
                 const { data: newSecretId, error: vaultError } = await supabaseAdmin.rpc('create_integration_secret', {
                     secret_value: rawToken,
                     secret_desc: uniqueSecretName
@@ -80,53 +106,31 @@ export default async function IntegrationsPage() {
 
                 if (vaultError) throw vaultError;
 
-                // 2. LINK SECRET_ID IN PUBLIC TABLE (Self-Healing from Duplicates)
-                const { data: existingRecords } = await supabaseAdmin
-                    .from('integrations')
-                    .select('id')
-                    .eq('org_id', secureOrgId)
-                    .eq('provider', provider);
+                const { data: existingRecords } = await supabaseAdmin.from('integrations').select('id').eq('org_id', actionOrgId).eq('provider', provider);
 
                 if (existingRecords && existingRecords.length > 0) {
-                    // Update the primary row
-                    const { error: updateError } = await supabaseAdmin
-                        .from('integrations')
-                        .update({ secret_id: newSecretId }) 
-                        .eq('id', existingRecords[0].id);
-                        
+                    const { error: updateError } = await supabaseAdmin.from('integrations').update({ secret_id: newSecretId }).eq('id', existingRecords[0].id);
                     if (updateError) throw updateError;
 
-                    // Self-Heal: Delete any stray duplicates
                     if (existingRecords.length > 1) {
                         const duplicateIds = existingRecords.slice(1).map(r => r.id);
                         await supabaseAdmin.from('integrations').delete().in('id', duplicateIds);
                     }
                 } else {
-                    const { error: insertError } = await supabaseAdmin
-                        .from('integrations')
-                        .insert({ org_id: secureOrgId, provider, secret_id: newSecretId }); 
-                        
+                    const { error: insertError } = await supabaseAdmin.from('integrations').insert({ org_id: actionOrgId, provider, secret_id: newSecretId }); 
                     if (insertError) throw insertError;
                 }
 
-                // Auto-sync Discord Bot alias (Self-Healing from Duplicates)
                 if (provider === 'discord') {
-                    const { data: botRecords } = await supabaseAdmin
-                        .from('integrations')
-                        .select('id')
-                        .eq('org_id', secureOrgId)
-                        .eq('provider', 'discord_bot');
-
+                    const { data: botRecords } = await supabaseAdmin.from('integrations').select('id').eq('org_id', actionOrgId).eq('provider', 'discord_bot');
                     if (botRecords && botRecords.length > 0) {
                         await supabaseAdmin.from('integrations').update({ secret_id: newSecretId }).eq('id', botRecords[0].id); 
-                        
-                        // Clean up stray bot alias duplicates
                         if (botRecords.length > 1) {
                             const botDupes = botRecords.slice(1).map(r => r.id);
                             await supabaseAdmin.from('integrations').delete().in('id', botDupes);
                         }
                     } else {
-                        await supabaseAdmin.from('integrations').insert({ org_id: secureOrgId, provider: 'discord_bot', secret_id: newSecretId }); 
+                        await supabaseAdmin.from('integrations').insert({ org_id: actionOrgId, provider: 'discord_bot', secret_id: newSecretId }); 
                     }
                 }
             } catch (error) {
@@ -142,25 +146,24 @@ export default async function IntegrationsPage() {
         'use server';
         const supabaseServer = await createClient();
         const provider = formData.get('provider');
-
         const { data: { user } } = await supabaseServer.auth.getUser();
         const { data: userData } = await supabaseServer.from('users').select('org_id, role').eq('id', user.id).single();
         if (userData?.role !== 'admin') throw new Error("Unauthorized");
         
-        const secureOrgId = userData?.org_id;
+        const actionOrgId = userData?.org_id;
 
         try {
-            await supabaseServer.from('integrations').delete().match({ provider, org_id: secureOrgId });
+            await supabaseServer.from('integrations').delete().match({ provider, org_id: actionOrgId });
             if (provider === 'discord') {
-                await supabaseServer.from('integrations').delete().match({ provider: 'discord_bot', org_id: secureOrgId });
+                await supabaseServer.from('integrations').delete().match({ provider: 'discord_bot', org_id: actionOrgId });
             }
         } catch (e) {
             console.error(`Failed to disconnect ${provider}:`, e);
         }
-
         revalidatePath('/integrations');
     };
 
+    // 🌟 RENDER UI
     return (
         <div className="max-w-5xl mx-auto p-6 lg:p-8 font-sans">
             <div className="mb-10">
@@ -176,7 +179,7 @@ export default async function IntegrationsPage() {
                         Version Control
                     </h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* 🌟 GITHUB CARD */}
+                        {/* 🌟 NEW GITHUB APP CARD */}
                         <div className={`bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border ${github ? 'border-gray-300 ring-2 ring-gray-900' : 'border-gray-200'} overflow-hidden flex flex-col transition-all`}>
                             <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
                                 <div className="flex items-center space-x-3">
@@ -188,46 +191,23 @@ export default async function IntegrationsPage() {
                             <div className="p-6 flex flex-col flex-grow">
                                 <div className="mb-5 flex-grow space-y-4">
                                     <p className="text-gray-500 text-sm">
-                                        Connect your Personal Access Token (PAT) to grant TRON permission to read PRs and perform automated AI code reviews.
+                                        Install the TRON GitHub App to securely grant granular repository access. No manual tokens required.
                                     </p>
-
-                                    {!github && (
-                                        <details className="group">
-                                            <summary className="flex items-center gap-2 cursor-pointer list-none text-xs font-bold text-gray-600 hover:text-gray-900 transition-colors select-none w-max">
-                                                <span className="bg-gray-100 text-gray-500 w-5 h-5 flex items-center justify-center rounded border border-gray-200 group-open:bg-gray-200 transition-colors">
-                                                    <svg className="w-3 h-3 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
-                                                </span>
-                                                Setup Instructions
-                                            </summary>
-                                            <div className="mt-3 p-4 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-700 space-y-2.5">
-                                                <p>
-                                                    1. Go to <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="font-bold text-gray-900 underline hover:text-black transition-colors">GitHub Developer Settings</a>.
-                                                </p>
-                                                <p>2. Generate a new token (Classic or Fine-grained).</p>
-                                                <p>3. Ensure it has the <code className="bg-gray-200 px-1 py-0.5 rounded text-gray-900 font-mono">repo</code> scope enabled.</p>
-                                                <p>4. Copy the generated token and paste it below.</p>
-                                            </div>
-                                        </details>
-                                    )}
                                 </div>
 
                                 {github ? (
                                     <form action={deleteIntegration} className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-200 mt-auto">
                                         <input type="hidden" name="provider" value="github" />
-                                        <span className="text-sm font-semibold text-gray-700">Token Connected</span>
+                                        <span className="text-sm font-semibold text-gray-700">App Installed</span>
                                         <button type="submit" className="text-red-600 hover:text-red-700 text-sm font-bold transition-colors">Disconnect</button>
                                     </form>
                                 ) : (
-                                    <form action={saveIntegration} className="space-y-4 mt-auto">
-                                        <input type="hidden" name="provider" value="github" />
-                                        <div>
-                                            <label className="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wider">Access Token</label>
-                                            <input name="token" type="password" required placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 transition-all font-mono text-sm placeholder-gray-400" />
-                                        </div>
-                                        <button type="submit" className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm">
-                                            Connect GitHub
-                                        </button>
-                                    </form>
+                                    <div className="mt-auto">
+                                        {/* ⚠️ CHANGE 'YOUR_GITHUB_APP_NAME' BELOW TO YOUR ACTUAL APP SLUG */}
+                                        <a href={`https://github.com/apps/TRON V3/installations/new`} className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm flex items-center justify-center">
+                                            Connect GitHub Account
+                                        </a>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -257,28 +237,6 @@ export default async function IntegrationsPage() {
                                     <p className="text-gray-500 text-sm">
                                         Authorize TRON to sync tasks, auto-assign developers, and manage column states.
                                     </p>
-
-                                    {!basecamp && (
-                                        <details className="group">
-                                            <summary className="flex items-center gap-2 cursor-pointer list-none text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors select-none w-max">
-                                                <span className="bg-indigo-50 text-indigo-500 w-5 h-5 flex items-center justify-center rounded border border-indigo-100 group-open:bg-indigo-100 transition-colors">
-                                                    <svg className="w-3 h-3 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
-                                                </span>
-                                                Setup Instructions
-                                            </summary>
-                                            <div className="mt-3 p-4 bg-indigo-50/40 border border-indigo-100 rounded-xl text-xs text-indigo-800/90 space-y-3">
-                                                <p>
-                                                    1. Create a custom app via the <a href="https://launchpad.37signals.com/integrations" target="_blank" rel="noopener noreferrer" className="font-bold text-indigo-600 underline hover:text-indigo-900 transition-colors">37signals Launchpad</a>.
-                                                </p>
-                                                <div>
-                                                    <p className="mb-1.5">2. Set your <strong>Redirect URI</strong> to:</p>
-                                                    <code className="block bg-white/80 px-3 py-2.5 rounded-lg font-mono select-all border border-indigo-200/60 text-indigo-700 overflow-x-auto whitespace-nowrap shadow-sm">
-                                                        https://tron-v3.onrender.com/api/auth/basecamp/callback
-                                                    </code>
-                                                </div>
-                                            </div>
-                                        </details>
-                                    )}
                                 </div>
 
                                 {basecamp ? (
@@ -337,25 +295,6 @@ export default async function IntegrationsPage() {
                             <div className="p-6 flex flex-col flex-grow">
                                 <div className="mb-5 flex-grow space-y-4">
                                     <p className="text-sm text-gray-500">Broadcast AI executive summaries directly to your server.</p>
-                                    
-                                    {!discord && (
-                                        <details className="group">
-                                            <summary className="flex items-center gap-2 cursor-pointer list-none text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors select-none w-max">
-                                                <span className="bg-blue-50 text-blue-500 w-5 h-5 flex items-center justify-center rounded border border-blue-100 group-open:bg-blue-100 transition-colors">
-                                                    <svg className="w-3 h-3 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
-                                                </span>
-                                                Setup Instructions
-                                            </summary>
-                                            <div className="mt-3 p-4 bg-blue-50/50 border border-blue-100 rounded-xl text-xs text-blue-800 space-y-2.5">
-                                                <p>
-                                                    1. Go to the <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer" className="font-bold text-blue-700 underline hover:text-blue-900 transition-colors">Discord Developer Portal</a>.
-                                                </p>
-                                                <p>2. Create a &quot;New Application&quot; and navigate to the <strong>Bot</strong> tab.</p>
-                                                <p>3. Click <strong>Reset Token</strong> to generate your unique bot key.</p>
-                                                <p>4. Copy the token and paste it below.</p>
-                                            </div>
-                                        </details>
-                                    )}
                                 </div>
 
                                 {discord ? (
@@ -390,25 +329,6 @@ export default async function IntegrationsPage() {
                             <div className="p-6 flex flex-col flex-grow">
                                 <div className="mb-5 flex-grow space-y-4">
                                     <p className="text-sm text-gray-500">Send automated code reviews to your Slack workspace.</p>
-                                    
-                                    {!slack && (
-                                        <details className="group">
-                                            <summary className="flex items-center gap-2 cursor-pointer list-none text-xs font-bold text-teal-600 hover:text-teal-800 transition-colors select-none w-max">
-                                                <span className="bg-teal-50 text-teal-500 w-5 h-5 flex items-center justify-center rounded border border-teal-100 group-open:bg-teal-100 transition-colors">
-                                                    <svg className="w-3 h-3 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
-                                                </span>
-                                                Setup Instructions
-                                            </summary>
-                                            <div className="mt-3 p-4 bg-teal-50/50 border border-teal-100 rounded-xl text-xs text-teal-800 space-y-2.5">
-                                                <p>
-                                                    1. Go to the <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer" className="font-bold text-teal-700 underline hover:text-teal-900 transition-colors">Slack API Directory</a>.
-                                                </p>
-                                                <p>2. Create a new App and enable <strong>Incoming Webhooks</strong>.</p>
-                                                <p>3. Click <strong>Add New Webhook to Workspace</strong> and choose a channel.</p>
-                                                <p>4. Copy the generated Webhook URL and paste it below.</p>
-                                            </div>
-                                        </details>
-                                    )}
                                 </div>
 
                                 {slack ? (

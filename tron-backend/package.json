@@ -18,6 +18,7 @@
     "express": "^5.2.1",
     "ioredis": "^5.10.1",
     "js-yaml": "^4.1.1",
+    "jsonwebtoken": "^9.0.3",
     "openai": "^6.33.0",
     "redis-cli": "^2.1.2"
   },
