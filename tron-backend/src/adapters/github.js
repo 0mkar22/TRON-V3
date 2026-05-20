@@ -1,25 +1,27 @@
 const axios = require('axios');
-
-const GITHUB_TOKEN = process.env.GITHUB_ACCESS_TOKEN;
-
-const githubAPI = axios.create({
-    headers: {
-        'Authorization': `Bearer ${GITHUB_TOKEN}`,
-        'Accept': 'application/vnd.github.v3.diff', // This tells GitHub we want raw diff text, not JSON!
-        'User-Agent': 'TRON-AI-Pipeline'
-    }
-});
+const GitHubAppAdapter = require('./githubApp');
 
 // The "Monster Diff" Sanitizer (REQ-9 & REQ-10)
-async function fetchAndSanitizeDiff(diffUrl) {
+async function fetchAndSanitizeDiff(diffUrl, installationId) {
     console.log(`\n📥 [GITHUB ADAPTER] Fetching raw code diff from: ${diffUrl}`);
 
-    if (!GITHUB_TOKEN) {
-        throw new Error("Missing GITHUB_ACCESS_TOKEN in .env");
+    if (!installationId) {
+        throw new Error("Missing GitHub Installation ID. Cannot authenticate as App.");
     }
 
     try {
-        const response = await githubAPI.get(diffUrl);
+        // 🌟 NEW: Get a fresh 1-hour token dynamically!
+        const token = await GitHubAppAdapter.getInstallationToken(installationId);
+
+        // We construct the request dynamically now so we can inject the fresh token
+        const response = await axios.get(diffUrl, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/vnd.github.v3.diff', // This tells GitHub we want raw diff text, not JSON!
+                'User-Agent': 'TRON-AI-Pipeline'
+            }
+        });
+        
         let rawDiff = response.data;
 
         console.log(`🧹 [GITHUB ADAPTER] Sanitizing Monster Diffs...`);
@@ -62,24 +64,27 @@ async function fetchAndSanitizeDiff(diffUrl) {
     }
 }
 
-// 📢 NEW: Post a comment directly to a Pull Request
-async function postPullRequestComment(repoFullName, prNumber, commentBody) {
-    if (!GITHUB_TOKEN) {
-        console.warn("⚠️ GITHUB_ACCESS_TOKEN is missing in .env. Cannot post PR comment.");
+// 📢 UPDATED: Post a comment directly to a Pull Request using the App Identity
+async function postPullRequestComment(repoFullName, prNumber, commentBody, installationId) {
+    if (!installationId) {
+        console.warn("⚠️ Missing GitHub Installation ID. Cannot post PR comment.");
         return;
     }
 
     // GitHub's API endpoint for PR comments is actually the Issues endpoint!
     const url = `https://api.github.com/repos/${repoFullName}/issues/${prNumber}/comments`;
     
-    const headers = {
-        'Authorization': `Bearer ${GITHUB_TOKEN}`,
-        'Accept': 'application/vnd.github.v3+json', // We need JSON for this call, not diff
-        'Content-Type': 'application/json',
-        'User-Agent': 'TRON-AI-Pipeline'
-    };
-
     try {
+        // 🌟 NEW: Get a fresh 1-hour token dynamically!
+        const token = await GitHubAppAdapter.getInstallationToken(installationId);
+
+        const headers = {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github.v3+json', // We need JSON for this call, not diff
+            'Content-Type': 'application/json',
+            'User-Agent': 'TRON-AI-Pipeline'
+        };
+
         await axios.post(url, { body: commentBody }, { headers });
         console.log(`💬 Successfully posted AI review to PR #${prNumber}`);
     } catch (error) {

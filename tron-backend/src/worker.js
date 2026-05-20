@@ -71,9 +71,13 @@ async function startWorker() {
                     const diffUrl = job.payload.pull_request.diff_url;
                     const repoFullName = job.payload.repository.full_name; 
                     const prNumber = job.payload.pull_request.number;
+                    
+                    // 🌟 NEW: Grab the Installation ID from the webhook!
+                    const installationId = job.payload.installation?.id;
 
                     try {
-                        const sanitizedDiff = await githubAdapter.fetchAndSanitizeDiff(diffUrl);
+                        // 🌟 NEW: Pass the ID to your GitHub adapter functions
+                        const sanitizedDiff = await githubAdapter.fetchAndSanitizeDiff(diffUrl, installationId);
                         const codeReview = await aiAdapter.generateCodeReview(sanitizedDiff);
                         
                         if (taskIdentifier) {
@@ -81,7 +85,7 @@ async function startWorker() {
                         }
                         
                         const commentHeader = `### 🤖 T.R.O.N. Automated Code Review\n\n`;
-                        await githubAdapter.postPullRequestComment(repoFullName, prNumber, commentHeader + codeReview);
+                        await githubAdapter.postPullRequestComment(repoFullName, prNumber, commentHeader + codeReview, installationId);
                         console.log(`💬 [GitHub] Posted Code Review to PR #${prNumber}`);
 
                         const intelligenceReport = await aiAdapter.generateExecutiveSummary(prTitle, sanitizedDiff);

@@ -20,6 +20,7 @@ class GitHubAppAdapter {
 
     // 2. Exchange the JWT for a temporary Installation Token
     static async getInstallationToken(installationId) {
+        if (!installationId) throw new Error("Missing GitHub Installation ID");
         try {
             const appJwt = this.generateAppJWT();
             
