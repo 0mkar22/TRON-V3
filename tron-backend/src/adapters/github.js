@@ -1,5 +1,5 @@
 const axios = require('axios');
-const GitHubAppAdapter = require('./githubApp');
+const GitHubAppAdapter = require('../routes/githubApp');
 
 // The "Monster Diff" Sanitizer (REQ-9 & REQ-10)
 async function fetchAndSanitizeDiff(diffUrl, installationId) {
