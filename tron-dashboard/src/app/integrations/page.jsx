@@ -22,7 +22,6 @@ export default async function IntegrationsPage({ searchParams }) {
     // ==========================================
     // 🌟 GITHUB APP: AUTO-CATCH INSTALLATION ID
     // ==========================================
-    // When GitHub redirects back here, it will append ?installation_id=xxxx
     if (searchParams?.installation_id) {
         const supabaseAdmin = createAdminClient(
             process.env.SUPABASE_URL,
@@ -30,42 +29,44 @@ export default async function IntegrationsPage({ searchParams }) {
         );
 
         try {
-            // Avoid impure Date.now() during render — use the installation_id as a stable identifier
-            const timestamp = searchParams.installation_id ?? 'auto';
-            const uniqueSecretName = `TRON github app install for ${secureOrgId} - ${timestamp}`;
-            
-            // 1. Save the ID securely in the vault 
-            const { data: newSecretId, error: vaultError } = await supabaseAdmin.rpc('create_integration_secret', {
-                secret_value: searchParams.installation_id.toString(), // Ensure it's a string!
-                secret_desc: uniqueSecretName
+            // 1. MATCHING YOUR BACKEND RPC EXACTLY
+            const { data: newSecretId, error: vaultError } = await supabaseAdmin.rpc('insert_secret', {
+                secret_name: `github_app_install_${secureOrgId}_${searchParams.installation_id}`,
+                secret_description: `GitHub Installation ID for Org ${secureOrgId}`,
+                secret_value: searchParams.installation_id.toString()
             });
 
-            if (vaultError) throw vaultError;
+            if (vaultError) throw new Error(`Vault Error: ${vaultError.message}`);
+            if (!newSecretId) throw new Error("Vault returned no secret ID");
 
-            // 2. THE SAFE UPDATE: Match the logic used by Discord and Slack
-            const { data: existingRecords } = await supabaseAdmin
+            // 2. THE SAFE UPDATE
+            const { data: existingRecords, error: selectError } = await supabaseAdmin
                 .from('integrations')
                 .select('id')
                 .eq('org_id', secureOrgId)
                 .eq('provider', 'github');
 
+            if (selectError) throw new Error(`Select Error: ${selectError.message}`);
+
             if (existingRecords && existingRecords.length > 0) {
-                await supabaseAdmin
+                const { error: updateError } = await supabaseAdmin
                     .from('integrations')
                     .update({ secret_id: newSecretId }) 
                     .eq('id', existingRecords[0].id);
+                if (updateError) throw new Error(`Update Error: ${updateError.message}`);
             } else {
-                await supabaseAdmin
+                const { error: insertError } = await supabaseAdmin
                     .from('integrations')
                     .insert({ org_id: secureOrgId, provider: 'github', secret_id: newSecretId }); 
+                if (insertError) throw new Error(`Insert Error: ${insertError.message}`);
             }
             
             console.log("✅ GitHub App connected successfully!");
         } catch (error) {
-            console.error("❌ Failed to save GitHub Installation ID:", error);
+            console.error("❌ Failed to save GitHub Installation ID:", error.message);
         }
 
-        // 3. THE FIX: Purge the Next.js cache before reloading the page!
+        // Purge the cache and clean the URL
         revalidatePath('/integrations');
         redirect('/integrations');
     }
