@@ -204,7 +204,7 @@ export default async function IntegrationsPage({ searchParams }) {
                                 ) : (
                                     <div className="mt-auto">
                                         {/* ⚠️ CHANGE 'YOUR_GITHUB_APP_NAME' BELOW TO YOUR ACTUAL APP SLUG */}
-                                        <a href={`https://github.com/apps/TRON V3/installations/new`} className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm flex items-center justify-center">
+                                        <a href={`https://github.com/apps/tron-v3/installations/new`} className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm flex items-center justify-center">
                                             Connect GitHub Account
                                         </a>
                                     </div>
