@@ -30,25 +30,43 @@ export default async function IntegrationsPage({ searchParams }) {
         );
 
         try {
-            const uniqueSecretName = `TRON github app install for ${secureOrgId}`;
+            // Avoid impure Date.now() during render — use the installation_id as a stable identifier
+            const timestamp = searchParams.installation_id ?? 'auto';
+            const uniqueSecretName = `TRON github app install for ${secureOrgId} - ${timestamp}`;
             
-            // We store the installation_id securely in the vault just like we did the PAT
+            // 1. Save the ID securely in the vault 
             const { data: newSecretId, error: vaultError } = await supabaseAdmin.rpc('create_integration_secret', {
-                secret_value: searchParams.installation_id,
+                secret_value: searchParams.installation_id.toString(), // Ensure it's a string!
                 secret_desc: uniqueSecretName
             });
 
-            if (!vaultError && newSecretId) {
-                // Upsert to integrations table
+            if (vaultError) throw vaultError;
+
+            // 2. THE SAFE UPDATE: Match the logic used by Discord and Slack
+            const { data: existingRecords } = await supabaseAdmin
+                .from('integrations')
+                .select('id')
+                .eq('org_id', secureOrgId)
+                .eq('provider', 'github');
+
+            if (existingRecords && existingRecords.length > 0) {
                 await supabaseAdmin
                     .from('integrations')
-                    .upsert({ org_id: secureOrgId, provider: 'github', secret_id: newSecretId }, { onConflict: 'org_id, provider' });
+                    .update({ secret_id: newSecretId }) 
+                    .eq('id', existingRecords[0].id);
+            } else {
+                await supabaseAdmin
+                    .from('integrations')
+                    .insert({ org_id: secureOrgId, provider: 'github', secret_id: newSecretId }); 
             }
+            
+            console.log("✅ GitHub App connected successfully!");
         } catch (error) {
-            console.error("Failed to save GitHub Installation ID:", error);
+            console.error("❌ Failed to save GitHub Installation ID:", error);
         }
 
-        // Clean the URL so the user doesn't see the query parameters anymore
+        // 3. THE FIX: Purge the Next.js cache before reloading the page!
+        revalidatePath('/integrations');
         redirect('/integrations');
     }
 
