@@ -3,6 +3,10 @@ import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 
+// 🚨 ADD THESE TWO LINES TO KILL THE CACHE:
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function IntegrationsPage({ searchParams }) {
     // 1. Initialize Supabase & Get User securely on the server
     const supabase = await createClient();
