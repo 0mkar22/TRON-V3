@@ -2,10 +2,9 @@ import { createClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
+import AutoDismissBanner from '@/components/AutoDismissBanner'; 
 
-import AutoDismissBanner from '@/components/AutoDismissBanner';
-
-// Force Vercel to never cache this route
+// Force Vercel to never cache this route so the auto-setup always fires
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -13,7 +12,6 @@ export default async function IntegrationsPage({ searchParams }) {
     // 🌟 Await searchParams for Next.js 15 compatibility
     const params = await searchParams;
 
-    // 1. Initialize Supabase & Get User securely on the server
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -21,45 +19,26 @@ export default async function IntegrationsPage({ searchParams }) {
 
     const { data: userData } = await supabase.from('users').select('org_id, role').eq('id', user.id).single();
     
-    // THE BOUNCER: Kick out developers
     if (userData?.role !== 'admin') {
         redirect('/');
     }
 
     const secureOrgId = userData?.org_id;
 
-    // Fetch existing integrations
-    const { data: integrations } = await supabase.from('integrations').select('*').eq('org_id', secureOrgId);
-
-    const getIntegration = (provider) => integrations?.find(i => i.provider === provider);
-    const github = getIntegration('github');
-    const basecamp = getIntegration('basecamp');
-    const discord = getIntegration('discord');
-    const slack = getIntegration('slack');
-
     // ==========================================
-    // 🌟 GITHUB APP SERVER ACTION (MANUAL TRIGGER)
+    // 🌟 INVISIBLE GITHUB AUTO-SETUP
     // ==========================================
-    const finalizeGitHubSetup = async (formData) => {
-        'use server';
-        const supabaseServer = await createClient();
-        const installationId = formData.get('installationId');
-
-        const { data: { user } } = await supabaseServer.auth.getUser();
-        const { data: userData } = await supabaseServer.from('users').select('org_id, role').eq('id', user.id).single();
-        if (userData?.role !== 'admin') throw new Error("Unauthorized");
-
-        const actionOrgId = userData.org_id;
+    if (params?.installation_id && params?.github_setup !== 'success') {
         const supabaseAdmin = createAdminClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
         try {
-            console.log(`🚀 [GITHUB SETUP] Attempting to save ID: ${installationId} for Org: ${actionOrgId}`);
+            console.log(`🚀 [AUTO-SETUP] Catching ID: ${params.installation_id} for Org: ${secureOrgId}`);
             
             // 1. Save to Vault
             const { data: newSecretId, error: vaultError } = await supabaseAdmin.rpc('insert_secret', {
-                secret_name: `github_app_install_${actionOrgId}_${Date.now()}`,
-                secret_description: `GitHub Installation ID for Org ${actionOrgId}`,
-                secret_value: installationId.toString()
+                secret_name: `github_app_install_${secureOrgId}_${params.installation_id}`,
+                secret_description: `GitHub Installation ID for Org ${secureOrgId}`,
+                secret_value: params.installation_id.toString()
             });
 
             if (vaultError) throw new Error(`Vault Error: ${vaultError.message}`);
@@ -69,22 +48,32 @@ export default async function IntegrationsPage({ searchParams }) {
             const { error: upsertError } = await supabaseAdmin
                 .from('integrations')
                 .upsert({ 
-                    org_id: actionOrgId, 
+                    org_id: secureOrgId, 
                     provider: 'github', 
                     secret_id: newSecretId 
                 }, { onConflict: 'org_id, provider' });
 
             if (upsertError) throw new Error(`DB Error: ${upsertError.message}`);
 
-            console.log("✅ [GITHUB SETUP] Success!");
+            console.log("✅ [AUTO-SETUP] Success! Purging cache and redirecting.");
         } catch (error) {
-            console.error("❌ [GITHUB SETUP] Failed:", error);
+            console.error("❌ [AUTO-SETUP] Failed:", error);
             redirect(`/integrations?github_error=${encodeURIComponent(error.message)}`);
         }
 
+        // Clean the URL parameters and show the success banner
         revalidatePath('/integrations');
         redirect('/integrations?github_setup=success');
-    };
+    }
+
+    // Fetch existing integrations
+    const { data: integrations } = await supabase.from('integrations').select('*').eq('org_id', secureOrgId);
+
+    const getIntegration = (provider) => integrations?.find(i => i.provider === provider);
+    const github = getIntegration('github');
+    const basecamp = getIntegration('basecamp');
+    const discord = getIntegration('discord');
+    const slack = getIntegration('slack');
 
     // ==========================================
     // 🌟 SECURE VAULT SERVER ACTIONS (SLACK, DISCORD, BASECAMP)
@@ -168,6 +157,9 @@ export default async function IntegrationsPage({ searchParams }) {
         if (redirectUrl) redirect(redirectUrl);
     };
 
+    // ==========================================
+    // 🌟 DELETE / UNINSTALL
+    // ==========================================
     const deleteIntegration = async (formData) => {
         'use server';
         const supabaseServer = await createClient();
@@ -182,7 +174,6 @@ export default async function IntegrationsPage({ searchParams }) {
             if (provider === 'github') {
                 console.log(`🐛 Attempting to uninstall GitHub app for Org: ${actionOrgId}`);
                 
-                // Force the exact Render URL so it never gets lost on Localhost
                 const uninstallRes = await fetch(`https://tron-v3.onrender.com/api/admin/github-uninstall?orgId=${actionOrgId}`, {
                     method: 'DELETE'
                 });
@@ -190,22 +181,19 @@ export default async function IntegrationsPage({ searchParams }) {
                 if (!uninstallRes.ok) {
                     const errText = await uninstallRes.text();
                     console.error("❌ Backend GitHub uninstall failed:", uninstallRes.status, errText);
-                    // DANGEROUS: If we delete the DB now, the app is orphaned on GitHub!
-                    // We throw an error to stop the database deletion.
                     throw new Error(`GitHub failed to uninstall. Please check Render logs. Status: ${uninstallRes.status}`);
                 }
                 
                 console.log("✅ GitHub app successfully uninstalled from GitHub API.");
             }
 
-            // ONLY clean up the local database IF the GitHub API call succeeded (or if it's not GitHub)
+            // ONLY clean up the local database IF the GitHub API call succeeded
             await supabaseServer.from('integrations').delete().match({ provider, org_id: actionOrgId });
             if (provider === 'discord') {
                 await supabaseServer.from('integrations').delete().match({ provider: 'discord_bot', org_id: actionOrgId });
             }
         } catch (e) {
             console.error(`Failed to disconnect ${provider}:`, e);
-            // This stops the UI from refreshing and looking like it worked
             throw e; 
         }
         revalidatePath('/integrations');
@@ -219,22 +207,6 @@ export default async function IntegrationsPage({ searchParams }) {
                 <p className="text-gray-500 mt-2 text-lg">Connect your tools to enable TRON&apos;s automated workflows.</p>
             </div>
 
-            {/* 🚨 THE MANUAL SAVE TRIGGER FOR GITHUB 🚨 */}
-            {params?.installation_id && params?.github_setup !== 'success' && (
-                <div className="bg-yellow-50 border-l-4 border-yellow-500 p-6 mb-8 rounded-r-xl shadow-sm flex justify-between items-center">
-                    <div>
-                        <h3 className="text-yellow-800 font-bold text-lg">Finish GitHub Setup</h3>
-                        <p className="text-yellow-700 text-sm mt-1">GitHub authorized TRON. Click here to finalize the connection.</p>
-                    </div>
-                    <form action={finalizeGitHubSetup}>
-                        <input type="hidden" name="installationId" value={params.installation_id} />
-                        <button type="submit" className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-6 rounded-lg transition-colors">
-                            Finalize Connection
-                        </button>
-                    </form>
-                </div>
-            )}
-
             {/* 🚨 THE VISUAL DEBUG TRAP 🚨 */}
             {params?.github_error && (
                 <div className="bg-red-50 border-l-4 border-red-600 p-5 mb-8 rounded-r-xl shadow-sm">
@@ -247,7 +219,7 @@ export default async function IntegrationsPage({ searchParams }) {
                 </div>
             )}
 
-            {/* 🎉 SUCCESS NOTIFICATION 🎉 */}
+            {/* 🎉 AUTO-DISMISS SUCCESS NOTIFICATION 🎉 */}
             {params?.github_setup === 'success' && (
                 <AutoDismissBanner title="GitHub App Connected" />
             )}
@@ -260,7 +232,7 @@ export default async function IntegrationsPage({ searchParams }) {
                         Version Control
                     </h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* 🌟 NEW GITHUB APP CARD */}
+                        {/* 🌟 GITHUB APP CARD */}
                         <div className={`bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border ${github ? 'border-gray-300 ring-2 ring-gray-900' : 'border-gray-200'} overflow-hidden flex flex-col transition-all`}>
                             <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
                                 <div className="flex items-center space-x-3">
@@ -284,7 +256,6 @@ export default async function IntegrationsPage({ searchParams }) {
                                     </form>
                                 ) : (
                                     <div className="mt-auto">
-                                        {/* ⚠️ CHANGE 'YOUR_GITHUB_APP_NAME' BELOW TO YOUR ACTUAL APP SLUG */}
                                         <a href={`https://github.com/apps/tron-v3/installations/new`} className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm flex items-center justify-center">
                                             Connect GitHub Account
                                         </a>
