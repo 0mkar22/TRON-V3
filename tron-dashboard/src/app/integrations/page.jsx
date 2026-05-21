@@ -3,6 +3,8 @@ import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 
+import AutoDismissBanner from '@/components/AutoDismissBanner';
+
 // Force Vercel to never cache this route
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -233,11 +235,7 @@ export default async function IntegrationsPage({ searchParams }) {
 
             {/* 🎉 SUCCESS NOTIFICATION 🎉 */}
             {params?.github_setup === 'success' && (
-                <div className="bg-green-50 border-l-4 border-green-600 p-5 mb-8 rounded-r-xl shadow-sm">
-                    <h3 className="text-green-900 font-bold text-lg flex items-center">
-                        <span className="mr-2">✅</span> GitHub App Connected
-                    </h3>
-                </div>
+                <AutoDismissBanner title="GitHub App Connected" />
             )}
 
             <div className="space-y-12">
