@@ -179,11 +179,16 @@ export default async function IntegrationsPage({ searchParams }) {
         const actionOrgId = userData?.org_id;
 
         try {
-            // 🌟 NEW: Tell Render to actually uninstall the app from GitHub!
+            // 🌟 THE FIX: Call the backend to uninstall from GitHub before deleting locally!
             if (provider === 'github') {
-                await fetch(`https://tron-v3.onrender.com/api/admin/github-uninstall?orgId=${actionOrgId}`, {
+                // Ensure this URL points to your actual backend!
+                const backendUrl = process.env.NODE_ENV === 'production' 
+                    ? 'https://tron-v3.onrender.com' 
+                    : 'http://localhost:3000'; // Or whatever your local backend port is
+
+                await fetch(`${backendUrl}/api/admin/github-uninstall?orgId=${actionOrgId}`, {
                     method: 'DELETE'
-                }).catch(e => console.error("Render uninstall failed:", e));
+                }).catch(e => console.error("Backend uninstall failed:", e));
             }
 
             // Clean up the local database
