@@ -4,6 +4,7 @@ const axios = require('axios');
 const router = express.Router();
 
 const BasecampAdapter = require('../adapters/basecamp');
+const GitHubAppAdapter = require('../adapters/githubApp');
 const { createClient } = require('@supabase/supabase-js');
 const { requireAuth } = require('../middleware/auth');
 
@@ -14,7 +15,7 @@ const supabaseAdmin = createClient(
 );
 
 // ==========================================
-// 1. GITHUB REPOSITORIES (Vault Secured)
+// 1. GITHUB REPOSITORIES (Vault & App Secured)
 // ==========================================
 router.get('/github-repos', async (req, res) => {
     const orgId = req.query.orgId;
@@ -31,40 +32,47 @@ router.get('/github-repos', async (req, res) => {
             .eq('provider', 'github')
             .maybeSingle();
 
-        let actualToken = integration?.token;
+        let installationId = integration?.token;
 
-        if (integration?.secret_id && !actualToken) {
+        if (integration?.secret_id && !installationId) {
             console.log(`🐛 [DEBUG ADMIN] Accessing Vault for GitHub Secret via RPC...`);
             const { data: decryptedSecret, error: rpcError } = await supabaseAdmin.rpc('get_decrypted_secret', {
                 p_secret_id: integration.secret_id
             });
             
             if (decryptedSecret) {
-                actualToken = decryptedSecret;
-                console.log(`🐛 [DEBUG ADMIN] Vault Decryption: SUCCESS`);
+                installationId = decryptedSecret;
+                console.log(`🐛 [DEBUG ADMIN] Vault Decryption: SUCCESS. ID: ${installationId}`);
             } else {
                 console.log(`🐛 [DEBUG ADMIN] Vault Decryption: FAILED`);
                 if (rpcError) console.error(rpcError.message);
             }
         }
 
-        if (!actualToken) {
-            console.log(`🐛 [DEBUG ADMIN] No valid token found, returning empty repos.`);
+        if (!installationId) {
+            console.log(`🐛 [DEBUG ADMIN] No valid Installation ID found, returning empty repos.`);
             return res.json({ repos: [] });
         }
 
-        const response = await axios.get('https://api.github.com/user/repos', {
+        // 🌟 NEW: Get a fresh 1-hour token dynamically using the Installation ID!
+        const token = await GitHubAppAdapter.getInstallationToken(installationId);
+
+        // 🌟 NEW: Hit the App-specific endpoint for repositories, not the user one!
+        const response = await axios.get('https://api.github.com/installation/repositories', {
             headers: {
-                'Authorization': `token ${actualToken}`,
+                'Authorization': `Bearer ${token}`,
                 'Accept': 'application/vnd.github.v3+json'
             },
-            params: { visibility: 'all', affiliation: 'owner,collaborator,organization_member', sort: 'updated', per_page: 100 }
+            params: { per_page: 100 }
         });
 
-        console.log(`🐛 [DEBUG ADMIN] Successfully fetched ${response.data.length} repos from GitHub API!`);
+        // The App API returns data inside a `repositories` key
+        const rawRepos = response.data.repositories || [];
+
+        console.log(`🐛 [DEBUG ADMIN] Successfully fetched ${rawRepos.length} repos from GitHub App API!`);
         console.log(`==========================================\n`);
 
-        const repos = response.data.map(repo => ({
+        const repos = rawRepos.map(repo => ({
             id: repo.id,
             name: repo.name,
             full_name: repo.full_name, 
