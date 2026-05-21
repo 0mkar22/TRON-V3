@@ -321,4 +321,48 @@ router.post('/invite-developer', requireAuth, async (req, res) => {
     }
 });
 
+// ==========================================
+// 8. UNINSTALL GITHUB APP
+// ==========================================
+router.delete('/github-uninstall', async (req, res) => {
+    const orgId = req.query.orgId;
+    if (!orgId) return res.status(400).json({ error: 'Missing orgId' });
+
+    try {
+        // 1. Get the installation ID from Vault
+        const { data: integration } = await supabaseAdmin
+            .from('integrations')
+            .select('secret_id')
+            .eq('org_id', orgId)
+            .eq('provider', 'github')
+            .single();
+
+        if (integration?.secret_id) {
+            const { data: installationId } = await supabaseAdmin.rpc('get_decrypted_secret', {
+                p_secret_id: integration.secret_id
+            });
+
+            if (installationId) {
+                // 2. Generate a fresh token
+                const GitHubAppAdapter = require('../adapters/githubApp');
+                const token = await GitHubAppAdapter.getInstallationToken(installationId);
+
+                // 3. Tell GitHub to permanently delete the installation
+                await axios.delete(`https://api.github.com/app/installations/${installationId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
+                });
+                console.log(`🗑️ [GITHUB] Successfully uninstalled app for Org: ${orgId}`);
+            }
+        }
+        res.json({ success: true });
+    } catch (error) {
+        // If it fails (e.g., the user already manually uninstalled it), just log it and move on
+        console.error('⚠️ [ADMIN] GitHub Uninstall Error (May already be uninstalled):', error.message);
+        res.status(200).json({ message: 'Proceeding with local deletion' });
+    }
+});
+
 module.exports = router;

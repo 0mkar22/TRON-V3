@@ -177,6 +177,14 @@ export default async function IntegrationsPage({ searchParams }) {
         const actionOrgId = userData?.org_id;
 
         try {
+            // 🌟 NEW: Tell Render to actually uninstall the app from GitHub!
+            if (provider === 'github') {
+                await fetch(`https://tron-v3.onrender.com/api/admin/github-uninstall?orgId=${actionOrgId}`, {
+                    method: 'DELETE'
+                }).catch(e => console.error("Render uninstall failed:", e));
+            }
+
+            // Clean up the local database
             await supabaseServer.from('integrations').delete().match({ provider, org_id: actionOrgId });
             if (provider === 'discord') {
                 await supabaseServer.from('integrations').delete().match({ provider: 'discord_bot', org_id: actionOrgId });
