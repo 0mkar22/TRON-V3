@@ -4,7 +4,7 @@ const axios = require('axios');
 const router = express.Router();
 
 const BasecampAdapter = require('../adapters/basecamp');
-const GitHubAppAdapter = require('../adapters/githubApp');
+const GitHubAppAdapter = require('./githubApp');
 const { createClient } = require('@supabase/supabase-js');
 const { requireAuth } = require('../middleware/auth');
 
