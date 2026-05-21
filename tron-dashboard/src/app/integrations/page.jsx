@@ -179,25 +179,34 @@ export default async function IntegrationsPage({ searchParams }) {
         const actionOrgId = userData?.org_id;
 
         try {
-            // 🌟 THE FIX: Call the backend to uninstall from GitHub before deleting locally!
             if (provider === 'github') {
-                // Ensure this URL points to your actual backend!
-                const backendUrl = process.env.NODE_ENV === 'production' 
-                    ? 'https://tron-v3.onrender.com' 
-                    : 'http://localhost:3000'; // Or whatever your local backend port is
-
-                await fetch(`${backendUrl}/api/admin/github-uninstall?orgId=${actionOrgId}`, {
+                console.log(`🐛 Attempting to uninstall GitHub app for Org: ${actionOrgId}`);
+                
+                // Force the exact Render URL so it never gets lost on Localhost
+                const uninstallRes = await fetch(`https://tron-v3.onrender.com/api/admin/github-uninstall?orgId=${actionOrgId}`, {
                     method: 'DELETE'
-                }).catch(e => console.error("Backend uninstall failed:", e));
+                });
+
+                if (!uninstallRes.ok) {
+                    const errText = await uninstallRes.text();
+                    console.error("❌ Backend GitHub uninstall failed:", uninstallRes.status, errText);
+                    // DANGEROUS: If we delete the DB now, the app is orphaned on GitHub!
+                    // We throw an error to stop the database deletion.
+                    throw new Error(`GitHub failed to uninstall. Please check Render logs. Status: ${uninstallRes.status}`);
+                }
+                
+                console.log("✅ GitHub app successfully uninstalled from GitHub API.");
             }
 
-            // Clean up the local database
+            // ONLY clean up the local database IF the GitHub API call succeeded (or if it's not GitHub)
             await supabaseServer.from('integrations').delete().match({ provider, org_id: actionOrgId });
             if (provider === 'discord') {
                 await supabaseServer.from('integrations').delete().match({ provider: 'discord_bot', org_id: actionOrgId });
             }
         } catch (e) {
             console.error(`Failed to disconnect ${provider}:`, e);
+            // This stops the UI from refreshing and looking like it worked
+            throw e; 
         }
         revalidatePath('/integrations');
     };
