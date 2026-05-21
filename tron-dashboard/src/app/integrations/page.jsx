@@ -3,6 +3,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import AutoDismissBanner from '@/components/AutoDismissBanner'; 
+import GithubAutoSetup from '@/components/GithubAutoSetup';
 
 // Force Vercel to never cache this route so the auto-setup always fires
 export const dynamic = 'force-dynamic';
@@ -24,47 +25,6 @@ export default async function IntegrationsPage({ searchParams }) {
     }
 
     const secureOrgId = userData?.org_id;
-
-    // ==========================================
-    // 🌟 INVISIBLE GITHUB AUTO-SETUP
-    // ==========================================
-    if (params?.installation_id && params?.github_setup !== 'success') {
-        const supabaseAdmin = createAdminClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-
-        try {
-            console.log(`🚀 [AUTO-SETUP] Catching ID: ${params.installation_id} for Org: ${secureOrgId}`);
-            
-            // 1. Save to Vault
-            const { data: newSecretId, error: vaultError } = await supabaseAdmin.rpc('insert_secret', {
-                secret_name: `github_app_install_${secureOrgId}_${params.installation_id}`,
-                secret_description: `GitHub Installation ID for Org ${secureOrgId}`,
-                secret_value: params.installation_id.toString()
-            });
-
-            if (vaultError) throw new Error(`Vault Error: ${vaultError.message}`);
-            if (!newSecretId) throw new Error("Vault returned no secret ID");
-
-            // 2. Upsert to Integrations Table safely
-            const { error: upsertError } = await supabaseAdmin
-                .from('integrations')
-                .upsert({ 
-                    org_id: secureOrgId, 
-                    provider: 'github', 
-                    secret_id: newSecretId 
-                }, { onConflict: 'org_id, provider' });
-
-            if (upsertError) throw new Error(`DB Error: ${upsertError.message}`);
-
-            console.log("✅ [AUTO-SETUP] Success! Purging cache and redirecting.");
-        } catch (error) {
-            console.error("❌ [AUTO-SETUP] Failed:", error);
-            redirect(`/integrations?github_error=${encodeURIComponent(error.message)}`);
-        }
-
-        // Clean the URL parameters and show the success banner
-        revalidatePath('/integrations');
-        redirect('/integrations?github_setup=success');
-    }
 
     // Fetch existing integrations
     const { data: integrations } = await supabase.from('integrations').select('*').eq('org_id', secureOrgId);
@@ -206,6 +166,14 @@ export default async function IntegrationsPage({ searchParams }) {
                 <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Integrations</h1>
                 <p className="text-gray-500 mt-2 text-lg">Connect your tools to enable TRON&apos;s automated workflows.</p>
             </div>
+
+            {/* 🌟 THE NEW AUTO-SETUP ROBOT 🌟 */}
+            {params?.installation_id && params?.github_setup !== 'success' && (
+                <GithubAutoSetup 
+                    action={finalizeGitHubSetup} 
+                    installationId={params.installation_id} 
+                />
+            )}
 
             {/* 🚨 THE VISUAL DEBUG TRAP 🚨 */}
             {params?.github_error && (
