@@ -3,11 +3,14 @@ import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 
-// 🚨 ADD THESE TWO LINES TO KILL THE CACHE:
+// Force Vercel to never cache this route
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default async function IntegrationsPage({ searchParams }) {
+    // 🌟 Await searchParams for Next.js 15 compatibility
+    const params = await searchParams;
+
     // 1. Initialize Supabase & Get User securely on the server
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -23,72 +26,7 @@ export default async function IntegrationsPage({ searchParams }) {
 
     const secureOrgId = userData?.org_id;
 
-    // ==========================================
-    // 🌟 GITHUB APP: AUTO-CATCH INSTALLATION ID (DEBUG TRAP EDITION)
-    // ==========================================
-    if (searchParams?.installation_id) {
-        const supabaseAdmin = createAdminClient(
-            process.env.SUPABASE_URL,
-            process.env.SUPABASE_SERVICE_ROLE_KEY
-        );
-
-        try {
-            console.log("🐛 [DEBUG TRAP] 1. Caught installation_id:", searchParams.installation_id);
-            console.log("🐛 [DEBUG TRAP] 2. Using Org ID:", secureOrgId);
-
-            // 1. MATCHING YOUR BACKEND RPC EXACTLY
-            console.log("🐛 [DEBUG TRAP] 3. Attempting RPC 'insert_secret'...");
-            const { data: newSecretId, error: vaultError } = await supabaseAdmin.rpc('insert_secret', {
-                secret_name: `github_app_install_${secureOrgId}_${searchParams.installation_id}`,
-                secret_description: `GitHub Installation ID for Org ${secureOrgId}`,
-                secret_value: searchParams.installation_id.toString()
-            });
-
-            if (vaultError) {
-                console.error("🐛 [DEBUG TRAP] 🚨 Vault Error Details:", vaultError);
-                throw new Error(`Vault Error: ${vaultError.message}`);
-            }
-            if (!newSecretId) throw new Error("Vault returned no secret ID");
-            console.log("🐛 [DEBUG TRAP] 4. RPC Success! Secret ID:", newSecretId);
-
-            // 2. THE SAFE UPDATE
-            console.log("🐛 [DEBUG TRAP] 5. Checking existing integrations table...");
-            const { data: existingRecords, error: selectError } = await supabaseAdmin
-                .from('integrations')
-                .select('id')
-                .eq('org_id', secureOrgId)
-                .eq('provider', 'github');
-
-            if (selectError) {
-                console.error("🐛 [DEBUG TRAP] 🚨 Select Error Details:", selectError);
-                throw new Error(`Select Error: ${selectError.message}`);
-            }
-
-            if (existingRecords && existingRecords.length > 0) {
-                console.log("🐛 [DEBUG TRAP] 6a. Updating existing record...");
-                const { error: updateError } = await supabaseAdmin
-                    .from('integrations')
-                    .update({ secret_id: newSecretId }) 
-                    .eq('id', existingRecords[0].id);
-                if (updateError) throw new Error(`Update Error: ${updateError.message}`);
-            } else {
-                console.log("🐛 [DEBUG TRAP] 6b. Inserting new record...");
-                const { error: insertError } = await supabaseAdmin
-                    .from('integrations')
-                    .insert({ org_id: secureOrgId, provider: 'github', secret_id: newSecretId }); 
-                if (insertError) throw new Error(`Insert Error: ${insertError.message}`);
-            }
-            
-            console.log("🐛 [DEBUG TRAP] 7. ✅ SUCCESS! Purging cache and redirecting.");
-            revalidatePath('/integrations');
-            redirect('/integrations?github_setup=success');
-        } catch (error) {
-            console.error("🐛 [DEBUG TRAP] 💥 FATAL CATCH:", error.message);
-            // 🚨 THIS IS THE TRAP: We force the error into the URL so the UI can read it!
-            redirect(`/integrations?github_error=${encodeURIComponent(error.message)}`);
-        }
-    }
-
+    // Fetch existing integrations
     const { data: integrations } = await supabase.from('integrations').select('*').eq('org_id', secureOrgId);
 
     const getIntegration = (provider) => integrations?.find(i => i.provider === provider);
@@ -98,7 +36,56 @@ export default async function IntegrationsPage({ searchParams }) {
     const slack = getIntegration('slack');
 
     // ==========================================
-    // 🌟 SECURE VAULT SERVER ACTIONS
+    // 🌟 GITHUB APP SERVER ACTION (MANUAL TRIGGER)
+    // ==========================================
+    const finalizeGitHubSetup = async (formData) => {
+        'use server';
+        const supabaseServer = await createClient();
+        const installationId = formData.get('installationId');
+
+        const { data: { user } } = await supabaseServer.auth.getUser();
+        const { data: userData } = await supabaseServer.from('users').select('org_id, role').eq('id', user.id).single();
+        if (userData?.role !== 'admin') throw new Error("Unauthorized");
+
+        const actionOrgId = userData.org_id;
+        const supabaseAdmin = createAdminClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+        try {
+            console.log(`🚀 [GITHUB SETUP] Attempting to save ID: ${installationId} for Org: ${actionOrgId}`);
+            
+            // 1. Save to Vault
+            const { data: newSecretId, error: vaultError } = await supabaseAdmin.rpc('insert_secret', {
+                secret_name: `github_app_install_${actionOrgId}_${Date.now()}`,
+                secret_description: `GitHub Installation ID for Org ${actionOrgId}`,
+                secret_value: installationId.toString()
+            });
+
+            if (vaultError) throw new Error(`Vault Error: ${vaultError.message}`);
+            if (!newSecretId) throw new Error("Vault returned no secret ID");
+
+            // 2. Upsert to Integrations Table safely
+            const { error: upsertError } = await supabaseAdmin
+                .from('integrations')
+                .upsert({ 
+                    org_id: actionOrgId, 
+                    provider: 'github', 
+                    secret_id: newSecretId 
+                }, { onConflict: 'org_id, provider' });
+
+            if (upsertError) throw new Error(`DB Error: ${upsertError.message}`);
+
+            console.log("✅ [GITHUB SETUP] Success!");
+        } catch (error) {
+            console.error("❌ [GITHUB SETUP] Failed:", error);
+            redirect(`/integrations?github_error=${encodeURIComponent(error.message)}`);
+        }
+
+        revalidatePath('/integrations');
+        redirect('/integrations?github_setup=success');
+    };
+
+    // ==========================================
+    // 🌟 SECURE VAULT SERVER ACTIONS (SLACK, DISCORD, BASECAMP)
     // ==========================================
     const saveIntegration = async (formData) => {
         'use server';
@@ -208,20 +195,36 @@ export default async function IntegrationsPage({ searchParams }) {
                 <p className="text-gray-500 mt-2 text-lg">Connect your tools to enable TRON&apos;s automated workflows.</p>
             </div>
 
+            {/* 🚨 THE MANUAL SAVE TRIGGER FOR GITHUB 🚨 */}
+            {params?.installation_id && params?.github_setup !== 'success' && (
+                <div className="bg-yellow-50 border-l-4 border-yellow-500 p-6 mb-8 rounded-r-xl shadow-sm flex justify-between items-center">
+                    <div>
+                        <h3 className="text-yellow-800 font-bold text-lg">Finish GitHub Setup</h3>
+                        <p className="text-yellow-700 text-sm mt-1">GitHub authorized TRON. Click here to finalize the connection.</p>
+                    </div>
+                    <form action={finalizeGitHubSetup}>
+                        <input type="hidden" name="installationId" value={params.installation_id} />
+                        <button type="submit" className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-6 rounded-lg transition-colors">
+                            Finalize Connection
+                        </button>
+                    </form>
+                </div>
+            )}
+
             {/* 🚨 THE VISUAL DEBUG TRAP 🚨 */}
-            {searchParams?.github_error && (
+            {params?.github_error && (
                 <div className="bg-red-50 border-l-4 border-red-600 p-5 mb-8 rounded-r-xl shadow-sm">
                     <h3 className="text-red-900 font-bold text-lg flex items-center">
                         <span className="mr-2">⚠️</span> GitHub Connection Failed
                     </h3>
                     <p className="text-red-700 font-mono text-sm mt-2 bg-red-100 p-2 rounded break-all">
-                        {searchParams.github_error}
+                        {params.github_error}
                     </p>
                 </div>
             )}
 
             {/* 🎉 SUCCESS NOTIFICATION 🎉 */}
-            {searchParams?.github_setup === 'success' && (
+            {params?.github_setup === 'success' && (
                 <div className="bg-green-50 border-l-4 border-green-600 p-5 mb-8 rounded-r-xl shadow-sm">
                     <h3 className="text-green-900 font-bold text-lg flex items-center">
                         <span className="mr-2">✅</span> GitHub App Connected
