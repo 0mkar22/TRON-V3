@@ -344,7 +344,7 @@ router.delete('/github-uninstall', async (req, res) => {
 
             if (installationId) {
                 // 2. Generate a fresh token
-                const GitHubAppAdapter = require('../adapters/githubApp');
+                const GitHubAppAdapter = require('./githubApp');
                 const token = await GitHubAppAdapter.getInstallationToken(installationId);
 
                 // 3. Tell GitHub to permanently delete the installation
