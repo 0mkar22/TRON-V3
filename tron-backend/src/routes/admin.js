@@ -322,14 +322,16 @@ router.post('/invite-developer', requireAuth, async (req, res) => {
 });
 
 // ==========================================
-// 8. UNINSTALL GITHUB APP
+// 8. UNINSTALL GITHUB APP (DEBUG TRAP EDITION)
 // ==========================================
 router.delete('/github-uninstall', async (req, res) => {
     const orgId = req.query.orgId;
     if (!orgId) return res.status(400).json({ error: 'Missing orgId' });
 
     try {
-        // 1. Get the installation ID from Vault
+        console.log(`\n==========================================`);
+        console.log(`🐛 [DEBUG TRAP] 1. Initiating GitHub Uninstall for Org: ${orgId}`);
+
         const { data: integration } = await supabaseAdmin
             .from('integrations')
             .select('secret_id')
@@ -337,31 +339,67 @@ router.delete('/github-uninstall', async (req, res) => {
             .eq('provider', 'github')
             .single();
 
-        if (integration?.secret_id) {
-            const { data: installationId } = await supabaseAdmin.rpc('get_decrypted_secret', {
-                p_secret_id: integration.secret_id
-            });
-
-            if (installationId) {
-                // 2. Generate a fresh token
-                const GitHubAppAdapter = require('./githubApp');
-                const token = await GitHubAppAdapter.getInstallationToken(installationId);
-
-                // 3. Tell GitHub to permanently delete the installation
-                await axios.delete(`https://api.github.com/app/installations/${installationId}`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Accept': 'application/vnd.github.v3+json'
-                    }
-                });
-                console.log(`🗑️ [GITHUB] Successfully uninstalled app for Org: ${orgId}`);
-            }
+        if (!integration?.secret_id) {
+            console.log(`🐛 [DEBUG TRAP] 2. No secret_id found in DB. Skipping uninstall.`);
+            return res.json({ success: true });
         }
+
+        console.log(`🐛 [DEBUG TRAP] 3. Found secret_id. Decrypting Vault...`);
+        const { data: installationId } = await supabaseAdmin.rpc('get_decrypted_secret', {
+            p_secret_id: integration.secret_id
+        });
+
+        if (!installationId) {
+            console.log(`🐛 [DEBUG TRAP] 4. Vault returned null installationId.`);
+            return res.json({ success: true });
+        }
+
+        console.log(`🐛 [DEBUG TRAP] 5. Target Installation ID: ${installationId}`);
+        
+        const GitHubAppAdapter = require('./githubApp');
+        
+        // 🚨 ENV VAR DIAGNOSTICS
+        console.log(`🐛 [DEBUG TRAP] 6. Checking Environment Variables:`);
+        console.log(`   -> GITHUB_APP_ID exists? ${!!process.env.GITHUB_APP_ID} (Value: ${process.env.GITHUB_APP_ID})`);
+        
+        const pk = process.env.GITHUB_PRIVATE_KEY;
+        console.log(`   -> GITHUB_PRIVATE_KEY exists? ${!!pk}`);
+        if (pk) {
+            console.log(`   -> Key Length: ${pk.length} characters`);
+            console.log(`   -> Starts With: ${pk.substring(0, 35).replace(/\n/g, '\\n')}...`);
+            console.log(`   -> Ends With: ...${pk.substring(pk.length - 30).replace(/\n/g, '\\n')}`);
+        }
+
+        console.log(`🐛 [DEBUG TRAP] 7. Generating Master JWT...`);
+        const appJwt = GitHubAppAdapter.generateAppJWT();
+        console.log(`🐛 [DEBUG TRAP] 8. JWT Generated Successfully. Prefix: ${appJwt.substring(0, 15)}...`);
+
+        console.log(`🐛 [DEBUG TRAP] 9. Firing DELETE request to GitHub API...`);
+        await axios.delete(`https://api.github.com/app/installations/${installationId}`, {
+            headers: {
+                'Authorization': `Bearer ${appJwt}`,
+                'Accept': 'application/vnd.github.v3+json'
+            }
+        });
+        
+        console.log(`🐛 [DEBUG TRAP] 10. ✅ Successfully uninstalled app from GitHub!`);
+        console.log(`==========================================\n`);
         res.json({ success: true });
+
     } catch (error) {
-        // If it fails (e.g., the user already manually uninstalled it), just log it and move on
-        console.error('⚠️ [ADMIN] GitHub Uninstall Error (May already be uninstalled):', error.message);
-        res.status(200).json({ message: 'Proceeding with local deletion' });
+        console.error(`\n🐛 [DEBUG TRAP] 💥 FATAL CATCH IN UNINSTALL:`);
+        console.error(`   -> Message: ${error.message}`);
+        
+        // 🚨 CATCHING GITHUB'S EXACT RESPONSE
+        if (error.response) {
+            console.error(`   -> GitHub HTTP Status: ${error.response.status}`);
+            console.error(`   -> GitHub Response Data:`, JSON.stringify(error.response.data, null, 2));
+        } else {
+            console.error(`   -> No response received from GitHub (Network or Config Issue)`);
+        }
+        console.log(`==========================================\n`);
+        
+        res.status(500).json({ error: 'Failed to completely uninstall from GitHub API.' });
     }
 });
 
