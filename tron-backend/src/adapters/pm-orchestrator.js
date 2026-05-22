@@ -13,13 +13,16 @@ class PMOrchestrator {
             if (provider === 'basecamp') {
                 if (!orgId) throw new Error("Missing orgId for Basecamp request.");
                 
+                // 1. Fetch To Do tasks
                 const todoTasks = mapping.todo 
                     ? await BasecampAdapter.fetchActiveTasks(projectId, mapping.todo, orgId) 
                     : [];
                 
-                // 🌟 THE FIX: Add the fallback check for 'in_progress'
+                // 🌟 THE FIX: Check both 'branch_created' OR 'in_progress'
                 const inProgressCol = mapping.branch_created || mapping.in_progress;
                 
+                console.log(`🔍 [ORCHESTRATOR] Fetching In-Progress tasks from column: ${inProgressCol}`);
+
                 const inProgressTasks = inProgressCol 
                     ? await BasecampAdapter.fetchActiveTasks(projectId, inProgressCol, orgId) 
                     : [];
