@@ -106,15 +106,15 @@ app.post('/api/create-task', requireAuth, async (req, res) => {
     try {
         const config = await getRepoConfigFromDB(repoName);
 
-        // 🌟 THE FIX: Check 'pm_provider' instead of the nested 'pm_tool'
-        if (!config || !config.pm_provider || config.pm_provider === "none") {
+        // ✅ REVERTED: Correctly look for the nested pm_tool object built by db.js
+        if (!config || !config.pm_tool || config.pm_tool.provider === "none") {
              return res.status(400).json({ error: "No PM tool configured in database." });
         }
 
         const orgId = req.user?.org_id || req.user?.user_metadata?.org_id;
 
-        // 🌟 THE FIX: Pass the raw 'config' object
-        const newTaskId = await PMOrchestrator.resolveTask(config, taskInput, config.mapping, orgId);
+        // ✅ REVERTED: Pass config.pm_tool to the orchestrator
+        const newTaskId = await PMOrchestrator.resolveTask(config.pm_tool, taskInput, config.mapping, orgId);
         res.json({ resolvedId: newTaskId });
     } catch (error) {
         console.error("Task creation failed:", error);
@@ -130,22 +130,22 @@ app.post('/api/start-task', requireAuth, async (req, res) => {
         const config = await getRepoConfigFromDB(repoName);
         let resolvedTaskID = taskInput.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase(); 
 
-        // 🌟 THE FIX: Check 'pm_provider'
-        if (config && config.pm_provider && config.pm_provider !== "none") {
+        // ✅ REVERTED: Correctly look for the nested pm_tool object
+        if (config && config.pm_tool && config.pm_tool.provider !== "none") {
             const orgId = req.user?.org_id || req.user?.user_metadata?.org_id;
 
-            resolvedTaskID = await PMOrchestrator.resolveTask(config, taskInput, config.mapping, orgId);
+            resolvedTaskID = await PMOrchestrator.resolveTask(config.pm_tool, taskInput, config.mapping, orgId);
             
             const inProgressId = config.mapping.branch_created || config.mapping.in_progress;
             
             if (inProgressId) {
                 console.log(`🚚 [API] Moving task [${resolvedTaskID}] to In Progress column...`);
-                await PMOrchestrator.updateTicketStatus(config, resolvedTaskID, inProgressId, orgId);
+                await PMOrchestrator.updateTicketStatus(config.pm_tool, resolvedTaskID, inProgressId, orgId);
             }
 
             if (developer) {
                 console.log(`👤 [API] Attempting to assign developer: ${developer}`);
-                await PMOrchestrator.assignTicket(config, resolvedTaskID, developer, orgId);
+                await PMOrchestrator.assignTicket(config.pm_tool, resolvedTaskID, developer, orgId);
             }
             
             await redis.lpush('tron:webhook_queue', JSON.stringify({
@@ -187,15 +187,15 @@ app.get('/api/project/:encodedRepo/tickets', requireAuth, async (req, res) => {
     try {
         const config = await getRepoConfigFromDB(repo);
         
-        // 🌟 THE FIX: Check 'pm_provider'
-        if (!config || !config.pm_provider || config.pm_provider === "none") {
+        // ✅ REVERTED: Correctly look for the nested pm_tool object
+        if (!config || !config.pm_tool || config.pm_tool.provider === "none") {
             return res.json({ isMapped: false, tickets: [] });
         }
 
         const orgId = req.user?.org_id || req.user?.user_metadata?.org_id;
 
-        // 🌟 THE FIX: Pass the raw 'config' object
-        const activeTickets = await PMOrchestrator.getTickets(config, config.mapping, orgId);
+        // ✅ REVERTED: Pass config.pm_tool to the orchestrator
+        const activeTickets = await PMOrchestrator.getTickets(config.pm_tool, config.mapping, orgId);
         res.json({ isMapped: true, tickets: activeTickets }); 
     } catch (error) {
         console.error("❌ Failed to fetch tickets:", error.message);
