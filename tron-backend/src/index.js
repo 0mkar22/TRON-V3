@@ -113,7 +113,7 @@ app.post('/api/create-task', requireAuth, async (req, res) => {
 
         const orgId = req.user?.org_id || req.user?.user_metadata?.org_id;
 
-        // 🌟 THE FIX: Pass the raw 'config' object instead of 'config.pm_tool'
+        // 🌟 THE FIX: Pass the raw 'config' object
         const newTaskId = await PMOrchestrator.resolveTask(config, taskInput, config.mapping, orgId);
         res.json({ resolvedId: newTaskId });
     } catch (error) {
@@ -194,7 +194,7 @@ app.get('/api/project/:encodedRepo/tickets', requireAuth, async (req, res) => {
 
         const orgId = req.user?.org_id || req.user?.user_metadata?.org_id;
 
-        // 🌟 THE FIX: Pass the raw 'config' object instead of 'config.pm_tool'
+        // 🌟 THE FIX: Pass the raw 'config' object
         const activeTickets = await PMOrchestrator.getTickets(config, config.mapping, orgId);
         res.json({ isMapped: true, tickets: activeTickets }); 
     } catch (error) {
