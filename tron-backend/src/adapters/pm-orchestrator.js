@@ -17,8 +17,11 @@ class PMOrchestrator {
                     ? await BasecampAdapter.fetchActiveTasks(projectId, mapping.todo, orgId) 
                     : [];
                 
-                const inProgressTasks = mapping.branch_created 
-                    ? await BasecampAdapter.fetchActiveTasks(projectId, mapping.branch_created, orgId) 
+                // 🌟 THE FIX: Add the fallback check for 'in_progress'
+                const inProgressCol = mapping.branch_created || mapping.in_progress;
+                
+                const inProgressTasks = inProgressCol 
+                    ? await BasecampAdapter.fetchActiveTasks(projectId, inProgressCol, orgId) 
                     : [];
                 
                 return [
