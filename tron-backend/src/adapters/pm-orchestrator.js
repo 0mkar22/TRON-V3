@@ -9,17 +9,20 @@ class PMOrchestrator {
         const provider = pmConfig.provider || pmConfig.pm_provider || 'none';
         const projectId = pmConfig.project_id || pmConfig.pm_project_id || pmConfig.board_id;
         
+        // 🌟 DIAGNOSTIC TRAP: Log exactly what the mapping object contains
+        console.log(`🔍 [ORCHESTRATOR DEBUG] Received mapping:`, JSON.stringify(mapping, null, 2));
+        
         try {
             if (provider === 'basecamp') {
-                if (!orgId) throw new Error("Missing orgId for Basecamp request.");
+                // ...
+                // 🌟 THE FIX: If mapping is nested (e.g., mapping.mapping.in_progress), fix it here
+                const actualMapping = mapping.mapping ? mapping.mapping : mapping;
                 
-                // 1. Fetch To Do tasks
-                const todoTasks = mapping.todo 
-                    ? await BasecampAdapter.fetchActiveTasks(projectId, mapping.todo, orgId) 
+                const todoTasks = actualMapping.todo 
+                    ? await BasecampAdapter.fetchActiveTasks(projectId, actualMapping.todo, orgId) 
                     : [];
                 
-                // 🌟 THE FIX: Check both 'branch_created' OR 'in_progress'
-                const inProgressCol = mapping.branch_created || mapping.in_progress;
+                const inProgressCol = actualMapping.branch_created || actualMapping.in_progress;
                 
                 console.log(`🔍 [ORCHESTRATOR] Fetching In-Progress tasks from column: ${inProgressCol}`);
 
