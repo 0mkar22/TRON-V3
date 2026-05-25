@@ -2,7 +2,7 @@
 const express = require('express');
 const axios = require('axios');
 const router = express.Router();
-
+const redis = require('../config/redis');
 const BasecampAdapter = require('../adapters/basecamp');
 const GitHubAppAdapter = require('./githubApp');
 const { createClient } = require('@supabase/supabase-js');
@@ -245,42 +245,46 @@ router.get('/dashboard-workflows', async (req, res) => {
 router.get('/system-status', async (req, res) => {
     const orgId = req.query.orgId;
     
-    // 🔒 THE LOCK: Reject if orgId is missing
     if (!orgId) {
         return res.status(400).json({ error: 'Unauthorized: Missing orgId query parameter.' });
     }
 
     try {
-        // Fetch Queue Data from Supabase (safely filtered by org_id)
-        const { data: queueData, error: queueError } = await supabaseAdmin
-            .from('tasks') // Make sure you have a 'tasks' table in Supabase!
-            .select('*')
-            .eq('org_id', orgId);
+        // 1. Fetch the Active Queue directly from Redis memory
+        const rawQueue = await redis.lrange('tron:v3_secret_queue', 0, -1);
+        const parsedQueue = rawQueue.map(item => {
+            try { return JSON.parse(item); } 
+            catch (e) { return { eventType: 'unknown', payload: {} }; }
+        });
 
-        if (queueError && queueError.code !== '42P01') { 
-            console.error("Queue fetch error:", queueError.message);
+        // 2. Fetch the Cached AI Reviews from Redis memory
+        const reviewKeys = await redis.keys('ai:review:*');
+        const activeReviews = [];
+        
+        for (const key of reviewKeys) {
+            const rawReview = await redis.get(key);
+            if (rawReview) {
+                try {
+                    const parsedReview = JSON.parse(rawReview);
+                    // Extract the taskId from the end of the key (e.g., ai:review:12345)
+                    const taskId = key.split(':').pop(); 
+                    activeReviews.push({ taskId, details: parsedReview });
+                } catch (e) {
+                    console.error("Failed to parse AI review from Redis:", e);
+                }
+            }
         }
 
-        // Fetch AI Reviews from Supabase (safely filtered by org_id)
-        const { data: reviewsData, error: reviewError } = await supabaseAdmin
-            .from('ai_reviews') // Make sure you have an 'ai_reviews' table in Supabase!
-            .select('*')
-            .eq('org_id', orgId);
-
-        if (reviewError && reviewError.code !== '42P01') {
-            console.error("Review fetch error:", reviewError.message);
-        }
-
-        // Send the secure data back to the frontend
+        // Send the real-time worker data back to the frontend
         res.json({
-            queue: queueData || [],
-            reviews: reviewsData || [],
-            queueCount: (queueData || []).length,
-            reviewCount: (reviewsData || []).length
+            queue: parsedQueue,
+            reviews: activeReviews,
+            queueCount: parsedQueue.length,
+            reviewCount: activeReviews.length
         });
     } catch (error) {
         console.error('❌ [ADMIN] System Status Error:', error.message);
-        res.status(500).json({ error: 'Failed to fetch system status' });
+        res.status(500).json({ error: 'Failed to fetch system status from Redis' });
     }
 });
 
