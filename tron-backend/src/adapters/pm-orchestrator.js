@@ -9,13 +9,12 @@ class PMOrchestrator {
         const provider = pmConfig.provider || pmConfig.pm_provider || 'none';
         const projectId = pmConfig.project_id || pmConfig.pm_project_id || pmConfig.board_id;
         
-        // 🌟 DIAGNOSTIC TRAP: Log exactly what the mapping object contains
         console.log(`🔍 [ORCHESTRATOR DEBUG] Received mapping:`, JSON.stringify(mapping, null, 2));
         
         try {
             if (provider === 'basecamp') {
-                // ...
-                // 🌟 THE FIX: If mapping is nested (e.g., mapping.mapping.in_progress), fix it here
+                if (!orgId) throw new Error("Missing orgId for Basecamp request.");
+                
                 const actualMapping = mapping.mapping ? mapping.mapping : mapping;
                 
                 const todoTasks = actualMapping.todo 
@@ -77,7 +76,9 @@ class PMOrchestrator {
         try {
             if (provider === 'basecamp') {
                 if (!orgId) throw new Error("Missing orgId for Basecamp request.");
-                return await BasecampAdapter.resolveTask(projectId, mapping.todo, taskName, orgId);
+                
+                const actualMapping = mapping.mapping ? mapping.mapping : mapping;
+                return await BasecampAdapter.resolveTask(projectId, actualMapping.todo, taskName, orgId);
             } else if (provider === 'jira' || provider === 'monday') {
                 return fallbackId; 
             }
@@ -92,11 +93,19 @@ class PMOrchestrator {
         const provider = pmConfig.provider || pmConfig.pm_provider || 'none';
         const projectId = pmConfig.project_id || pmConfig.pm_project_id || pmConfig.board_id;
         
-        if (!developer || developer === 'dev') return; 
+        // 🌟 THE FIX: Removed the hardcoded 'dev' check.
+        // We only abort if the developer string is completely missing or empty.
+        if (!developer || String(developer).trim() === '') {
+            console.log(`⏭️ [ORCHESTRATOR] Skipping assignment: No developer provided.`);
+            return; 
+        }
 
         try {
             if (provider === 'basecamp') {
                 if (!orgId) throw new Error("Missing orgId for Basecamp request.");
+                
+                // We now hand the raw string off to the BasecampAdapter,
+                // which is responsible for matching the string to an actual Basecamp Member ID.
                 await BasecampAdapter.assignDeveloper(projectId, ticketId, developer, orgId); 
             }
         } catch (error) {

@@ -93,6 +93,17 @@ export default function ClientForm({ connectedProviders = [] }) {
     }
   };
 
+  // 🌟 UX FIX: Determine if the save button should be disabled
+  const isSubmitDisabled = 
+    loading || 
+    !formData.repoName || 
+    !formData.pmProjectId || 
+    boardColumns.length === 0 || 
+    !formData.todoCol || 
+    !formData.branchCol || 
+    !formData.prCol || 
+    !formData.doneCol;
+
   return (
       <form onSubmit={handleSubmit} className="space-y-8">
         
@@ -148,28 +159,28 @@ export default function ClientForm({ connectedProviders = [] }) {
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wider">To-Do Column</label>
                 <select required className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.todoCol} onChange={(e) => setFormData({ ...formData, todoCol: e.target.value })}>
-                  <option value="">-- Select Column --</option>
+                  <option value="" disabled>Select a Basecamp Column...</option>
                   {boardColumns.map(col => <option key={col.id} value={col.id}>{col.name}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wider">In Progress (Branch)</label>
                 <select required className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.branchCol} onChange={(e) => setFormData({ ...formData, branchCol: e.target.value })}>
-                  <option value="">-- Select Column --</option>
+                  <option value="" disabled>Select a Basecamp Column...</option>
                   {boardColumns.map(col => <option key={col.id} value={col.id}>{col.name}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wider">In Review (PR)</label>
                 <select required className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.prCol} onChange={(e) => setFormData({ ...formData, prCol: e.target.value })}>
-                  <option value="">-- Select Column --</option>
+                  <option value="" disabled>Select a Basecamp Column...</option>
                   {boardColumns.map(col => <option key={col.id} value={col.id}>{col.name}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wider">Done</label>
                 <select required className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.doneCol} onChange={(e) => setFormData({ ...formData, doneCol: e.target.value })}>
-                  <option value="">-- Select Column --</option>
+                  <option value="" disabled>Select a Basecamp Column...</option>
                   {boardColumns.map(col => <option key={col.id} value={col.id}>{col.name}</option>)}
                 </select>
               </div>
@@ -199,7 +210,11 @@ export default function ClientForm({ connectedProviders = [] }) {
             </div>
         )}
 
-        <button type="submit" disabled={loading} className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-60 transition-all duration-200">
+        <button 
+          type="submit" 
+          disabled={isSubmitDisabled} 
+          className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+        >
           {loading ? 'Saving Mapping...' : 'Save Workflow Mapping'}
         </button>
       </form>
