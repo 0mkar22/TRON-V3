@@ -267,12 +267,20 @@ export default async function IntegrationsPage({ searchParams }) {
                             </div>
                             <div className="p-6 flex flex-col flex-grow">
                                 <div className="mb-5 flex-grow space-y-3">
-                                    <p className="text-gray-500 text-sm font-medium">How to connect:</p>
-                                    <ul className="text-sm text-gray-500 space-y-2 list-decimal pl-4">
-                                        <li>Click the button below to authenticate with GitHub.</li>
-                                        <li>Select the repositories you want TRON to monitor.</li>
-                                        <li>You will be redirected back here to finalize the setup automatically. No manual tokens required!</li>
-                                    </ul>
+                                    {!github ? (
+                                        <>
+                                            <p className="text-gray-500 text-sm font-medium">How to connect:</p>
+                                            <ul className="text-sm text-gray-500 space-y-2 list-decimal pl-4">
+                                                <li>Click the button below to authenticate with GitHub.</li>
+                                                <li>Select the repositories you want TRON to monitor.</li>
+                                                <li>You will be redirected back here to finalize the setup automatically. No manual tokens required!</li>
+                                            </ul>
+                                        </>
+                                    ) : (
+                                        <p className="text-gray-600 text-sm">
+                                            The TRON GitHub App is installed and securely monitoring your repositories.
+                                        </p>
+                                    )}
                                 </div>
 
                                 {github ? (
@@ -283,7 +291,6 @@ export default async function IntegrationsPage({ searchParams }) {
                                     </form>
                                 ) : (
                                     <div className="mt-auto">
-                                        {/* ⚠️ CHANGE 'YOUR_GITHUB_APP_NAME' BELOW TO YOUR ACTUAL APP SLUG */}
                                         <a href={`https://github.com/apps/tron-v3/installations/new`} className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm flex items-center justify-center">
                                             Connect GitHub Account
                                         </a>
@@ -314,13 +321,21 @@ export default async function IntegrationsPage({ searchParams }) {
                             
                             <div className="p-6 flex flex-col flex-grow">
                                 <div className="mb-5 flex-grow space-y-3">
-                                    <p className="text-gray-500 text-sm font-medium">How to connect:</p>
-                                    <ul className="text-sm text-gray-500 space-y-2 list-decimal pl-4 marker:text-indigo-400">
-                                        <li>Log into the <a href="https://launchpad.37signals.com/integrations" target="_blank" rel="noreferrer" className="text-indigo-600 font-medium hover:underline">Basecamp API Console</a>.</li>
-                                        <li>Register a new custom integration.</li>
-                                        <li>Set the Redirect URI exactly to: <br/><code className="bg-gray-100 text-gray-800 px-2 py-1 mt-1 inline-block rounded text-xs select-all">https://tron-v3.onrender.com/api/auth/basecamp/callback</code></li>
-                                        <li>Copy your Account ID, Client ID, and Secret below.</li>
-                                    </ul>
+                                    {!basecamp ? (
+                                        <>
+                                            <p className="text-gray-500 text-sm font-medium">How to connect:</p>
+                                            <ul className="text-sm text-gray-500 space-y-2 list-decimal pl-4 marker:text-indigo-400">
+                                                <li>Log into the <a href="https://launchpad.37signals.com/integrations" target="_blank" rel="noreferrer" className="text-indigo-600 font-medium hover:underline">Basecamp API Console</a>.</li>
+                                                <li>Register a new custom integration.</li>
+                                                <li>Set the Redirect URI exactly to: <br/><code className="bg-gray-100 text-gray-800 px-2 py-1 mt-1 inline-block rounded text-xs select-all">https://tron-v3.onrender.com/api/auth/basecamp/callback</code></li>
+                                                <li>Copy your Account ID, Client ID, and Secret below.</li>
+                                            </ul>
+                                        </>
+                                    ) : (
+                                        <p className="text-gray-600 text-sm">
+                                            Basecamp is authorized. TRON is actively syncing tasks and managing column states.
+                                        </p>
+                                    )}
                                 </div>
 
                                 {basecamp ? (
@@ -378,13 +393,21 @@ export default async function IntegrationsPage({ searchParams }) {
                             </div>
                             <div className="p-6 flex flex-col flex-grow">
                                 <div className="mb-5 flex-grow space-y-3">
-                                    <p className="text-gray-500 text-sm font-medium">How to connect:</p>
-                                    <ul className="text-sm text-gray-500 space-y-2 list-decimal pl-4 marker:text-blue-400">
-                                        <li>Go to the <a href="https://discord.com/developers/applications" target="_blank" rel="noreferrer" className="text-blue-600 font-medium hover:underline">Discord Developer Portal</a>.</li>
-                                        <li>Create a New Application and navigate to the <strong>Bot</strong> tab.</li>
-                                        <li>Reset and copy the <strong>Bot Token</strong>.</li>
-                                        <li>Paste the token below to authenticate TRON.</li>
-                                    </ul>
+                                    {!discord ? (
+                                        <>
+                                            <p className="text-gray-500 text-sm font-medium">How to connect:</p>
+                                            <ul className="text-sm text-gray-500 space-y-2 list-decimal pl-4 marker:text-blue-400">
+                                                <li>Go to the <a href="https://discord.com/developers/applications" target="_blank" rel="noreferrer" className="text-blue-600 font-medium hover:underline">Discord Developer Portal</a>.</li>
+                                                <li>Create a New Application and navigate to the <strong>Bot</strong> tab.</li>
+                                                <li>Reset and copy the <strong>Bot Token</strong>.</li>
+                                                <li>Paste the token below to authenticate TRON.</li>
+                                            </ul>
+                                        </>
+                                    ) : (
+                                        <p className="text-gray-600 text-sm">
+                                            TRON is connected and ready to broadcast AI executive summaries directly to your server.
+                                        </p>
+                                    )}
                                 </div>
 
                                 {discord ? (
@@ -418,13 +441,21 @@ export default async function IntegrationsPage({ searchParams }) {
                             </div>
                             <div className="p-6 flex flex-col flex-grow">
                                 <div className="mb-5 flex-grow space-y-3">
-                                    <p className="text-gray-500 text-sm font-medium">How to connect:</p>
-                                    <ul className="text-sm text-gray-500 space-y-2 list-decimal pl-4 marker:text-teal-400">
-                                        <li>Go to the <a href="https://api.slack.com/apps" target="_blank" rel="noreferrer" className="text-teal-600 font-medium hover:underline">Slack API Console</a>.</li>
-                                        <li>Create a new App for your workspace.</li>
-                                        <li>Enable <strong>Incoming Webhooks</strong> and add a new webhook to your desired channel.</li>
-                                        <li>Copy the Webhook URL and paste it below.</li>
-                                    </ul>
+                                    {!slack ? (
+                                        <>
+                                            <p className="text-gray-500 text-sm font-medium">How to connect:</p>
+                                            <ul className="text-sm text-gray-500 space-y-2 list-decimal pl-4 marker:text-teal-400">
+                                                <li>Go to the <a href="https://api.slack.com/apps" target="_blank" rel="noreferrer" className="text-teal-600 font-medium hover:underline">Slack API Console</a>.</li>
+                                                <li>Create a new App for your workspace.</li>
+                                                <li>Enable <strong>Incoming Webhooks</strong> and add a new webhook to your desired channel.</li>
+                                                <li>Copy the Webhook URL and paste it below.</li>
+                                            </ul>
+                                        </>
+                                    ) : (
+                                        <p className="text-gray-600 text-sm">
+                                            Slack Webhook is configured. TRON will send automated code reviews to your workspace.
+                                        </p>
+                                    )}
                                 </div>
 
                                 {slack ? (
