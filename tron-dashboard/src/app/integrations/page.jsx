@@ -182,7 +182,6 @@ export default async function IntegrationsPage({ searchParams }) {
             if (provider === 'github') {
                 console.log(`🐛 Attempting to uninstall GitHub app for Org: ${actionOrgId}`);
                 
-                // Force the exact Render URL so it never gets lost on Localhost
                 const uninstallRes = await fetch(`https://tron-v3.onrender.com/api/admin/github-uninstall?orgId=${actionOrgId}`, {
                     method: 'DELETE'
                 });
@@ -190,22 +189,19 @@ export default async function IntegrationsPage({ searchParams }) {
                 if (!uninstallRes.ok) {
                     const errText = await uninstallRes.text();
                     console.error("❌ Backend GitHub uninstall failed:", uninstallRes.status, errText);
-                    // DANGEROUS: If we delete the DB now, the app is orphaned on GitHub!
-                    // We throw an error to stop the database deletion.
                     throw new Error(`GitHub failed to uninstall. Please check Render logs. Status: ${uninstallRes.status}`);
                 }
                 
                 console.log("✅ GitHub app successfully uninstalled from GitHub API.");
             }
 
-            // ONLY clean up the local database IF the GitHub API call succeeded (or if it's not GitHub)
+            // ONLY clean up the local database IF the GitHub API call succeeded
             await supabaseServer.from('integrations').delete().match({ provider, org_id: actionOrgId });
             if (provider === 'discord') {
                 await supabaseServer.from('integrations').delete().match({ provider: 'discord_bot', org_id: actionOrgId });
             }
         } catch (e) {
             console.error(`Failed to disconnect ${provider}:`, e);
-            // This stops the UI from refreshing and looking like it worked
             throw e; 
         }
         revalidatePath('/integrations');
@@ -270,10 +266,13 @@ export default async function IntegrationsPage({ searchParams }) {
                                 {github && <span className="bg-gray-900 text-white text-xs font-bold px-3 py-1 rounded-full">Active</span>}
                             </div>
                             <div className="p-6 flex flex-col flex-grow">
-                                <div className="mb-5 flex-grow space-y-4">
-                                    <p className="text-gray-500 text-sm">
-                                        Install the TRON GitHub App to securely grant granular repository access. No manual tokens required.
-                                    </p>
+                                <div className="mb-5 flex-grow space-y-3">
+                                    <p className="text-gray-500 text-sm font-medium">How to connect:</p>
+                                    <ul className="text-sm text-gray-500 space-y-2 list-decimal pl-4">
+                                        <li>Click the button below to authenticate with GitHub.</li>
+                                        <li>Select the repositories you want TRON to monitor.</li>
+                                        <li>You will be redirected back here to finalize the setup automatically. No manual tokens required!</li>
+                                    </ul>
                                 </div>
 
                                 {github ? (
@@ -314,10 +313,14 @@ export default async function IntegrationsPage({ searchParams }) {
                             </div>
                             
                             <div className="p-6 flex flex-col flex-grow">
-                                <div className="mb-5 flex-grow space-y-4">
-                                    <p className="text-gray-500 text-sm">
-                                        Authorize TRON to sync tasks, auto-assign developers, and manage column states.
-                                    </p>
+                                <div className="mb-5 flex-grow space-y-3">
+                                    <p className="text-gray-500 text-sm font-medium">How to connect:</p>
+                                    <ul className="text-sm text-gray-500 space-y-2 list-decimal pl-4 marker:text-indigo-400">
+                                        <li>Log into the <a href="https://launchpad.37signals.com/integrations" target="_blank" rel="noreferrer" className="text-indigo-600 font-medium hover:underline">Basecamp API Console</a>.</li>
+                                        <li>Register a new custom integration.</li>
+                                        <li>Set the Redirect URI exactly to: <br/><code className="bg-gray-100 text-gray-800 px-2 py-1 mt-1 inline-block rounded text-xs select-all">https://tron-v3.onrender.com/api/auth/basecamp/callback</code></li>
+                                        <li>Copy your Account ID, Client ID, and Secret below.</li>
+                                    </ul>
                                 </div>
 
                                 {basecamp ? (
@@ -374,8 +377,14 @@ export default async function IntegrationsPage({ searchParams }) {
                                 {discord && <span className="bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1 rounded-full">Active</span>}
                             </div>
                             <div className="p-6 flex flex-col flex-grow">
-                                <div className="mb-5 flex-grow space-y-4">
-                                    <p className="text-sm text-gray-500">Broadcast AI executive summaries directly to your server.</p>
+                                <div className="mb-5 flex-grow space-y-3">
+                                    <p className="text-gray-500 text-sm font-medium">How to connect:</p>
+                                    <ul className="text-sm text-gray-500 space-y-2 list-decimal pl-4 marker:text-blue-400">
+                                        <li>Go to the <a href="https://discord.com/developers/applications" target="_blank" rel="noreferrer" className="text-blue-600 font-medium hover:underline">Discord Developer Portal</a>.</li>
+                                        <li>Create a New Application and navigate to the <strong>Bot</strong> tab.</li>
+                                        <li>Reset and copy the <strong>Bot Token</strong>.</li>
+                                        <li>Paste the token below to authenticate TRON.</li>
+                                    </ul>
                                 </div>
 
                                 {discord ? (
@@ -408,8 +417,14 @@ export default async function IntegrationsPage({ searchParams }) {
                                 {slack && <span className="bg-teal-100 text-teal-700 text-xs font-bold px-3 py-1 rounded-full">Active</span>}
                             </div>
                             <div className="p-6 flex flex-col flex-grow">
-                                <div className="mb-5 flex-grow space-y-4">
-                                    <p className="text-sm text-gray-500">Send automated code reviews to your Slack workspace.</p>
+                                <div className="mb-5 flex-grow space-y-3">
+                                    <p className="text-gray-500 text-sm font-medium">How to connect:</p>
+                                    <ul className="text-sm text-gray-500 space-y-2 list-decimal pl-4 marker:text-teal-400">
+                                        <li>Go to the <a href="https://api.slack.com/apps" target="_blank" rel="noreferrer" className="text-teal-600 font-medium hover:underline">Slack API Console</a>.</li>
+                                        <li>Create a new App for your workspace.</li>
+                                        <li>Enable <strong>Incoming Webhooks</strong> and add a new webhook to your desired channel.</li>
+                                        <li>Copy the Webhook URL and paste it below.</li>
+                                    </ul>
                                 </div>
 
                                 {slack ? (
