@@ -398,6 +398,15 @@ router.delete('/github-uninstall', async (req, res) => {
         if (error.response) {
             console.error(`   -> GitHub HTTP Status: ${error.response.status}`);
             console.error(`   -> GitHub Response Data:`, JSON.stringify(error.response.data, null, 2));
+
+            // 🌟 THE FIX: If GitHub says 404, it's already uninstalled on their end!
+            // We treat this as a success so the TRON frontend can wipe the local database.
+            if (error.response.status === 404) {
+                console.log(`🐛 [DEBUG TRAP] 11. ⚠️ App already uninstalled on GitHub. Proceeding with local cleanup.`);
+                console.log(`==========================================\n`);
+                return res.json({ success: true, note: "Already uninstalled on GitHub" });
+            }
+
         } else {
             console.error(`   -> No response received from GitHub (Network or Config Issue)`);
         }
