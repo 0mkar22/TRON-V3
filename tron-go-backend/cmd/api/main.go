@@ -87,7 +87,7 @@ func main() {
 		api.DELETE("/admin/github-uninstall", handlers.UninstallGitHubApp)
 
 		// VS Code Endpoints
-		api.GET("/project/:encodedRepo/tickets", handlers.GetTickets)
+		api.GET("/project/tickets", handlers.GetTickets)
 		api.POST("/suggest-tasks", handlers.SuggestTasks)
 		api.POST("/create-task", handlers.CreateTask)
 		api.POST("/start-task", handlers.StartTask)

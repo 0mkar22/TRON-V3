@@ -78,7 +78,10 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
         // 🌟 3. Fetch Tickets securely (Axios interceptor will attach the token)
         try {
             const encodedRepo = encodeURIComponent(repoName);
-            const response = await axios.get(`${getApiUrl()}/api/project/${encodedRepo}/tickets`);
+            
+            // 🌟 THE FIX: Just use the path! Axios interceptor handles the domain automatically.
+            // AND we switched it to use the ?repo= query parameter!
+            const response = await axios.get(`/api/project/tickets?repo=${encodedRepo}`);
             
             // 🌟 THE FIX: Tell the user exactly why no tickets are loading
             if (response.data.isMapped === false) {

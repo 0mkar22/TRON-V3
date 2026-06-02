@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -135,7 +134,7 @@ func GetProjects(c *gin.Context) {
 // 2. VS CODE: FETCH TICKETS
 // ==========================================
 func GetTickets(c *gin.Context) {
-	repoName, _ := url.QueryUnescape(c.Param("encodedRepo"))
+	repoName := c.Query("repo")
 	orgID := c.GetString("orgId")
 
 	repo, mapping, orch, err := getRepoAndOrchestrator(repoName)
