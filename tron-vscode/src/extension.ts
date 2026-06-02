@@ -1,14 +1,18 @@
 import * as vscode from 'vscode';
 import axios from 'axios';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+declare const require: any;
+const { exec } = require('child_process');
+const { promisify } = require('util');
 import { TronProvider } from './tronProvider';
 import { createSupabaseClient } from './supabaseClient';
 
 const execAsync = promisify(exec);
-const API_BASE_URL = 'https://tron-v3.onrender.com';
-const DAEMON_API_KEY = 'tron_v3_super_secret_key_123';
-const SUPABASE_URL = 'https://kobhfwjnbmbtgcikeulp.supabase.co'; // ⚠️ ADD YOUR URL
+
+// 🌟 FIX 1: Read the backend URL from VS Code settings, fallback to your new live Render URL!
+const getConfig = () => vscode.workspace.getConfiguration('tron');
+const getApiUrl = () => getConfig().get<string>('backendUrl') || 'https://tron-v3-1.onrender.com';
+
+const SUPABASE_URL = 'https://kobhfwjnbmbtgcikeulp.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvYmhmd2puYm1idGdjaWtldWxwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MzU3NzIsImV4cCI6MjA5MjQxMTc3Mn0.mopgJImaUiLfxCxSW-VSCcGkr4rUtEYvOrHJDMZsL4A'; // ⚠️ ADD YOUR KEY
 
 // 🌟 NEW: 24-Hour Expiry Constants
@@ -21,7 +25,7 @@ interface TaskQuickPickItem extends vscode.QuickPickItem {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-    axios.defaults.headers.common['x-api-key'] = DAEMON_API_KEY;
+    // 🌟 FIX 2: Removed the old DAEMON_API_KEY logic entirely. We use pure JWT Auth now!
 
     // 1. Initialize Secure Supabase Client
     const supabase = createSupabaseClient(context, SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -44,17 +48,26 @@ export function activate(context: vscode.ExtensionContext) {
     };
 
     // Check on startup & set background loop
-    enforceLoginExpiry(); 
-    const expiryCheckInterval = setInterval(enforceLoginExpiry, 5 * 60 * 1000); 
-    context.subscriptions.push({ dispose: () => clearInterval(expiryCheckInterval) });
+   void enforceLoginExpiry(); // 🌟 'void' tells TypeScript we intentionally aren't awaiting this promise
+    
+    const expiryCheckInterval = setInterval(() => {
+        void enforceLoginExpiry();
+    }, 5 * 60 * 1000); 
+    
+    context.subscriptions.push({ 
+        dispose: () => clearInterval(expiryCheckInterval as any) // 🌟 Force clearInterval to accept the object
+    });
 
     // 3. Axios Interceptor: Attach Secure Token & Check Expiry before EVERY request
     axios.interceptors.request.use(async (config) => {
         await enforceLoginExpiry(); 
         const { data: { session } } = await supabase.auth.getSession();
         
+        // Ensure the request hits the correct dynamically configured Go Backend
+        config.baseURL = getApiUrl();
+        
         if (session?.access_token) {
-            config.headers.Authorization = `Bearer ${session.access_token}`;
+            config.headers.Authorization = `Bearer ${session.access_token}`; // 🌟 Secures your Go API calls
         }
         return config;
     });
@@ -146,7 +159,8 @@ export function activate(context: vscode.ExtensionContext) {
 
             let resolvedId = taskId;
             try {
-                const response = await axios.post(`${API_BASE_URL}/api/start-task`, {
+                // 🌟 Dynamically using getApiUrl()
+                const response = await axios.post(`${getApiUrl()}/api/start-task`, {
                     taskInput: taskId,
                     repoName: repoName,
                     developer: gitUsername 
@@ -225,7 +239,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             vscode.window.showInformationMessage(`T.R.O.N: Adding task to Basecamp...`);
             
-            await axios.post(`${API_BASE_URL}/api/create-task`, {
+            await axios.post(`${getApiUrl()}/api/create-task`, {
                 taskInput: input,
                 repoName: repoName
             });
@@ -246,7 +260,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         try {
             vscode.window.showInformationMessage(`T.R.O.N: Fetching AI Review...`);
-            const response = await axios.get(`${API_BASE_URL}/api/review/${taskId}`);
+            const response = await axios.get(`${getApiUrl()}/api/review/${taskId}`);
             const reviewText = response.data.review;
 
             const panel = vscode.window.createWebviewPanel(
@@ -386,10 +400,9 @@ export function activate(context: vscode.ExtensionContext) {
             const encodedRepo = encodeURIComponent(repoName);
 
             // 1. Fetch tickets FIRST to verify mapping status
-            const ticketsRes = await axios.get(`${API_BASE_URL}/api/project/${encodedRepo}/tickets`).catch(() => ({ data: { isMapped: false, tickets: [] } }));
+            const ticketsRes = await axios.get(`${getApiUrl()}/api/project/${encodedRepo}/tickets`).catch(() => ({ data: { isMapped: false, tickets: [] } }));
 
             // 2. Silently abort if the repo is not connected to the TRON Dashboard!
-            // 🌟 THE FIX: Aggressively block if it's explicitly false OR if the backend is still running old code
             if (ticketsRes.data.isMapped === false || ticketsRes.data.isMapped === undefined) {
                 return false; 
             }
@@ -414,7 +427,7 @@ export function activate(context: vscode.ExtensionContext) {
             let aiSuggestions: string[] = [];
             if (codeDiff) {
                 try {
-                    const aiRes = await axios.post(`${API_BASE_URL}/api/suggest-tasks`, { codeDiff });
+                    const aiRes = await axios.post(`${getApiUrl()}/api/suggest-tasks`, { codeDiff });
                     aiSuggestions = aiRes.data.suggestions || [];
                 } catch (e) {}
             }

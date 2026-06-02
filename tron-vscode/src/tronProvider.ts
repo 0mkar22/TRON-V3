@@ -4,20 +4,22 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
-const API_BASE_URL = 'https://tron-v3.onrender.com';
+
+// 🌟 Dynamically fetch from config just like in extension.ts
+const getApiUrl = () => vscode.workspace.getConfiguration('tron').get<string>('backendUrl') || 'https://tron-v3-1.onrender.com';
 
 export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
-    private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | void> = new vscode.EventEmitter<vscode.TreeItem | undefined | void>();
-    readonly onDidChangeTreeData: vscode.Event<vscode.TreeItem | undefined | void> = this._onDidChangeTreeData.event;
+    // 🌟 FIX: Replaced 'void' with 'null' to fix the TS2416 type error
+    private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | null> = new vscode.EventEmitter<vscode.TreeItem | undefined | null>();
+    readonly onDidChangeTreeData: vscode.Event<vscode.TreeItem | undefined | null> = this._onDidChangeTreeData.event;
     private supabase: any;
 
-    // 🌟 V3: Pass Supabase into the Provider
     constructor(supabaseClient: any) {
         this.supabase = supabaseClient;
     }
 
     refresh(): void {
-        this._onDidChangeTreeData.fire();
+        this._onDidChangeTreeData.fire(undefined); // 🌟 Pass undefined to trigger a full refresh
     }
 
     getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
@@ -66,10 +68,17 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
             return [new vscode.TreeItem("Could not detect GitHub repository")];
         }
 
+        // ==========================================
+        // 🚨 VISUAL DEBUG TRAP 🚨
+        // ==========================================
+        console.log(`🐛 [DEBUG] Extracted Repo Name: "${repoName}"`);
+        vscode.window.showInformationMessage(`🐛 [DEBUG] Asking Go Backend for: "${repoName}"`);
+        // ==========================================
+
         // 🌟 3. Fetch Tickets securely (Axios interceptor will attach the token)
         try {
             const encodedRepo = encodeURIComponent(repoName);
-            const response = await axios.get(`${API_BASE_URL}/api/project/${encodedRepo}/tickets`);
+            const response = await axios.get(`${getApiUrl()}/api/project/${encodedRepo}/tickets`);
             
             // 🌟 THE FIX: Tell the user exactly why no tickets are loading
             if (response.data.isMapped === false) {

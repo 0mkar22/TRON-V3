@@ -65,6 +65,11 @@
     "configuration": {
       "title": "T.R.O.N.",
       "properties": {
+        "tron.backendUrl": {
+          "type": "string",
+          "default": "https://tron-v3-1.onrender.com",
+          "description": "Your TRON Go Backend URL"
+        },
         "tron.supabaseUrl": {
           "type": "string",
           "default": "",
@@ -112,10 +117,11 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "^22.19.17",
+    "@types/node": "^22.19.19",
     "@types/vscode": "^1.115.0",
     "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2",
+    "dotenv-webpack": "^9.0.0",
     "eslint": "^9.39.3",
     "ts-loader": "^9.5.4",
     "typescript": "^5.9.3",
@@ -125,6 +131,9 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",
-    "axios": "^1.15.0"
+    "axios": "^1.15.0",
+    "child_process": "^1.0.2",
+    "util": "^0.12.5",
+    "vscode": "^1.1.37"
   }
 }

@@ -64,7 +64,7 @@ export default function TeamManagementPage() {
             if (sessionError || !session) throw new Error("You must be logged in to invite developers.");
 
             // Remember to change this back to your Render URL for production!
-            const API_BASE_URL = 'https://tron-v3.onrender.com'; 
+            const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_UR; 
             
             const response = await axios.post(
                 `${API_BASE_URL}/api/admin/invite-developer`,

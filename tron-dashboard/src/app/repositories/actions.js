@@ -6,10 +6,6 @@ import { revalidatePath } from 'next/cache';
 // ==========================================
 // 🛡️ THE VAULT: Secure Identity Management
 // ==========================================
-/**
- * Ensures the requester is an authenticated Admin and securely retrieves their Organization ID.
- * This prevents Developer accounts or unauthenticated users from hitting your Render backend.
- */
 async function getSecureAdminOrgId() {
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -41,20 +37,27 @@ async function getSecureAdminOrgId() {
 
 export async function saveWorkflowAction(payload) {
     const orgId = await getSecureAdminOrgId();
+    
+    // 🌟 Retrieve the active token to pass to Go
+    const supabase = await createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
 
-    // 1. Dual-Write: Sync with your Render Engine
+    // 1. Dual-Write: Sync with your Go Backend
     try {
-        await fetch('https://tron-v3.onrender.com/api/repositories', {
+        await fetch(`${process.env.BACKEND_URL}/api/repositories`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}` 
+            },
             body: JSON.stringify({ ...payload, orgId })
         });
     } catch (e) {
-        console.error("Failed to sync with Render Engine:", e);
+        console.error("Failed to sync with Go Engine:", e);
     }
 
     // 2. Save securely to Supabase
-    const supabase = await createClient();
     const { error } = await supabase.from('repositories').upsert({
         org_id: orgId,
         repo_name: payload.repoName,
@@ -90,7 +93,13 @@ export async function deleteWorkflowAction(formData) {
 export async function fetchGithubRepos() {
     try {
         const orgId = await getSecureAdminOrgId();
-        const res = await fetch(`https://tron-v3.onrender.com/api/admin/github-repos?orgId=${orgId}`, { cache: 'no-store' });
+        const supabase = await createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+
+        const res = await fetch(`${process.env.BACKEND_URL}/api/admin/github-repos?orgId=${orgId}`, { 
+            headers: { 'Authorization': `Bearer ${session?.access_token}` },
+            cache: 'no-store' 
+        });
         const data = await res.json();
         return data.repos || [];
     } catch (e) {
@@ -102,7 +111,13 @@ export async function fetchGithubRepos() {
 export async function fetchBasecampProjects() {
     try {
         const orgId = await getSecureAdminOrgId();
-        const res = await fetch(`https://tron-v3.onrender.com/api/admin/basecamp-projects?orgId=${orgId}`, { cache: 'no-store' });
+        const supabase = await createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+
+        const res = await fetch(`${process.env.BACKEND_URL}/api/admin/basecamp-projects?orgId=${orgId}`, { 
+            headers: { 'Authorization': `Bearer ${session?.access_token}` },
+            cache: 'no-store' 
+        });
         const data = await res.json();
         return data.projects || [];
     } catch (e) {
@@ -114,7 +129,13 @@ export async function fetchBasecampProjects() {
 export async function fetchDiscordChannels() {
     try {
         const orgId = await getSecureAdminOrgId();
-        const res = await fetch(`https://tron-v3.onrender.com/api/admin/discord-status?orgId=${orgId}`, { cache: 'no-store' });
+        const supabase = await createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+
+        const res = await fetch(`${process.env.BACKEND_URL}/api/admin/discord-status?orgId=${orgId}`, { 
+            headers: { 'Authorization': `Bearer ${session?.access_token}` },
+            cache: 'no-store' 
+        });
         const data = await res.json();
         return data.channels || [];
     } catch (e) {
@@ -123,20 +144,6 @@ export async function fetchDiscordChannels() {
     }
 }
 
-/**
- * Fetches Basecamp card table columns for a given project.
- *
- * Returns an array of { id: string, name: string } objects where `id` is the
- * Basecamp list/column ID that should be stored in the workflow mapping
- * (e.g. mapping.todo, mapping.branch_created, etc.).
- *
- * The backend admin route (/api/admin/basecamp-columns) resolves:
- *   1. The project's dock to find the card_table or kanban_board tool
- *   2. Follows `lists_url` if columns are paginated
- *   3. Returns each column's numeric Basecamp ID coerced to a string
- *
- * These string IDs are what get POSTed to Basecamp's move/create endpoints.
- */
 export async function fetchBasecampColumns(projectId) {
     if (!projectId) {
         console.error("fetchBasecampColumns: projectId is required");
@@ -145,12 +152,15 @@ export async function fetchBasecampColumns(projectId) {
 
     try {
         const orgId = await getSecureAdminOrgId();
+        const supabase = await createClient();
+        const { data: { session } } = await supabase.auth.getSession();
 
-        const res = await fetch('https://tron-v3.onrender.com/api/admin/basecamp-columns', {
+        const res = await fetch(`${process.env.BACKEND_URL}/api/admin/basecamp-columns`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            // Send both projectId and orgId so the backend can look up
-            // the correct Basecamp credentials from Supabase Vault.
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token}`
+            },
             body: JSON.stringify({ projectId, orgId }),
             cache: 'no-store',
         });
@@ -162,15 +172,10 @@ export async function fetchBasecampColumns(projectId) {
         }
 
         const data = await res.json();
-
-        // Normalise: guarantee every column has an `id` (string) and `name`
-        const columns = (data.columns || []).map((col) => ({
-            id: String(col.id),       // Basecamp IDs are large integers — keep as string
+        return (data.columns || []).map((col) => ({
+            id: String(col.id),
             name: col.name || col.title || `Column ${col.id}`,
         }));
-
-        console.log(`fetchBasecampColumns: fetched ${columns.length} columns for project ${projectId}`);
-        return columns;
     } catch (e) {
         console.error("Proxy Error (Columns):", e);
         return [];

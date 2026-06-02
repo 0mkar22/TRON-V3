@@ -26,7 +26,7 @@ export default function LiveTerminal() {
         }]);
 
         // Connect to your Render backend's SSE endpoint
-        const API_URL = 'https://tron-v3.onrender.com/api/logs/stream';
+        const API_URL = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/logs/stream`;
 
         const eventSource = new EventSource(API_URL);
 
