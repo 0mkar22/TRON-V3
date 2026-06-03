@@ -231,24 +231,28 @@ func (api *BasecampAdapter) ResolveTask(projectID, todoColumnID, taskName, orgID
 }
 
 // ==========================================
-// 3. Move Ticket
+// 3. Move Ticket (With Fallbacks)
 // ==========================================
 func (api *BasecampAdapter) UpdateTicketStatus(ticketID, newColumnID, projectID, orgID string) error {
 	re := regexp.MustCompile(`\D`)
 	cleanTicketID := re.ReplaceAllString(ticketID, "")
-
 	cleanColumnID, _ := strconv.ParseInt(strings.TrimSpace(newColumnID), 10, 64)
 
 	_, err := api.executeWithRetry(orgID, func(creds BasecampCredentials) (*http.Response, error) {
+		// Attempt 1: Standard POST to moves.json
 		url := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/cards/%s/moves.json", creds.AccountID, projectID, cleanTicketID)
 		payload := map[string]interface{}{"column_id": cleanColumnID}
 
-		// 🚨 VISUAL DEBUG TRAP 🚨
-		fmt.Printf("🐛 [DEBUG TRAP] MOVE TICKET\n")
-		fmt.Printf("   -> HTTP POST %s\n", url)
-		fmt.Printf("   -> PAYLOAD: %+v\n", payload)
+		resp, reqErr := api.makeRequest("POST", url, creds, payload)
 
-		return api.makeRequest("POST", url, creds, payload)
+		// 🌟 SELF-HEALING: If Basecamp 404s, fallback to standard PUT update!
+		if resp != nil && resp.StatusCode == 404 {
+			fmt.Printf("⚠️ [BASECAMP] Moves endpoint 404'd. Falling back to generic PUT card update...\n")
+			altUrl := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/cards/%s.json", creds.AccountID, projectID, cleanTicketID)
+			return api.makeRequest("PUT", altUrl, creds, payload)
+		}
+
+		return resp, reqErr
 	})
 
 	if err == nil {
@@ -260,7 +264,7 @@ func (api *BasecampAdapter) UpdateTicketStatus(ticketID, newColumnID, projectID,
 }
 
 // ==========================================
-// 4. Auto-Assign Developer
+// 4. Auto-Assign Developer (With Fallbacks)
 // ==========================================
 func (api *BasecampAdapter) AssignDeveloper(projectID, ticketID, developerName, orgID string) error {
 	re := regexp.MustCompile(`\D`)
@@ -306,18 +310,33 @@ func (api *BasecampAdapter) AssignDeveloper(projectID, ticketID, developerName, 
 		return nil
 	}
 
+	// 🌟 FIX: Force strict int64 typing to prevent JSON scientific notation conversion
+	var finalAssigneeID int64
+	switch v := assigneeID.(type) {
+	case float64:
+		finalAssigneeID = int64(v)
+	case int:
+		finalAssigneeID = int64(v)
+	case string:
+		finalAssigneeID, _ = strconv.ParseInt(v, 10, 64)
+	}
+
 	_, err = api.executeWithRetry(orgID, func(creds BasecampCredentials) (*http.Response, error) {
 		url := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/cards/%s.json", creds.AccountID, projectID, cleanTicketID)
 		payload := map[string]interface{}{
-			"assignee_ids": []interface{}{assigneeID},
+			"assignee_ids": []int64{finalAssigneeID},
 		}
 
-		// 🚨 VISUAL DEBUG TRAP 🚨
-		fmt.Printf("🐛 [DEBUG TRAP] ASSIGN DEV\n")
-		fmt.Printf("   -> HTTP PUT %s\n", url)
-		fmt.Printf("   -> PAYLOAD: %+v\n", payload)
+		resp, reqErr := api.makeRequest("PUT", url, creds, payload)
 
-		return api.makeRequest("PUT", url, creds, payload)
+		// 🌟 SELF-HEALING: If cards.json 404s, fallback to Basecamp's universal recordings endpoint!
+		if resp != nil && resp.StatusCode == 404 {
+			fmt.Printf("⚠️ [BASECAMP] Card endpoint 404'd. Falling back to universal recording PUT...\n")
+			altUrl := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/recordings/%s.json", creds.AccountID, projectID, cleanTicketID)
+			return api.makeRequest("PUT", altUrl, creds, payload)
+		}
+
+		return resp, reqErr
 	})
 
 	if err == nil {
