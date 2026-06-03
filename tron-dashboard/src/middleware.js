@@ -33,13 +33,18 @@ export async function middleware(request) {
   // ==========================================
   // 1. IF NOT LOGGED IN
   // ==========================================
+
+  // 🌟 THE FIX: If they are hitting the exact password page, instantly let them through.
+  // Do not even attempt the redirect logic.
+  if (pathname === '/onboarding/set-password') {
+      return supabaseResponse;
+  }
+
   if (
     !user && 
     !pathname.startsWith('/login') && 
     !pathname.startsWith('/signup') && 
-    !pathname.startsWith('/auth') &&
-    // 🌟 FIX 1: Let unauthenticated users hit this page so the browser can read the #access_token!
-    !pathname.startsWith('/onboarding/set-password') 
+    !pathname.startsWith('/auth')
   ) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
