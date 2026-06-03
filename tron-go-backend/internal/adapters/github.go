@@ -83,7 +83,8 @@ func (api *GitHubAdapter) FetchAndSanitizeDiff(repoFullName string, prNumber int
 
 	// 2. The Secret Scrubber (DLP)
 	awsRe := regexp.MustCompile(`(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}`)
-	sshRe := regexp.MustCompile(`(?s)-----BEGIN (RSA|EC|DSA|OPENSSH) PRIVATE KEY-----.*?-----END \1 PRIVATE KEY-----`)
+	// 🌟 FIX: Removed the \1 backreference and explicitly repeated the group for RE2 compatibility
+	sshRe := regexp.MustCompile(`(?s)-----BEGIN (RSA|EC|DSA|OPENSSH) PRIVATE KEY-----.*?-----END (RSA|EC|DSA|OPENSSH) PRIVATE KEY-----`)
 	genericRe := regexp.MustCompile(`(?i)(password|secret|api_key|access_token|client_secret)[ \t]*[:=][ \t]*['"]?[^\s'"]+['"]?`)
 
 	sanitizedDiff = awsRe.ReplaceAllString(sanitizedDiff, "[REDACTED_SECRET]")
