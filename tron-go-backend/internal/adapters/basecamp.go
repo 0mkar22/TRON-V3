@@ -237,13 +237,18 @@ func (api *BasecampAdapter) UpdateTicketStatus(ticketID, newColumnID, projectID,
 	re := regexp.MustCompile(`\D`)
 	cleanTicketID := re.ReplaceAllString(ticketID, "")
 
-	// Safely convert to 64-bit integer to prevent max-bound truncation
 	cleanColumnID, _ := strconv.ParseInt(strings.TrimSpace(newColumnID), 10, 64)
 
 	_, err := api.executeWithRetry(orgID, func(creds BasecampCredentials) (*http.Response, error) {
-		// 🌟 RESTORED: /buckets/%s/ added back to the URL path
 		url := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/cards/%s/moves.json", creds.AccountID, projectID, cleanTicketID)
-		return api.makeRequest("POST", url, creds, map[string]interface{}{"column_id": cleanColumnID})
+		payload := map[string]interface{}{"column_id": cleanColumnID}
+
+		// 🚨 VISUAL DEBUG TRAP 🚨
+		fmt.Printf("🐛 [DEBUG TRAP] MOVE TICKET\n")
+		fmt.Printf("   -> HTTP POST %s\n", url)
+		fmt.Printf("   -> PAYLOAD: %+v\n", payload)
+
+		return api.makeRequest("POST", url, creds, payload)
 	})
 
 	if err == nil {
@@ -302,11 +307,16 @@ func (api *BasecampAdapter) AssignDeveloper(projectID, ticketID, developerName, 
 	}
 
 	_, err = api.executeWithRetry(orgID, func(creds BasecampCredentials) (*http.Response, error) {
-		// 🌟 RESTORED: /buckets/%s/ added back to the URL path
 		url := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/cards/%s.json", creds.AccountID, projectID, cleanTicketID)
 		payload := map[string]interface{}{
 			"assignee_ids": []interface{}{assigneeID},
 		}
+
+		// 🚨 VISUAL DEBUG TRAP 🚨
+		fmt.Printf("🐛 [DEBUG TRAP] ASSIGN DEV\n")
+		fmt.Printf("   -> HTTP PUT %s\n", url)
+		fmt.Printf("   -> PAYLOAD: %+v\n", payload)
+
 		return api.makeRequest("PUT", url, creds, payload)
 	})
 
