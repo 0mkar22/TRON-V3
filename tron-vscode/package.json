@@ -3,7 +3,7 @@
   "publisher": "tron-team",
   "displayName": "tron-vscode",
   "description": "T.R.O.N. Developer Workflow Integration",
-  "version": "0.0.1",
+  "version": "0.3.1",
   "engines": {
     "vscode": "^1.115.0"
   },
@@ -126,6 +126,7 @@
     "ts-loader": "^9.5.4",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
+    "vscode": "^1.1.37",
     "webpack": "^5.106.2",
     "webpack-cli": "^6.0.1"
   },
@@ -133,7 +134,6 @@
     "@supabase/supabase-js": "^2.105.1",
     "axios": "^1.15.0",
     "child_process": "^1.0.2",
-    "util": "^0.12.5",
-    "vscode": "^1.1.37"
+    "util": "^0.12.5"
   }
 }
