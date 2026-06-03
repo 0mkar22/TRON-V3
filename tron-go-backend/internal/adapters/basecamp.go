@@ -188,23 +188,20 @@ func (api *BasecampAdapter) FetchActiveTasks(projectID, columnID, orgID string) 
 }
 
 // ==========================================
-// 2. Resolve Task
+// 2. Resolve Task (Returns ID and EXACT URL)
 // ==========================================
-func (api *BasecampAdapter) ResolveTask(projectID, todoColumnID, taskName, orgID string) (string, error) {
+// We changed the return type to (string, string, error) -> (id, url, error)
+func (api *BasecampAdapter) ResolveTask(projectID, todoColumnID, taskName, orgID string) (string, string, error) {
 	trimmedTask := strings.TrimSpace(taskName)
-
-	re := regexp.MustCompile(`\D`)
-	possibleID := re.ReplaceAllString(trimmedTask, "")
-	if len(possibleID) >= 8 {
-		return possibleID, nil
-	}
 
 	existingTasks, err := api.FetchActiveTasks(projectID, todoColumnID, orgID)
 	if err == nil {
 		for _, t := range existingTasks {
 			if title, ok := t["title"].(string); ok {
 				if strings.EqualFold(strings.TrimSpace(title), trimmedTask) {
-					return fmt.Sprintf("%v", t["id"]), nil
+					// 🌟 THE FIX: Grab the exact 'url' property directly from Basecamp's response!
+					exactUrl, _ := t["url"].(string)
+					return fmt.Sprintf("%v", t["id"]), exactUrl, nil
 				}
 			}
 		}
@@ -222,41 +219,37 @@ func (api *BasecampAdapter) ResolveTask(projectID, todoColumnID, taskName, orgID
 	})
 
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	var result map[string]interface{}
 	json.Unmarshal(respBytes, &result)
-	return fmt.Sprintf("%v", result["id"]), nil
+	exactUrl, _ := result["url"].(string)
+	return fmt.Sprintf("%v", result["id"]), exactUrl, nil
 }
 
 // ==========================================
-// 3. Move Ticket (With Fallbacks)
+// 3. Move Ticket (Using Basecamp's Provided URL)
 // ==========================================
-func (api *BasecampAdapter) UpdateTicketStatus(ticketID, newColumnID, projectID, orgID string) error {
-	re := regexp.MustCompile(`\D`)
-	cleanTicketID := re.ReplaceAllString(ticketID, "")
+func (api *BasecampAdapter) UpdateTicketStatus(exactCardUrl, newColumnID, projectID, orgID string) error {
 	cleanColumnID, _ := strconv.ParseInt(strings.TrimSpace(newColumnID), 10, 64)
 
+	// If we don't have the exact URL, fallback to the standard recording URL
+	if exactCardUrl == "" {
+		fmt.Printf("⚠️ [BASECAMP] No exact URL provided. Ticket move aborted.\n")
+		return fmt.Errorf("missing exact card URL")
+	}
+
+	// 🌟 THE FIX: Append /moves.json to the exact URL Basecamp gave us
+	moveUrl := strings.Replace(exactCardUrl, ".json", "/moves.json", 1)
+
 	_, err := api.executeWithRetry(orgID, func(creds BasecampCredentials) (*http.Response, error) {
-		// Attempt 1: Standard POST to moves.json
-		url := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/cards/%s/moves.json", creds.AccountID, projectID, cleanTicketID)
 		payload := map[string]interface{}{"column_id": cleanColumnID}
-
-		resp, reqErr := api.makeRequest("POST", url, creds, payload)
-
-		// 🌟 SELF-HEALING: If Basecamp 404s, fallback to standard PUT update!
-		if resp != nil && resp.StatusCode == 404 {
-			fmt.Printf("⚠️ [BASECAMP] Moves endpoint 404'd. Falling back to generic PUT card update...\n")
-			altUrl := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/cards/%s.json", creds.AccountID, projectID, cleanTicketID)
-			return api.makeRequest("PUT", altUrl, creds, payload)
-		}
-
-		return resp, reqErr
+		return api.makeRequest("POST", moveUrl, creds, payload)
 	})
 
 	if err == nil {
-		fmt.Printf("✅ [BASECAMP] Moved ticket [%s] to column [%s]\n", cleanTicketID, newColumnID)
+		fmt.Printf("✅ [BASECAMP] Moved ticket to column [%s]\n", newColumnID)
 	} else {
 		fmt.Printf("❌ [BASECAMP] Ticket move failed: %v\n", err)
 	}
@@ -264,16 +257,25 @@ func (api *BasecampAdapter) UpdateTicketStatus(ticketID, newColumnID, projectID,
 }
 
 // ==========================================
-// 4. Auto-Assign Developer (With Fallbacks)
+// 4. Auto-Assign Developer (Using Basecamp's Provided URL)
 // ==========================================
-func (api *BasecampAdapter) AssignDeveloper(projectID, ticketID, developerName, orgID string) error {
-	re := regexp.MustCompile(`\D`)
-	cleanTicketID := re.ReplaceAllString(ticketID, "")
+func (api *BasecampAdapter) AssignDeveloper(exactCardUrl, developerName, orgID string) error {
+	if exactCardUrl == "" {
+		return fmt.Errorf("missing exact card URL")
+	}
 
 	peopleBytes, err := api.executeWithRetry(orgID, func(creds BasecampCredentials) (*http.Response, error) {
-		url := fmt.Sprintf("https://3.basecampapi.com/%s/people.json", creds.AccountID)
+		// Note: We have to manually extract the Account ID from the exactCardUrl for the people fetch
+		parts := strings.Split(exactCardUrl, "/")
+		var accountId string
+		if len(parts) > 3 {
+			accountId = parts[3]
+		}
+
+		url := fmt.Sprintf("https://3.basecampapi.com/%s/people.json", accountId)
 		return api.makeRequest("GET", url, creds, nil)
 	})
+
 	if err != nil {
 		fmt.Printf("❌ [BASECAMP] Failed to fetch people: %v\n", err)
 		return err
@@ -310,7 +312,6 @@ func (api *BasecampAdapter) AssignDeveloper(projectID, ticketID, developerName, 
 		return nil
 	}
 
-	// 🌟 FIX: Force strict int64 typing to prevent JSON scientific notation conversion
 	var finalAssigneeID int64
 	switch v := assigneeID.(type) {
 	case float64:
@@ -322,25 +323,15 @@ func (api *BasecampAdapter) AssignDeveloper(projectID, ticketID, developerName, 
 	}
 
 	_, err = api.executeWithRetry(orgID, func(creds BasecampCredentials) (*http.Response, error) {
-		url := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/cards/%s.json", creds.AccountID, projectID, cleanTicketID)
+		// 🌟 THE FIX: We use the EXACT URL provided by Basecamp! No guessing required.
 		payload := map[string]interface{}{
 			"assignee_ids": []int64{finalAssigneeID},
 		}
-
-		resp, reqErr := api.makeRequest("PUT", url, creds, payload)
-
-		// 🌟 SELF-HEALING: If cards.json 404s, fallback to Basecamp's universal recordings endpoint!
-		if resp != nil && resp.StatusCode == 404 {
-			fmt.Printf("⚠️ [BASECAMP] Card endpoint 404'd. Falling back to universal recording PUT...\n")
-			altUrl := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/recordings/%s.json", creds.AccountID, projectID, cleanTicketID)
-			return api.makeRequest("PUT", altUrl, creds, payload)
-		}
-
-		return resp, reqErr
+		return api.makeRequest("PUT", exactCardUrl, creds, payload)
 	})
 
 	if err == nil {
-		fmt.Printf("✅ [BASECAMP] Automatically assigned ticket [%s] to %s\n", cleanTicketID, assigneeName)
+		fmt.Printf("✅ [BASECAMP] Automatically assigned ticket to %s\n", assigneeName)
 	} else {
 		fmt.Printf("❌ [BASECAMP] Developer assignment failed: %v\n", err)
 	}

@@ -10,9 +10,12 @@ import (
 // Any struct (like Basecamp, Jira, Monday) that implements these methods can be used.
 type PMAdapter interface {
 	FetchActiveTasks(projectID, columnID, orgID string) ([]map[string]interface{}, error)
-	UpdateTicketStatus(ticketID, newColumnID, projectID, orgID string) error
-	ResolveTask(projectID, todoColumnID, taskName, orgID string) (string, error)
-	AssignDeveloper(projectID, ticketID, developerName, orgID string) error
+	// 🌟 FIX: Updated to expect exactUrl instead of just the ID
+	UpdateTicketStatus(exactUrl, newColumnID, projectID, orgID string) error
+	// 🌟 FIX: Returns (id, exactUrl, error)
+	ResolveTask(projectID, todoColumnID, taskName, orgID string) (string, string, error)
+	// 🌟 FIX: Dropped projectID, only requires exactUrl, developerName, orgID
+	AssignDeveloper(exactUrl, developerName, orgID string) error
 }
 
 // Ticket standardized format across all PM tools
@@ -101,7 +104,8 @@ func (orch *PMOrchestrator) GetTickets(provider, projectID, orgID string, mappin
 }
 
 // UpdateTicketStatus moves a card between columns on the Kanban board
-func (orch *PMOrchestrator) UpdateTicketStatus(provider, projectID, ticketID, newStatusID, orgID string) error {
+// 🌟 FIX: ticketID parameter renamed to exactUrl
+func (orch *PMOrchestrator) UpdateTicketStatus(provider, projectID, exactUrl, newStatusID, orgID string) error {
 	provider = strings.ToLower(provider)
 
 	if newStatusID == "" {
@@ -114,14 +118,15 @@ func (orch *PMOrchestrator) UpdateTicketStatus(provider, projectID, ticketID, ne
 		if orgID == "" {
 			return fmt.Errorf("missing orgId for Basecamp request")
 		}
-		return orch.Basecamp.UpdateTicketStatus(ticketID, newStatusID, projectID, orgID)
+		return orch.Basecamp.UpdateTicketStatus(exactUrl, newStatusID, projectID, orgID)
 	}
 
 	return nil
 }
 
 // ResolveTask finds an existing task by name, or creates a new one
-func (orch *PMOrchestrator) ResolveTask(provider, projectID, taskName, orgID string, mapping map[string]interface{}) string {
+// 🌟 FIX: Returns (taskID, exactUrl)
+func (orch *PMOrchestrator) ResolveTask(provider, projectID, taskName, orgID string, mapping map[string]interface{}) (string, string) {
 	provider = strings.ToLower(provider)
 	re := regexp.MustCompile(`[^a-zA-Z0-9]`)
 	fallbackID := strings.ToLower(re.ReplaceAllString(taskName, "-"))
@@ -130,24 +135,25 @@ func (orch *PMOrchestrator) ResolveTask(provider, projectID, taskName, orgID str
 	case "basecamp":
 		if orgID == "" {
 			fmt.Println("❌ [ORCHESTRATOR] Missing orgId for Basecamp request.")
-			return fallbackID
+			return fallbackID, ""
 		}
 		todoCol := extractMappingValue(mapping, "todo")
 
-		taskID, err := orch.Basecamp.ResolveTask(projectID, todoCol, taskName, orgID)
+		taskID, exactUrl, err := orch.Basecamp.ResolveTask(projectID, todoCol, taskName, orgID)
 		if err == nil && taskID != "" {
-			return taskID
+			return taskID, exactUrl
 		}
 
 	case "jira", "monday":
-		return fallbackID
+		return fallbackID, ""
 	}
 
-	return fallbackID
+	return fallbackID, ""
 }
 
 // AssignTicket matches a GitHub committer name to a Project Management team member
-func (orch *PMOrchestrator) AssignTicket(provider, projectID, ticketID, developer, orgID string) {
+// 🌟 FIX: ticketID parameter renamed to exactUrl
+func (orch *PMOrchestrator) AssignTicket(provider, projectID, exactUrl, developer, orgID string) {
 	provider = strings.ToLower(provider)
 
 	if strings.TrimSpace(developer) == "" {
@@ -161,6 +167,7 @@ func (orch *PMOrchestrator) AssignTicket(provider, projectID, ticketID, develope
 			fmt.Println("❌ [ORCHESTRATOR] Missing orgId for Basecamp request.")
 			return
 		}
-		orch.Basecamp.AssignDeveloper(projectID, ticketID, developer, orgID)
+		// 🌟 FIX: Call the updated adapter method with exactUrl
+		orch.Basecamp.AssignDeveloper(exactUrl, developer, orgID)
 	}
 }

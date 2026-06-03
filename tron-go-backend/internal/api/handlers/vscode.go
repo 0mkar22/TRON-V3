@@ -90,6 +90,16 @@ func StreamLogs(c *gin.Context) {
 	}
 }
 
+// basecampAdapterWrapper bridges the old BasecampAdapter implementation
+// with the updated services.PMAdapter interface signature.
+type basecampAdapterWrapper struct {
+	*adapters.BasecampAdapter
+}
+
+func (w *basecampAdapterWrapper) AssignDeveloper(taskID, projectID, developer, orgID string) error {
+	return w.BasecampAdapter.AssignDeveloper(taskID, projectID, developer)
+}
+
 // ==========================================
 // 🛠️ HELPER: LOAD REPO & ORCHESTRATOR
 // ==========================================
@@ -186,7 +196,7 @@ func CreateTask(c *gin.Context) {
 		return
 	}
 
-	newTicketID := orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping)
+	newTicketID, _ := orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping)
 	c.JSON(http.StatusOK, gin.H{"resolvedId": newTicketID})
 }
 
@@ -209,14 +219,14 @@ func StartTask(c *gin.Context) {
 	resolvedTaskID := strings.ToLower(re.ReplaceAllString(body.TaskInput, "-"))
 
 	if err == nil && repo.PMProvider != "none" {
-		resolvedTaskID = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping)
+		// 🌟 FIX: Capture both the ID and the exactUrl
+		resolvedTaskID, exactCardUrl := orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping)
 
-		// 🌟 FIX 1: Helper to safely extract Basecamp IDs whether they are strings or float64 numbers!
 		extractID := func(key string) string {
 			if val, ok := mapping[key].(string); ok {
 				return val
 			} else if val, ok := mapping[key].(float64); ok {
-				return fmt.Sprintf("%.0f", val) // Force literal number, no scientific notation
+				return fmt.Sprintf("%.0f", val)
 			}
 			return ""
 		}
@@ -226,16 +236,18 @@ func StartTask(c *gin.Context) {
 			inProgressID = extractID("in_progress")
 		}
 
-		if inProgressID != "" {
-			fmt.Printf("🚚 [API] Moving task [%s] to In Progress column (%s)...\n", resolvedTaskID, inProgressID)
-			orch.UpdateTicketStatus(repo.PMProvider, repo.PMProjectID, resolvedTaskID, inProgressID, orgID)
+		if inProgressID != "" && exactCardUrl != "" {
+			fmt.Printf("🚚 [API] Moving task using exact URL to In Progress column (%s)...\n", inProgressID)
+			// 🌟 FIX: Pass exactCardUrl
+			orch.UpdateTicketStatus(repo.PMProvider, repo.PMProjectID, exactCardUrl, inProgressID, orgID)
 		} else {
-			fmt.Printf("⚠️ [API] Could not find an 'in_progress' mapping! (Check TRON dashboard mapping names)\n")
+			fmt.Printf("⚠️ [API] Could not find 'in_progress' mapping or exact URL!\n")
 		}
 
-		if body.Developer != "" {
+		if body.Developer != "" && exactCardUrl != "" {
 			fmt.Printf("👤 [API] Attempting to assign developer: %s\n", body.Developer)
-			orch.AssignTicket(repo.PMProvider, repo.PMProjectID, resolvedTaskID, body.Developer, orgID)
+			// 🌟 FIX: Pass exactCardUrl
+			orch.AssignTicket(repo.PMProvider, repo.PMProjectID, exactCardUrl, body.Developer, orgID)
 		}
 
 		// Push to Worker Queue

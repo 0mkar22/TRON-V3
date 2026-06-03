@@ -125,7 +125,7 @@ func handleNewPullRequest(payload map[string]interface{}, githubAPI *adapters.Gi
 	var mapping map[string]interface{}
 	json.Unmarshal([]byte(repoConfig.Mapping), &mapping)
 
-	ticketID := orchestrator.ResolveTask(repoConfig.PMProvider, repoConfig.PMProjectID, prTitle, orgID, mapping)
+	ticketID, _ := orchestrator.ResolveTask(repoConfig.PMProvider, repoConfig.PMProjectID, prTitle, orgID, mapping)
 	orchestrator.AssignTicket(repoConfig.PMProvider, repoConfig.PMProjectID, ticketID, developerName, orgID)
 
 	log.Println("📢 [PIPELINE] Broadcasting to team...")
