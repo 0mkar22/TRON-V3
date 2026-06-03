@@ -162,7 +162,10 @@ func handleNewPullRequest(payload map[string]interface{}, githubAPI *adapters.Gi
 			return ""
 		}
 
-		underReviewCol := extractID("pr_opened")
+		underReviewCol := extractID("pull_request_opened")
+		if underReviewCol == "" {
+			underReviewCol = extractID("pr_opened")
+		}
 		if underReviewCol == "" {
 			underReviewCol = extractID("under_review")
 		}
