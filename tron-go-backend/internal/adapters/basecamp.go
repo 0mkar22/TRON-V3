@@ -188,30 +188,48 @@ func (api *BasecampAdapter) FetchActiveTasks(projectID, columnID, orgID string) 
 }
 
 // ==========================================
-// 2. Resolve Task
+// 2. Resolve Task (Multi-Column Search)
 // ==========================================
-func (api *BasecampAdapter) ResolveTask(projectID, todoColumnID, taskInput, orgID string) (string, string, error) {
+func (api *BasecampAdapter) ResolveTask(projectID, searchColumnsStr, taskInput, orgID string) (string, string, error) {
 	trimmedInput := strings.TrimSpace(taskInput)
+	columns := strings.Split(searchColumnsStr, ",")
 
-	existingTasks, err := api.FetchActiveTasks(projectID, todoColumnID, orgID)
-	if err == nil {
-		for _, t := range existingTasks {
-			// 🌟 THE FIX: Safely parse the task ID
-			idStr := fmt.Sprintf("%v", t["id"])
-			if fVal, ok := t["id"].(float64); ok {
-				idStr = fmt.Sprintf("%.0f", fVal)
-			}
+	var firstValidCol string
 
-			if title, ok := t["title"].(string); ok {
-				// 🌟 THE FIX: Match by exact Title OR match by the exact ID
-				if strings.EqualFold(strings.TrimSpace(title), trimmedInput) || idStr == trimmedInput {
-					exactUrl, _ := t["url"].(string)
-					return idStr, exactUrl, nil
+	// 🌟 FIX 1: Search through ALL provided columns (e.g., To-Do, then In Progress)
+	for _, col := range columns {
+		col = strings.TrimSpace(col)
+		if col == "" {
+			continue
+		}
+		if firstValidCol == "" {
+			firstValidCol = col // Save the first column (usually To-Do) in case we need to create a new task
+		}
+
+		existingTasks, err := api.FetchActiveTasks(projectID, col, orgID)
+		if err == nil {
+			for _, t := range existingTasks {
+				idStr := fmt.Sprintf("%v", t["id"])
+				if fVal, ok := t["id"].(float64); ok {
+					idStr = fmt.Sprintf("%.0f", fVal)
+				}
+
+				if title, ok := t["title"].(string); ok {
+					if strings.EqualFold(strings.TrimSpace(title), trimmedInput) || idStr == trimmedInput {
+						exactUrl, _ := t["url"].(string)
+						fmt.Printf("✅ [BASECAMP] Found existing task in column [%s]\n", col)
+						return idStr, exactUrl, nil
+					}
 				}
 			}
 		}
 	}
 
+	if firstValidCol == "" {
+		return "", "", fmt.Errorf("no valid columns provided to search")
+	}
+
+	// If we searched all columns and didn't find it, create it in the first column
 	fmt.Printf("✨ [BASECAMP] Creating new task: \"%s\"\n", trimmedInput)
 	payload := map[string]string{
 		"title":   trimmedInput,
@@ -219,7 +237,7 @@ func (api *BasecampAdapter) ResolveTask(projectID, todoColumnID, taskInput, orgI
 	}
 
 	respBytes, err := api.executeWithRetry(orgID, func(creds BasecampCredentials) (*http.Response, error) {
-		url := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/lists/%s/cards.json", creds.AccountID, projectID, todoColumnID)
+		url := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/lists/%s/cards.json", creds.AccountID, projectID, firstValidCol)
 		return api.makeRequest("POST", url, creds, payload)
 	})
 
@@ -231,7 +249,6 @@ func (api *BasecampAdapter) ResolveTask(projectID, todoColumnID, taskInput, orgI
 	json.Unmarshal(respBytes, &result)
 	exactUrl, _ := result["url"].(string)
 
-	// Safely return the ID of the newly created task
 	newIdStr := fmt.Sprintf("%v", result["id"])
 	if fVal, ok := result["id"].(float64); ok {
 		newIdStr = fmt.Sprintf("%.0f", fVal)

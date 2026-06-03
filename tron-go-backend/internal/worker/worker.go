@@ -149,9 +149,14 @@ func handleNewPullRequest(payload map[string]interface{}, githubAPI *adapters.Gi
 
 		// 🌟 FIX 2: Find the "Under Review" column and actually execute the move
 		extractID := func(key string) string {
-			if val, ok := mapping[key].(string); ok {
+			var target map[string]interface{} = mapping
+			if nested, ok := mapping["mapping"].(map[string]interface{}); ok {
+				target = nested
+			}
+
+			if val, ok := target[key].(string); ok {
 				return val
-			} else if val, ok := mapping[key].(float64); ok {
+			} else if val, ok := target[key].(float64); ok {
 				return fmt.Sprintf("%.0f", val)
 			}
 			return ""

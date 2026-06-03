@@ -32,13 +32,18 @@ func NewPMOrchestrator(basecamp PMAdapter) *PMOrchestrator {
 }
 
 func extractMappingValue(mapping map[string]interface{}, key string) string {
-	if nested, ok := mapping["mapping"].(map[string]interface{}); ok {
-		if val, exists := nested[key].(string); exists {
-			return val
-		}
+	var val interface{}
+	if nested, ok := mapping["mapping"].(map[string]interface{}); ok && nested[key] != nil {
+		val = nested[key]
+	} else if mapping[key] != nil {
+		val = mapping[key]
 	}
-	if val, exists := mapping[key].(string); exists {
-		return val
+
+	if str, ok := val.(string); ok {
+		return str
+	}
+	if flt, ok := val.(float64); ok {
+		return fmt.Sprintf("%.0f", flt)
 	}
 	return ""
 }
@@ -136,9 +141,20 @@ func (orch *PMOrchestrator) ResolveTask(provider, projectID, taskName, orgID str
 			fmt.Println("❌ [ORCHESTRATOR] Missing orgId for Basecamp request.")
 			return fallbackID, ""
 		}
-		todoCol := extractMappingValue(mapping, "todo")
 
-		taskID, exactUrl, err := orch.Basecamp.ResolveTask(projectID, todoCol, taskName, orgID)
+		// 🌟 FIX 3: Combine columns so Basecamp searches both places!
+		todoCol := extractMappingValue(mapping, "todo")
+		inProgCol := extractMappingValue(mapping, "branch_created")
+		if inProgCol == "" {
+			inProgCol = extractMappingValue(mapping, "in_progress")
+		}
+
+		searchCols := todoCol
+		if inProgCol != "" {
+			searchCols += "," + inProgCol // "todoID,inProgressID"
+		}
+
+		taskID, exactUrl, err := orch.Basecamp.ResolveTask(projectID, searchCols, taskName, orgID)
 		if err == nil && taskID != "" {
 			return taskID, exactUrl
 		}
