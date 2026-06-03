@@ -238,15 +238,16 @@ func (api *BasecampAdapter) UpdateTicketStatus(ticketID, newColumnID, projectID,
 	re := regexp.MustCompile(`\D`)
 	cleanTicketID := re.ReplaceAllString(ticketID, "")
 
-	// 🌟 FIX 2: Safely convert to 64-bit integer to prevent max-bound truncation on 32-bit systems
+	// Safely convert to 64-bit integer to prevent max-bound truncation
 	cleanColumnID, _ := strconv.ParseInt(strings.TrimSpace(newColumnID), 10, 64)
 
 	_, err := api.executeWithRetry(orgID, func(creds BasecampCredentials) (*http.Response, error) {
-		url := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/cards/%s/moves.json", creds.AccountID, projectID, cleanTicketID)
+		// 🌟 THE FIX: Switch to Basecamp "Flat Routes".
+		// We remove /buckets/:projectID/ entirely because the card ID is globally unique!
+		url := fmt.Sprintf("https://3.basecampapi.com/%s/card_tables/cards/%s/moves.json", creds.AccountID, cleanTicketID)
 		return api.makeRequest("POST", url, creds, map[string]interface{}{"column_id": cleanColumnID})
 	})
 
-	// 🌟 FIX 3: Output success OR the caught error to the Render console
 	if err == nil {
 		fmt.Printf("✅ [BASECAMP] Moved ticket [%s] to column [%s]\n", cleanTicketID, newColumnID)
 	} else {
@@ -303,14 +304,14 @@ func (api *BasecampAdapter) AssignDeveloper(projectID, ticketID, developerName, 
 	}
 
 	_, err = api.executeWithRetry(orgID, func(creds BasecampCredentials) (*http.Response, error) {
-		url := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/cards/%s.json", creds.AccountID, projectID, cleanTicketID)
+		// 🌟 THE FIX: Switch to Basecamp "Flat Routes" here too!
+		url := fmt.Sprintf("https://3.basecampapi.com/%s/card_tables/cards/%s.json", creds.AccountID, cleanTicketID)
 		payload := map[string]interface{}{
 			"assignee_ids": []interface{}{assigneeID},
 		}
 		return api.makeRequest("PUT", url, creds, payload)
 	})
 
-	// 🌟 FIX 4: Output assignment success OR the caught error to the Render console
 	if err == nil {
 		fmt.Printf("✅ [BASECAMP] Automatically assigned ticket [%s] to %s\n", cleanTicketID, assigneeName)
 	} else {
