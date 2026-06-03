@@ -188,28 +188,33 @@ func (api *BasecampAdapter) FetchActiveTasks(projectID, columnID, orgID string) 
 }
 
 // ==========================================
-// 2. Resolve Task (Returns ID and EXACT URL)
+// 2. Resolve Task
 // ==========================================
-// We changed the return type to (string, string, error) -> (id, url, error)
-func (api *BasecampAdapter) ResolveTask(projectID, todoColumnID, taskName, orgID string) (string, string, error) {
-	trimmedTask := strings.TrimSpace(taskName)
+func (api *BasecampAdapter) ResolveTask(projectID, todoColumnID, taskInput, orgID string) (string, string, error) {
+	trimmedInput := strings.TrimSpace(taskInput)
 
 	existingTasks, err := api.FetchActiveTasks(projectID, todoColumnID, orgID)
 	if err == nil {
 		for _, t := range existingTasks {
+			// 🌟 THE FIX: Safely parse the task ID
+			idStr := fmt.Sprintf("%v", t["id"])
+			if fVal, ok := t["id"].(float64); ok {
+				idStr = fmt.Sprintf("%.0f", fVal)
+			}
+
 			if title, ok := t["title"].(string); ok {
-				if strings.EqualFold(strings.TrimSpace(title), trimmedTask) {
-					// 🌟 THE FIX: Grab the exact 'url' property directly from Basecamp's response!
+				// 🌟 THE FIX: Match by exact Title OR match by the exact ID
+				if strings.EqualFold(strings.TrimSpace(title), trimmedInput) || idStr == trimmedInput {
 					exactUrl, _ := t["url"].(string)
-					return fmt.Sprintf("%v", t["id"]), exactUrl, nil
+					return idStr, exactUrl, nil
 				}
 			}
 		}
 	}
 
-	fmt.Printf("✨ [BASECAMP] Creating new task: \"%s\"\n", trimmedTask)
+	fmt.Printf("✨ [BASECAMP] Creating new task: \"%s\"\n", trimmedInput)
 	payload := map[string]string{
-		"title":   trimmedTask,
+		"title":   trimmedInput,
 		"content": "Created by T.R.O.N. V3",
 	}
 
@@ -225,7 +230,14 @@ func (api *BasecampAdapter) ResolveTask(projectID, todoColumnID, taskName, orgID
 	var result map[string]interface{}
 	json.Unmarshal(respBytes, &result)
 	exactUrl, _ := result["url"].(string)
-	return fmt.Sprintf("%v", result["id"]), exactUrl, nil
+
+	// Safely return the ID of the newly created task
+	newIdStr := fmt.Sprintf("%v", result["id"])
+	if fVal, ok := result["id"].(float64); ok {
+		newIdStr = fmt.Sprintf("%.0f", fVal)
+	}
+
+	return newIdStr, exactUrl, nil
 }
 
 // ==========================================

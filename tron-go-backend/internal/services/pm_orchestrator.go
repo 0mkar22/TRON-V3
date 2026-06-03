@@ -7,18 +7,13 @@ import (
 )
 
 // PMAdapter is the interface that breaks the import cycle.
-// Any struct (like Basecamp, Jira, Monday) that implements these methods can be used.
 type PMAdapter interface {
 	FetchActiveTasks(projectID, columnID, orgID string) ([]map[string]interface{}, error)
-	// 🌟 FIX: Updated to expect exactUrl instead of just the ID
 	UpdateTicketStatus(exactUrl, newColumnID, projectID, orgID string) error
-	// 🌟 FIX: Returns (id, exactUrl, error)
 	ResolveTask(projectID, todoColumnID, taskName, orgID string) (string, string, error)
-	// 🌟 FIX: Dropped projectID, only requires exactUrl, developerName, orgID
 	AssignDeveloper(exactUrl, developerName, orgID string) error
 }
 
-// Ticket standardized format across all PM tools
 type Ticket struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
@@ -26,19 +21,16 @@ type Ticket struct {
 	State       string `json:"state"`
 }
 
-// PMOrchestrator routes requests to the correct Project Management Adapter
 type PMOrchestrator struct {
-	Basecamp PMAdapter // We use the Interface here, not the concrete struct!
+	Basecamp PMAdapter
 }
 
-// NewPMOrchestrator initializes the router
 func NewPMOrchestrator(basecamp PMAdapter) *PMOrchestrator {
 	return &PMOrchestrator{
 		Basecamp: basecamp,
 	}
 }
 
-// helper to safely extract mapping values
 func extractMappingValue(mapping map[string]interface{}, key string) string {
 	if nested, ok := mapping["mapping"].(map[string]interface{}); ok {
 		if val, exists := nested[key].(string); exists {
@@ -51,7 +43,6 @@ func extractMappingValue(mapping map[string]interface{}, key string) string {
 	return ""
 }
 
-// GetTickets fetches all active tasks from the configured provider
 func (orch *PMOrchestrator) GetTickets(provider, projectID, orgID string, mapping map[string]interface{}) []Ticket {
 	provider = strings.ToLower(provider)
 	var allTickets []Ticket
@@ -74,8 +65,14 @@ func (orch *PMOrchestrator) GetTickets(provider, projectID, orgID string, mappin
 		if todoCol != "" {
 			tasks, _ := orch.Basecamp.FetchActiveTasks(projectID, todoCol, orgID)
 			for _, t := range tasks {
+				// 🌟 THE FIX: Safely extract the ID without scientific notation!
+				idStr := fmt.Sprintf("%v", t["id"])
+				if fVal, ok := t["id"].(float64); ok {
+					idStr = fmt.Sprintf("%.0f", fVal)
+				}
+
 				allTickets = append(allTickets, Ticket{
-					ID:          fmt.Sprintf("%v", t["id"]),
+					ID:          idStr,
 					Title:       fmt.Sprintf("%v", t["title"]),
 					Description: fmt.Sprintf("%v", t["description"]),
 					State:       "To Do",
@@ -87,8 +84,14 @@ func (orch *PMOrchestrator) GetTickets(provider, projectID, orgID string, mappin
 			fmt.Printf("🔍 [ORCHESTRATOR] Fetching In-Progress tasks from column: %s\n", inProgressCol)
 			tasks, _ := orch.Basecamp.FetchActiveTasks(projectID, inProgressCol, orgID)
 			for _, t := range tasks {
+				// 🌟 THE FIX: Apply safe extraction here as well!
+				idStr := fmt.Sprintf("%v", t["id"])
+				if fVal, ok := t["id"].(float64); ok {
+					idStr = fmt.Sprintf("%.0f", fVal)
+				}
+
 				allTickets = append(allTickets, Ticket{
-					ID:          fmt.Sprintf("%v", t["id"]),
+					ID:          idStr,
 					Title:       fmt.Sprintf("%v", t["title"]),
 					Description: fmt.Sprintf("%v", t["description"]),
 					State:       "In Progress",
@@ -103,8 +106,6 @@ func (orch *PMOrchestrator) GetTickets(provider, projectID, orgID string, mappin
 	return allTickets
 }
 
-// UpdateTicketStatus moves a card between columns on the Kanban board
-// 🌟 FIX: ticketID parameter renamed to exactUrl
 func (orch *PMOrchestrator) UpdateTicketStatus(provider, projectID, exactUrl, newStatusID, orgID string) error {
 	provider = strings.ToLower(provider)
 
@@ -124,8 +125,6 @@ func (orch *PMOrchestrator) UpdateTicketStatus(provider, projectID, exactUrl, ne
 	return nil
 }
 
-// ResolveTask finds an existing task by name, or creates a new one
-// 🌟 FIX: Returns (taskID, exactUrl)
 func (orch *PMOrchestrator) ResolveTask(provider, projectID, taskName, orgID string, mapping map[string]interface{}) (string, string) {
 	provider = strings.ToLower(provider)
 	re := regexp.MustCompile(`[^a-zA-Z0-9]`)
@@ -151,8 +150,6 @@ func (orch *PMOrchestrator) ResolveTask(provider, projectID, taskName, orgID str
 	return fallbackID, ""
 }
 
-// AssignTicket matches a GitHub committer name to a Project Management team member
-// 🌟 FIX: ticketID parameter renamed to exactUrl
 func (orch *PMOrchestrator) AssignTicket(provider, projectID, exactUrl, developer, orgID string) {
 	provider = strings.ToLower(provider)
 
@@ -167,7 +164,6 @@ func (orch *PMOrchestrator) AssignTicket(provider, projectID, exactUrl, develope
 			fmt.Println("❌ [ORCHESTRATOR] Missing orgId for Basecamp request.")
 			return
 		}
-		// 🌟 FIX: Call the updated adapter method with exactUrl
 		orch.Basecamp.AssignDeveloper(exactUrl, developer, orgID)
 	}
 }
