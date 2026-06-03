@@ -178,13 +178,21 @@ func InviteDeveloper(c *gin.Context) {
 
 	fmt.Printf("✉️ [ADMIN] Attempting to invite %s to Org: %s\n", body.Email, orgID)
 
+	// Determine if we are testing locally or in production
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		// Fallback to your Vercel deployment if the env var isn't explicitly set
+		frontendURL = "https://tron-v3.vercel.app"
+	}
+
 	params := map[string]interface{}{
 		"email": body.Email,
 		"data": map[string]interface{}{
 			"org_id": orgID,
 			"role":   "developer",
 		},
-		"redirectTo": "https://tron-v3.vercel.app/onboarding/set-password",
+		// 🌟 THE FIX: Hit the server route to bake the cookies, THEN go to the password page!
+		"redirectTo": fmt.Sprintf("%s/callback?next=/onboarding/set-password", frontendURL),
 	}
 
 	baseURL := os.Getenv("SUPABASE_URL")
