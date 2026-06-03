@@ -40,7 +40,7 @@ export default function ActivityDashboard() {
 
             try {
                 // 🌟 FIX 2: Append the orgId to the backend request URL
-                const res = await fetch(`https://tron-v3.onrender.com/api/admin/system-status?orgId=${orgIdRef.current}`);
+                const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/admin/system-status?orgId=${orgIdRef.current}`);
                 const data = await res.json();
                 
                 if (res.ok) {

@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  # The API Gateway (Handles Webhooks & Dashboard Requests)
+  api:
+    build: .
+    command: ["./api-gateway"]
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    restart: unless-stopped

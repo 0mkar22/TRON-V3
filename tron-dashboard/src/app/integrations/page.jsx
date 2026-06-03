@@ -95,6 +95,10 @@ export default async function IntegrationsPage({ searchParams }) {
         const provider = formData.get('provider');
         let redirectUrl = null;
 
+        // 🌟 FIX 1: Grab the active session token so Go doesn't block us!
+        const { data: { session } } = await supabaseServer.auth.getSession();
+        const token = session?.access_token;
+
         const { data: { user } } = await supabaseServer.auth.getUser();
         const { data: userData } = await supabaseServer.from('users').select('org_id, role').eq('id', user.id).single();
         
@@ -103,8 +107,12 @@ export default async function IntegrationsPage({ searchParams }) {
 
         if (provider === 'basecamp') {
             try {
-                const res = await fetch('https://tron-v3.onrender.com/api/auth/basecamp/init', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                const res = await fetch(`${process.env.BACKEND_URL}/api/auth/basecamp/init`, {
+                    method: 'POST', 
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}` // 🌟 FIX 2: Hand the token to the Go backend!
+                    },
                     body: JSON.stringify({
                         accountId: formData.get('accountId'),
                         clientId: formData.get('clientId'),
@@ -112,12 +120,17 @@ export default async function IntegrationsPage({ searchParams }) {
                         orgId: actionOrgId 
                     })
                 });
+                
                 if (res.ok) {
                     const data = await res.json();
                     if (data.redirectUrl) redirectUrl = data.redirectUrl;
+                } else {
+                    // 🌟 FIX 3: Catch and log the exact error instead of failing silently
+                    const errText = await res.text();
+                    console.error("❌ Backend Basecamp Init Failed:", res.status, errText);
                 }
             } catch (error) {
-                console.error(`Failed to init Basecamp via Render:`, error);
+                console.error(`❌ Failed to init Basecamp via Render:`, error);
             }
         } else {
             const rawToken = formData.get('token');
@@ -172,6 +185,11 @@ export default async function IntegrationsPage({ searchParams }) {
         'use server';
         const supabaseServer = await createClient();
         const provider = formData.get('provider');
+        
+        // 🌟 FIX: Grab the session so we have the access token for the backend!
+        const { data: { session } } = await supabaseServer.auth.getSession();
+        const token = session?.access_token;
+        
         const { data: { user } } = await supabaseServer.auth.getUser();
         const { data: userData } = await supabaseServer.from('users').select('org_id, role').eq('id', user.id).single();
         if (userData?.role !== 'admin') throw new Error("Unauthorized");
@@ -181,9 +199,13 @@ export default async function IntegrationsPage({ searchParams }) {
         try {
             if (provider === 'github') {
                 console.log(`🐛 Attempting to uninstall GitHub app for Org: ${actionOrgId}`);
+                console.log(`🚨 TARGET BACKEND URL IS: ${process.env.BACKEND_URL}`);
                 
-                const uninstallRes = await fetch(`https://tron-v3.onrender.com/api/admin/github-uninstall?orgId=${actionOrgId}`, {
-                    method: 'DELETE'
+                const uninstallRes = await fetch(`${process.env.BACKEND_URL}/api/admin/github-uninstall?orgId=${actionOrgId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}` // 🌟 Send the token to Go!
+                    }
                 });
 
                 if (!uninstallRes.ok) {
@@ -291,7 +313,7 @@ export default async function IntegrationsPage({ searchParams }) {
                                     </form>
                                 ) : (
                                     <div className="mt-auto">
-                                        <a href={`https://github.com/apps/tron-v3/installations/new`} className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm flex items-center justify-center">
+                                        <a href={`https://github.com/apps/tron-v3-1/installations/new`} className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm flex items-center justify-center">
                                             Connect GitHub Account
                                         </a>
                                     </div>
