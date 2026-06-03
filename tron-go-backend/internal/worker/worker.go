@@ -68,8 +68,73 @@ func processJob(job QueueJob, githubAPI *adapters.GitHubAdapter, aiAPI *adapters
 	}
 
 	action, _ := job.Payload["action"].(string)
-	if action == "opened" || action == "reopened" {
+
+	// 🌟 FIX: Explicitly route the PR events
+	switch action {
+	case "opened", "reopened":
 		handleNewPullRequest(job.Payload, githubAPI, aiAPI, messengerAPI, orchestrator)
+	case "closed":
+		handleClosedPullRequest(job.Payload, orchestrator)
+	default:
+		// ignore other actions
+	}
+}
+
+// 🌟 FIX: New function dedicated purely to sliding the ticket to Done!
+func handleClosedPullRequest(payload map[string]interface{}, orchestrator *services.PMOrchestrator) {
+	prData, _ := payload["pull_request"].(map[string]interface{})
+	repoData, _ := payload["repository"].(map[string]interface{})
+
+	repoFullName, _ := repoData["full_name"].(string)
+	prTitle, _ := prData["title"].(string)
+
+	prNumber := 0
+	if num, ok := prData["number"].(float64); ok {
+		prNumber = int(num)
+	}
+
+	log.Printf("📦 [PIPELINE] PR Closed Detected: %s (#%d)\n", repoFullName, prNumber)
+
+	var repoConfig models.Repository
+	if err := database.DB.Where("repo_name = ?", repoFullName).First(&repoConfig).Error; err != nil {
+		log.Printf("⚠️ [PIPELINE] Repo '%s' is not mapped in TRON. Ignoring.\n", repoFullName)
+		return
+	}
+	orgID := repoConfig.OrgID
+
+	var mapping map[string]interface{}
+	json.Unmarshal([]byte(repoConfig.Mapping), &mapping)
+
+	// 1. Find the ticket (It will search To-Do, In Progress, AND Under Review now)
+	_, exactUrl := orchestrator.ResolveTask(repoConfig.PMProvider, repoConfig.PMProjectID, prTitle, orgID, mapping)
+
+	if exactUrl != "" {
+		extractID := func(key string) string {
+			var target map[string]interface{} = mapping
+			if nested, ok := mapping["mapping"].(map[string]interface{}); ok {
+				target = nested
+			}
+
+			if val, ok := target[key].(string); ok {
+				return val
+			} else if val, ok := target[key].(float64); ok {
+				return fmt.Sprintf("%.0f", val)
+			}
+			return ""
+		}
+
+		// 2. Grab the ID for the "Done" / "pull_request_closed" column
+		doneCol := extractID("pull_request_closed")
+		if doneCol == "" {
+			doneCol = extractID("done")
+		}
+
+		if doneCol != "" {
+			log.Printf("🚚 [PIPELINE] Moving task to Done column (%s)...\n", doneCol)
+			orchestrator.UpdateTicketStatus(repoConfig.PMProvider, repoConfig.PMProjectID, exactUrl, doneCol, orgID)
+		} else {
+			log.Printf("⚠️ [PIPELINE] Could not find 'pull_request_closed' in mapping. Skipping column move.\n")
+		}
 	}
 }
 

@@ -142,17 +142,35 @@ func (orch *PMOrchestrator) ResolveTask(provider, projectID, taskName, orgID str
 			return fallbackID, ""
 		}
 
-		// 🌟 FIX 3: Combine columns so Basecamp searches both places!
+		// 🌟 FIX: Collect ALL possible columns so Basecamp can find the ticket anywhere on the board!
+		var cols []string
+
 		todoCol := extractMappingValue(mapping, "todo")
+		if todoCol != "" {
+			cols = append(cols, todoCol)
+		}
+
 		inProgCol := extractMappingValue(mapping, "branch_created")
 		if inProgCol == "" {
 			inProgCol = extractMappingValue(mapping, "in_progress")
 		}
-
-		searchCols := todoCol
 		if inProgCol != "" {
-			searchCols += "," + inProgCol // "todoID,inProgressID"
+			cols = append(cols, inProgCol)
 		}
+
+		// Add the Under Review column to the search path!
+		underRevCol := extractMappingValue(mapping, "pull_request_opened")
+		if underRevCol == "" {
+			underRevCol = extractMappingValue(mapping, "pr_opened")
+		}
+		if underRevCol == "" {
+			underRevCol = extractMappingValue(mapping, "under_review")
+		}
+		if underRevCol != "" {
+			cols = append(cols, underRevCol)
+		}
+
+		searchCols := strings.Join(cols, ",")
 
 		taskID, exactUrl, err := orch.Basecamp.ResolveTask(projectID, searchCols, taskName, orgID)
 		if err == nil && taskID != "" {
