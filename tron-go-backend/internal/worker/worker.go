@@ -105,8 +105,17 @@ func handleClosedPullRequest(payload map[string]interface{}, orchestrator *servi
 	var mapping map[string]interface{}
 	json.Unmarshal([]byte(repoConfig.Mapping), &mapping)
 
+	// 🌟 REPLACE the ResolveTask call with this:
+	headData, _ := prData["head"].(map[string]interface{})
+	branchName, _ := headData["ref"].(string)
+
+	searchQuery := prTitle
+	if branchName != "" {
+		searchQuery = prTitle + " " + branchName
+	}
+
 	// 1. Find the ticket (It will search To-Do, In Progress, AND Under Review now)
-	_, exactUrl := orchestrator.ResolveTask(repoConfig.PMProvider, repoConfig.PMProjectID, prTitle, orgID, mapping)
+	_, exactUrl := orchestrator.ResolveTask(repoConfig.PMProvider, repoConfig.PMProjectID, searchQuery, orgID, mapping)
 
 	if exactUrl != "" {
 		extractID := func(key string) string {
@@ -205,8 +214,17 @@ func handleNewPullRequest(payload map[string]interface{}, githubAPI *adapters.Gi
 	var mapping map[string]interface{}
 	json.Unmarshal([]byte(repoConfig.Mapping), &mapping)
 
-	// 🌟 Resolve the Task (Now correctly catching both ticketID and exactUrl)
-	_, exactUrl := orchestrator.ResolveTask(repoConfig.PMProvider, repoConfig.PMProjectID, prTitle, orgID, mapping)
+	// 🌟 REPLACE the ResolveTask call with this:
+	headData, _ := prData["head"].(map[string]interface{})
+	branchName, _ := headData["ref"].(string)
+
+	// Combine PR Title and Branch Name to guarantee the Basecamp ID is in the string!
+	searchQuery := prTitle
+	if branchName != "" {
+		searchQuery = prTitle + " " + branchName
+	}
+
+	_, exactUrl := orchestrator.ResolveTask(repoConfig.PMProvider, repoConfig.PMProjectID, searchQuery, orgID, mapping)
 
 	if exactUrl != "" {
 		// Assign Developer

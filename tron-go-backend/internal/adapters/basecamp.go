@@ -188,7 +188,7 @@ func (api *BasecampAdapter) FetchActiveTasks(projectID, columnID, orgID string) 
 }
 
 // ==========================================
-// 2. Resolve Task (Multi-Column Search)
+// 2. Resolve Task (Multi-Column + Deep Search)
 // ==========================================
 func (api *BasecampAdapter) ResolveTask(projectID, searchColumnsStr, taskInput, orgID string) (string, string, error) {
 	trimmedInput := strings.TrimSpace(taskInput)
@@ -196,14 +196,13 @@ func (api *BasecampAdapter) ResolveTask(projectID, searchColumnsStr, taskInput, 
 
 	var firstValidCol string
 
-	// 🌟 FIX 1: Search through ALL provided columns (e.g., To-Do, then In Progress)
 	for _, col := range columns {
 		col = strings.TrimSpace(col)
 		if col == "" {
 			continue
 		}
 		if firstValidCol == "" {
-			firstValidCol = col // Save the first column (usually To-Do) in case we need to create a new task
+			firstValidCol = col
 		}
 
 		existingTasks, err := api.FetchActiveTasks(projectID, col, orgID)
@@ -215,9 +214,16 @@ func (api *BasecampAdapter) ResolveTask(projectID, searchColumnsStr, taskInput, 
 				}
 
 				if title, ok := t["title"].(string); ok {
-					if strings.EqualFold(strings.TrimSpace(title), trimmedInput) || idStr == trimmedInput {
+					cleanTitle := strings.TrimSpace(title)
+					// 🌟 THE FIX: Bulletproof Matching!
+					// Matches Exact Title OR Exact ID OR if the 10-digit ID is embedded anywhere in the PR Title/Branch!
+					if strings.EqualFold(cleanTitle, trimmedInput) ||
+						idStr == trimmedInput ||
+						strings.Contains(trimmedInput, idStr) ||
+						strings.Contains(strings.ToLower(trimmedInput), strings.ToLower(cleanTitle)) {
+
 						exactUrl, _ := t["url"].(string)
-						fmt.Printf("✅ [BASECAMP] Found existing task in column [%s]\n", col)
+						fmt.Printf("✅ [BASECAMP] Found existing task [%s] in column [%s]\n", cleanTitle, col)
 						return idStr, exactUrl, nil
 					}
 				}
@@ -229,10 +235,17 @@ func (api *BasecampAdapter) ResolveTask(projectID, searchColumnsStr, taskInput, 
 		return "", "", fmt.Errorf("no valid columns provided to search")
 	}
 
-	// If we searched all columns and didn't find it, create it in the first column
-	fmt.Printf("✨ [BASECAMP] Creating new task: \"%s\"\n", trimmedInput)
+	// Clean up the task name if it's a raw branch name before creating it
+	cleanNewTitle := trimmedInput
+	re := regexp.MustCompile(`^[a-zA-Z0-9_-]+/\d+[\s-]*`)
+	cleanNewTitle = re.ReplaceAllString(cleanNewTitle, "")
+	if strings.TrimSpace(cleanNewTitle) == "" {
+		cleanNewTitle = trimmedInput
+	}
+
+	fmt.Printf("✨ [BASECAMP] Creating new task: \"%s\"\n", cleanNewTitle)
 	payload := map[string]string{
-		"title":   trimmedInput,
+		"title":   strings.TrimSpace(cleanNewTitle),
 		"content": "Created by T.R.O.N. V3",
 	}
 
