@@ -144,7 +144,6 @@ func (api *BasecampAdapter) executeWithRetry(orgID string, action apiAction) ([]
 	}
 	defer resp.Body.Close()
 
-	// 🌟 FIX 1: Explicitly grab and print Basecamp's exact JSON error message!
 	if resp.StatusCode >= 400 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		errMsg := string(bodyBytes)
@@ -242,9 +241,8 @@ func (api *BasecampAdapter) UpdateTicketStatus(ticketID, newColumnID, projectID,
 	cleanColumnID, _ := strconv.ParseInt(strings.TrimSpace(newColumnID), 10, 64)
 
 	_, err := api.executeWithRetry(orgID, func(creds BasecampCredentials) (*http.Response, error) {
-		// 🌟 THE FIX: Switch to Basecamp "Flat Routes".
-		// We remove /buckets/:projectID/ entirely because the card ID is globally unique!
-		url := fmt.Sprintf("https://3.basecampapi.com/%s/card_tables/cards/%s/moves.json", creds.AccountID, cleanTicketID)
+		// 🌟 RESTORED: /buckets/%s/ added back to the URL path
+		url := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/cards/%s/moves.json", creds.AccountID, projectID, cleanTicketID)
 		return api.makeRequest("POST", url, creds, map[string]interface{}{"column_id": cleanColumnID})
 	})
 
@@ -304,8 +302,8 @@ func (api *BasecampAdapter) AssignDeveloper(projectID, ticketID, developerName, 
 	}
 
 	_, err = api.executeWithRetry(orgID, func(creds BasecampCredentials) (*http.Response, error) {
-		// 🌟 THE FIX: Switch to Basecamp "Flat Routes" here too!
-		url := fmt.Sprintf("https://3.basecampapi.com/%s/card_tables/cards/%s.json", creds.AccountID, cleanTicketID)
+		// 🌟 RESTORED: /buckets/%s/ added back to the URL path
+		url := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/cards/%s.json", creds.AccountID, projectID, cleanTicketID)
 		payload := map[string]interface{}{
 			"assignee_ids": []interface{}{assigneeID},
 		}
