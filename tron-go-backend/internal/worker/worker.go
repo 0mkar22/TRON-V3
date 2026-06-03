@@ -82,12 +82,25 @@ func handleNewPullRequest(payload map[string]interface{}, githubAPI *adapters.Gi
 	senderData, _ := payload["sender"].(map[string]interface{})
 
 	repoFullName, _ := repoData["full_name"].(string)
-	prNumber := int(prData["number"].(float64))
+
+	// 🌟 FIX 1: Safely extract PR Number
+	prNumber := 0
+	if num, ok := prData["number"].(float64); ok {
+		prNumber = int(num)
+	}
+
 	prTitle, _ := prData["title"].(string)
 	developerName, _ := senderData["login"].(string)
-	installID := fmt.Sprintf("%v", installData["id"])
 
-	log.Printf("📦 [PIPELINE] New PR Detected: %s (#%d) by %s\n", repoFullName, prNumber, developerName)
+	// 🌟 FIX 2: Safely extract the Installation ID as a strict string without scientific notation!
+	var installID string
+	if idFloat, ok := installData["id"].(float64); ok {
+		installID = fmt.Sprintf("%.0f", idFloat)
+	} else {
+		installID = fmt.Sprintf("%v", installData["id"])
+	}
+
+	log.Printf("📦 [PIPELINE] New PR Detected: %s (#%d) by %s (Install ID: %s)\n", repoFullName, prNumber, developerName, installID)
 
 	var repoConfig models.Repository
 	if err := database.DB.Where("repo_name = ?", repoFullName).First(&repoConfig).Error; err != nil {

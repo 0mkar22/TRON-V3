@@ -211,17 +211,26 @@ func StartTask(c *gin.Context) {
 	if err == nil && repo.PMProvider != "none" {
 		resolvedTaskID = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping)
 
-		// Get "in_progress" column from mapping
-		inProgressID := ""
-		if val, ok := mapping["branch_created"].(string); ok {
-			inProgressID = val
-		} else if val, ok := mapping["in_progress"].(string); ok {
-			inProgressID = val
+		// 🌟 FIX 1: Helper to safely extract Basecamp IDs whether they are strings or float64 numbers!
+		extractID := func(key string) string {
+			if val, ok := mapping[key].(string); ok {
+				return val
+			} else if val, ok := mapping[key].(float64); ok {
+				return fmt.Sprintf("%.0f", val) // Force literal number, no scientific notation
+			}
+			return ""
+		}
+
+		inProgressID := extractID("branch_created")
+		if inProgressID == "" {
+			inProgressID = extractID("in_progress")
 		}
 
 		if inProgressID != "" {
-			fmt.Printf("🚚 [API] Moving task [%s] to In Progress column...\n", resolvedTaskID)
+			fmt.Printf("🚚 [API] Moving task [%s] to In Progress column (%s)...\n", resolvedTaskID, inProgressID)
 			orch.UpdateTicketStatus(repo.PMProvider, repo.PMProjectID, resolvedTaskID, inProgressID, orgID)
+		} else {
+			fmt.Printf("⚠️ [API] Could not find an 'in_progress' mapping! (Check TRON dashboard mapping names)\n")
 		}
 
 		if body.Developer != "" {
@@ -238,7 +247,9 @@ func StartTask(c *gin.Context) {
 			},
 		}
 		queueJSON, _ := json.Marshal(queuePayload)
-		redis.Client.LPush(context.Background(), "tron:webhook_queue", queueJSON)
+
+		// 🌟 FIX 2: Send this to the exact queue name the Worker is actually listening to
+		redis.Client.LPush(context.Background(), "tron:v3_secret_queue", queueJSON)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"resolvedId": resolvedTaskID})
