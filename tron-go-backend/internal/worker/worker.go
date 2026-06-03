@@ -36,7 +36,6 @@ func Start(ctx context.Context) {
 			log.Println("🛑 Halting integrated worker queue polling...")
 			return
 		default:
-			// Block for 2 seconds waiting for a job, then loop
 			result, err := redis.Client.BRPop(ctx, 2*time.Second, "tron:v3_secret_queue").Result()
 
 			if err == context.Canceled {
@@ -56,7 +55,6 @@ func Start(ctx context.Context) {
 				continue
 			}
 
-			// Spin up a new Goroutine for the actual work so the queue never blocks
 			go processJob(job, githubAPI, aiAPI, messengerAPI, orchestrator)
 		}
 	}
@@ -78,12 +76,10 @@ func processJob(job QueueJob, githubAPI *adapters.GitHubAdapter, aiAPI *adapters
 func handleNewPullRequest(payload map[string]interface{}, githubAPI *adapters.GitHubAdapter, aiAPI *adapters.AIAdapter, messengerAPI *adapters.MessengerAdapter, orchestrator *services.PMOrchestrator) {
 	prData, _ := payload["pull_request"].(map[string]interface{})
 	repoData, _ := payload["repository"].(map[string]interface{})
-	installData, _ := payload["installation"].(map[string]interface{})
 	senderData, _ := payload["sender"].(map[string]interface{})
 
 	repoFullName, _ := repoData["full_name"].(string)
 
-	// 🌟 FIX 1: Safely extract PR Number
 	prNumber := 0
 	if num, ok := prData["number"].(float64); ok {
 		prNumber = int(num)
@@ -92,22 +88,41 @@ func handleNewPullRequest(payload map[string]interface{}, githubAPI *adapters.Gi
 	prTitle, _ := prData["title"].(string)
 	developerName, _ := senderData["login"].(string)
 
-	// 🌟 FIX 2: Safely extract the Installation ID as a strict string without scientific notation!
-	var installID string
-	if idFloat, ok := installData["id"].(float64); ok {
-		installID = fmt.Sprintf("%.0f", idFloat)
-	} else {
-		installID = fmt.Sprintf("%v", installData["id"])
-	}
-
-	log.Printf("📦 [PIPELINE] New PR Detected: %s (#%d) by %s (Install ID: %s)\n", repoFullName, prNumber, developerName, installID)
-
+	// 1. We must fetch the Repo and Org ID FIRST so we can use it as a fallback
 	var repoConfig models.Repository
 	if err := database.DB.Where("repo_name = ?", repoFullName).First(&repoConfig).Error; err != nil {
 		log.Printf("⚠️ [PIPELINE] Repo '%s' is not mapped in TRON. Ignoring.\n", repoFullName)
 		return
 	}
 	orgID := repoConfig.OrgID
+
+	// 2. 🌟 FIX 1: Safely extract Installation ID with a Database Fallback
+	var installID string
+	if installData, ok := payload["installation"].(map[string]interface{}); ok && installData != nil {
+		if idFloat, ok := installData["id"].(float64); ok {
+			installID = fmt.Sprintf("%.0f", idFloat)
+		} else if installData["id"] != nil {
+			installID = fmt.Sprintf("%v", installData["id"])
+		}
+	}
+
+	// If the webhook payload didn't have it, grab it from our Database
+	if installID == "" || installID == "<nil>" {
+		var githubInt models.Integration
+		if err := database.DB.Where("org_id = ? AND provider = ?", orgID, "github").First(&githubInt).Error; err == nil {
+			installID = githubInt.Token
+			if installID == "" && githubInt.SecretID != nil {
+				installID, _ = services.GetDecryptedSecret(*githubInt.SecretID)
+			}
+		}
+	}
+
+	if installID == "" || installID == "<nil>" {
+		log.Printf("❌ [PIPELINE] Could not find GitHub Installation ID in payload or Database. Aborting.\n")
+		return
+	}
+
+	log.Printf("📦 [PIPELINE] New PR Detected: %s (#%d) by %s (Install ID: %s)\n", repoFullName, prNumber, developerName, installID)
 
 	sanitizedDiff, err := githubAPI.FetchAndSanitizeDiff(repoFullName, prNumber, installID)
 	if err != nil {
@@ -125,8 +140,35 @@ func handleNewPullRequest(payload map[string]interface{}, githubAPI *adapters.Gi
 	var mapping map[string]interface{}
 	json.Unmarshal([]byte(repoConfig.Mapping), &mapping)
 
-	ticketID, _ := orchestrator.ResolveTask(repoConfig.PMProvider, repoConfig.PMProjectID, prTitle, orgID, mapping)
-	orchestrator.AssignTicket(repoConfig.PMProvider, repoConfig.PMProjectID, ticketID, developerName, orgID)
+	// 🌟 Resolve the Task (Now correctly catching both ticketID and exactUrl)
+	_, exactUrl := orchestrator.ResolveTask(repoConfig.PMProvider, repoConfig.PMProjectID, prTitle, orgID, mapping)
+
+	if exactUrl != "" {
+		// Assign Developer
+		orchestrator.AssignTicket(repoConfig.PMProvider, repoConfig.PMProjectID, exactUrl, developerName, orgID)
+
+		// 🌟 FIX 2: Find the "Under Review" column and actually execute the move
+		extractID := func(key string) string {
+			if val, ok := mapping[key].(string); ok {
+				return val
+			} else if val, ok := mapping[key].(float64); ok {
+				return fmt.Sprintf("%.0f", val)
+			}
+			return ""
+		}
+
+		underReviewCol := extractID("pr_opened")
+		if underReviewCol == "" {
+			underReviewCol = extractID("under_review")
+		}
+
+		if underReviewCol != "" {
+			log.Printf("🚚 [PIPELINE] Moving task to PR/Under Review column (%s)...\n", underReviewCol)
+			orchestrator.UpdateTicketStatus(repoConfig.PMProvider, repoConfig.PMProjectID, exactUrl, underReviewCol, orgID)
+		} else {
+			log.Printf("⚠️ [PIPELINE] Could not find 'pr_opened' or 'under_review' in mapping. Skipping column move.\n")
+		}
+	}
 
 	log.Println("📢 [PIPELINE] Broadcasting to team...")
 	var commConfig adapters.CommunicationConfig
