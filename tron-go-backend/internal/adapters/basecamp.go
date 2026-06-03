@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
-	"strings" // 🌟 Re-added since the new methods use string manipulation
+	"strings"
 	"time"
 
 	"github.com/tron-v3.1/tron-go-backend/internal/models"
@@ -144,8 +144,12 @@ func (api *BasecampAdapter) executeWithRetry(orgID string, action apiAction) ([]
 	}
 	defer resp.Body.Close()
 
+	// 🌟 FIX 1: Explicitly grab and print Basecamp's exact JSON error message!
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("basecamp API error: %d", resp.StatusCode)
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		errMsg := string(bodyBytes)
+		fmt.Printf("❌ [BASECAMP API REJECTED] Status: %d | Response: %s\n", resp.StatusCode, errMsg)
+		return nil, fmt.Errorf("basecamp API error: %d, %s", resp.StatusCode, errMsg)
 	}
 
 	return io.ReadAll(resp.Body)
@@ -233,15 +237,20 @@ func (api *BasecampAdapter) ResolveTask(projectID, todoColumnID, taskName, orgID
 func (api *BasecampAdapter) UpdateTicketStatus(ticketID, newColumnID, projectID, orgID string) error {
 	re := regexp.MustCompile(`\D`)
 	cleanTicketID := re.ReplaceAllString(ticketID, "")
-	cleanColumnID, _ := strconv.Atoi(newColumnID)
+
+	// 🌟 FIX 2: Safely convert to 64-bit integer to prevent max-bound truncation on 32-bit systems
+	cleanColumnID, _ := strconv.ParseInt(strings.TrimSpace(newColumnID), 10, 64)
 
 	_, err := api.executeWithRetry(orgID, func(creds BasecampCredentials) (*http.Response, error) {
 		url := fmt.Sprintf("https://3.basecampapi.com/%s/buckets/%s/card_tables/cards/%s/moves.json", creds.AccountID, projectID, cleanTicketID)
-		return api.makeRequest("POST", url, creds, map[string]int{"column_id": cleanColumnID})
+		return api.makeRequest("POST", url, creds, map[string]interface{}{"column_id": cleanColumnID})
 	})
 
+	// 🌟 FIX 3: Output success OR the caught error to the Render console
 	if err == nil {
 		fmt.Printf("✅ [BASECAMP] Moved ticket [%s] to column [%s]\n", cleanTicketID, newColumnID)
+	} else {
+		fmt.Printf("❌ [BASECAMP] Ticket move failed: %v\n", err)
 	}
 	return err
 }
@@ -258,6 +267,7 @@ func (api *BasecampAdapter) AssignDeveloper(projectID, ticketID, developerName, 
 		return api.makeRequest("GET", url, creds, nil)
 	})
 	if err != nil {
+		fmt.Printf("❌ [BASECAMP] Failed to fetch people: %v\n", err)
 		return err
 	}
 
@@ -300,8 +310,11 @@ func (api *BasecampAdapter) AssignDeveloper(projectID, ticketID, developerName, 
 		return api.makeRequest("PUT", url, creds, payload)
 	})
 
+	// 🌟 FIX 4: Output assignment success OR the caught error to the Render console
 	if err == nil {
 		fmt.Printf("✅ [BASECAMP] Automatically assigned ticket [%s] to %s\n", cleanTicketID, assigneeName)
+	} else {
+		fmt.Printf("❌ [BASECAMP] Developer assignment failed: %v\n", err)
 	}
 	return err
 }
