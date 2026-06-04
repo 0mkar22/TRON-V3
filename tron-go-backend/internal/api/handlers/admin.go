@@ -192,7 +192,7 @@ func InviteDeveloper(c *gin.Context) {
 			"role":   "developer",
 		},
 		// 🌟 THE FIX: Route through the /callback endpoint so PKCE cookies are baked!
-		"redirectTo": fmt.Sprintf("%s/callback?next=/onboarding/set-password", frontendURL),
+		"redirectTo": fmt.Sprintf("%s/onboarding/set-password", frontendURL),
 	}
 
 	baseURL := os.Getenv("SUPABASE_URL")
