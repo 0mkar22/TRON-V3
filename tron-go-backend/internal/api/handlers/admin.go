@@ -191,8 +191,8 @@ func InviteDeveloper(c *gin.Context) {
 			"org_id": orgID,
 			"role":   "developer",
 		},
-		// 🌟 THE FIX: Hit the server route to bake the cookies, THEN go to the password page!
-		"redirectTo": fmt.Sprintf("%s/onboarding/set-password", frontendURL),
+		// 🌟 THE FIX: Route through the /callback endpoint so PKCE cookies are baked!
+		"redirectTo": fmt.Sprintf("%s/callback?next=/onboarding/set-password", frontendURL),
 	}
 
 	baseURL := os.Getenv("SUPABASE_URL")

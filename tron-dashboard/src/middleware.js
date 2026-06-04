@@ -34,8 +34,8 @@ export async function middleware(request) {
   // 1. IF NOT LOGGED IN
   // ==========================================
 
-  // 🌟 THE FIX: If they are hitting the exact password page, instantly let them through.
-  if (pathname.startsWith('/onboarding/set-password')) {
+  // 🌟 THE ULTIMATE FIX: Let the API callback AND the set-password page bypass the login guard!
+  if (pathname.startsWith('/onboarding/set-password') || pathname.startsWith('/callback')) {
       return supabaseResponse;
   }
 
