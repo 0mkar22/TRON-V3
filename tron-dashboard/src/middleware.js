@@ -35,8 +35,7 @@ export async function middleware(request) {
   // ==========================================
 
   // 🌟 THE FIX: If they are hitting the exact password page, instantly let them through.
-  // Do not even attempt the redirect logic.
-  if (pathname === '/onboarding/set-password') {
+  if (pathname.startsWith('/onboarding/set-password')) {
       return supabaseResponse;
   }
 
