@@ -185,7 +185,7 @@ func InviteDeveloper(c *gin.Context) {
 			"role":   "developer",
 		},
 		// 🌟 THE FIX: Hardcode the exact Vercel URL to guarantee a match with Supabase's allowlist
-		"redirectTo": "https://tron-v3.vercel.app/onboarding/set-password",
+		"redirect_to": "https://tron-v3.vercel.app/onboarding/set-password",
 	}
 
 	baseURL := os.Getenv("SUPABASE_URL")
