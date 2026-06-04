@@ -184,14 +184,15 @@ func InviteDeveloper(c *gin.Context) {
 			"org_id": orgID,
 			"role":   "developer",
 		},
-		// 🌟 THE FIX: Hardcode the exact Vercel URL to guarantee a match with Supabase's allowlist
 		"redirect_to": "https://tron-v3.vercel.app/onboarding/set-password",
 	}
 
 	baseURL := os.Getenv("SUPABASE_URL")
 	serviceKey := os.Getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-	url := fmt.Sprintf("%s/auth/v1/invite", baseURL)
+	// 🌟 FIX 2: Append the redirect_to parameter directly to the query string (Supabase requires this!)
+	url := fmt.Sprintf("%s/auth/v1/invite?redirect_to=https://tron-v3.vercel.app/onboarding/set-password", baseURL)
+
 	payloadBytes, _ := json.Marshal(params)
 	req, _ := http.NewRequest("POST", url, strings.NewReader(string(payloadBytes)))
 
