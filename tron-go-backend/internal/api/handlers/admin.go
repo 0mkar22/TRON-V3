@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -168,15 +170,31 @@ func GetSystemStatus(c *gin.Context) {
 func InviteDeveloper(c *gin.Context) {
 	orgID := c.GetString("orgId")
 
+	// 1. Strict validation binding
 	var body struct {
-		Email string `json:"email"`
+		Email string `json:"email" binding:"required,email"`
 	}
-	if err := c.ShouldBindJSON(&body); err != nil || body.Email == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Email is required."})
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "A valid email address is required."})
 		return
 	}
 
-	fmt.Printf("✉️ [ADMIN] Attempting to invite %s to Org: %s\n", body.Email, orgID)
+	log.Printf("✉️ [ADMIN] Attempting to invite %s to Org: %s\n", body.Email, orgID)
+
+	// 2. Dynamic Environment Variables
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "https://tron-v3.vercel.app" // Fallback safety
+	}
+	redirectURL := fmt.Sprintf("%s/onboarding/set-password", frontendURL)
+
+	baseURL := os.Getenv("SUPABASE_URL")
+	serviceKey := os.Getenv("SUPABASE_SERVICE_ROLE_KEY")
+	if baseURL == "" || serviceKey == "" {
+		log.Println("❌ [ADMIN] Server Configuration Error: Missing Supabase keys.")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server configuration error."})
+		return
+	}
 
 	params := map[string]interface{}{
 		"email": body.Email,
@@ -184,39 +202,67 @@ func InviteDeveloper(c *gin.Context) {
 			"org_id": orgID,
 			"role":   "developer",
 		},
-		"redirect_to": "https://tron-v3.vercel.app/onboarding/set-password",
+		"redirect_to": redirectURL,
 	}
 
-	baseURL := os.Getenv("SUPABASE_URL")
-	serviceKey := os.Getenv("SUPABASE_SERVICE_ROLE_KEY")
+	inviteEndpoint := fmt.Sprintf("%s/auth/v1/invite?redirect_to=%s", baseURL, redirectURL)
 
-	// 🌟 FIX 2: Append the redirect_to parameter directly to the query string (Supabase requires this!)
-	url := fmt.Sprintf("%s/auth/v1/invite?redirect_to=https://tron-v3.vercel.app/onboarding/set-password", baseURL)
+	// 3. Explicit Error Handling for Data Parsing
+	payloadBytes, err := json.Marshal(params)
+	if err != nil {
+		log.Printf("❌ [ADMIN] JSON Marshal Error: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to format invite data."})
+		return
+	}
 
-	payloadBytes, _ := json.Marshal(params)
-	req, _ := http.NewRequest("POST", url, strings.NewReader(string(payloadBytes)))
+	// 4. Request Context Binding
+	req, err := http.NewRequestWithContext(c.Request.Context(), "POST", inviteEndpoint, bytes.NewReader(payloadBytes))
+	if err != nil {
+		log.Printf("❌ [ADMIN] Request Creation Error: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create authentication request."})
+		return
+	}
 
 	req.Header.Set("apikey", serviceKey)
 	req.Header.Set("Authorization", "Bearer "+serviceKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	// 5. Strict HTTP Client Timeout
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
 
-	if err != nil || resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
-		fmt.Printf("❌ [ADMIN] Invite Error: %s\n", string(respBody))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send invite."})
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("❌ [ADMIN] Supabase Network Error: %v\n", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to communicate with authentication provider."})
 		return
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.Printf("❌ [ADMIN] Supabase Rejection (Status %d): %s\n", resp.StatusCode, string(respBody))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Authentication provider rejected the invite."})
+		return
+	}
+
 	var result struct {
 		ID string `json:"id"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("❌ [ADMIN] Decode Error: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invite sent, but failed to parse provider response."})
+		return
+	}
 
-	database.DB.Exec("INSERT INTO users (id, email, org_id, role) VALUES (?, ?, ?, 'developer') ON CONFLICT (id) DO NOTHING", result.ID, body.Email, orgID)
+	// 6. Database Error Capture
+	dbResult := database.DB.Exec("INSERT INTO users (id, email, org_id, role) VALUES (?, ?, ?, 'developer') ON CONFLICT (id) DO NOTHING", result.ID, body.Email, orgID)
+	if dbResult.Error != nil {
+		log.Printf("❌ [ADMIN] Database Insertion Error: %v\n", dbResult.Error)
+		// We still return 200/207 here because the email actually sent via Supabase,
+		// but we log the error heavily so you can investigate the DB state.
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Invite sent to %s successfully!", body.Email)})
 }
