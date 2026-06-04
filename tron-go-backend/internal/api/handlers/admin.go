@@ -178,21 +178,14 @@ func InviteDeveloper(c *gin.Context) {
 
 	fmt.Printf("✉️ [ADMIN] Attempting to invite %s to Org: %s\n", body.Email, orgID)
 
-	// Determine if we are testing locally or in production
-	frontendURL := os.Getenv("FRONTEND_URL")
-	if frontendURL == "" {
-		// Fallback to your Vercel deployment if the env var isn't explicitly set
-		frontendURL = "https://tron-v3.vercel.app"
-	}
-
 	params := map[string]interface{}{
 		"email": body.Email,
 		"data": map[string]interface{}{
 			"org_id": orgID,
 			"role":   "developer",
 		},
-		// 🌟 THE FIX: Route through the /callback endpoint so PKCE cookies are baked!
-		"redirectTo": fmt.Sprintf("%s/onboarding/set-password", frontendURL),
+		// 🌟 THE FIX: Hardcode the exact Vercel URL to guarantee a match with Supabase's allowlist
+		"redirectTo": "https://tron-v3.vercel.app/onboarding/set-password",
 	}
 
 	baseURL := os.Getenv("SUPABASE_URL")
