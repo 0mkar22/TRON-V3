@@ -15,13 +15,27 @@ export default async function Home() {
   const fullName = user?.user_metadata?.full_name || 'User';
   const companyName = user?.user_metadata?.company_name || 'Developers Workspace';
 
+  // 🌟 FIX 1: Grab the active session token so the Go backend lets us in!
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
   let workflows = [];
   try {
-      if (orgId) {
-          const res = await fetch(`https://tron-v3.onrender.com/api/admin/dashboard-workflows?orgId=${orgId}`, { cache: 'no-store' });
+      // 🌟 FIX 2: Ensure we have the token, and use process.env.BACKEND_URL
+      if (orgId && token) {
+          const res = await fetch(`${process.env.BACKEND_URL}/api/admin/dashboard-workflows?orgId=${orgId}`, { 
+              headers: {
+                  'Authorization': `Bearer ${token}` // Pass the VIP security badge to Go
+              },
+              cache: 'no-store' 
+          });
+          
           if (res.ok) {
               const data = await res.json();
               workflows = data.workflows || [];
+          } else {
+              const errText = await res.text();
+              console.error(`Backend returned ${res.status}:`, errText);
           }
       }
   } catch (error) {
