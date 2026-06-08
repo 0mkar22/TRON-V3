@@ -65,7 +65,7 @@ export async function saveWorkflowAction(payload) {
         pm_project_id: payload.pmProjectId,
         mapping: payload.mapping,
         communication_config: payload.communication_config
-    }, { onConflict: 'repo_name' });
+    }, { onConflict: 'org_id,repo_name,pm_provider' }); // 🌟 FIXED: Resolves conflicts using the new composite key
 
     if (error) throw new Error(error.message);
 
