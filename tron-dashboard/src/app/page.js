@@ -8,7 +8,6 @@ export default async function Home() {
 
   if (!user) return redirect('/login');
 
-  // 🌟 FIX 1: Explicitly fetch org_id alongside the role
   const { data: userData } = await supabase.from('users').select('role, org_id').eq('id', user.id).single();
   const isAdmin = userData?.role === 'admin';
   const orgId = userData?.org_id;
@@ -18,7 +17,6 @@ export default async function Home() {
 
   let workflows = [];
   try {
-      // 🌟 FIX 2: Only fetch if we have an orgId, and pass it securely in the URL!
       if (orgId) {
           const res = await fetch(`https://tron-v3.onrender.com/api/admin/dashboard-workflows?orgId=${orgId}`, { cache: 'no-store' });
           if (res.ok) {
@@ -70,7 +68,7 @@ export default async function Home() {
               <div className="bg-white p-8 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 hover:border-indigo-300 hover:shadow-md transition-all duration-200 h-full flex flex-col">
                 <div className="flex items-center justify-center w-14 h-14 bg-indigo-50 rounded-xl mb-6 text-2xl group-hover:scale-110 transition-transform">🔌</div>
                 <h3 className="text-xl font-bold text-gray-900 mb-2">Integrations</h3>
-                <p className="text-gray-500 text-sm leading-relaxed flex-grow">Connect your PM tools (Basecamp) and link your communication channels.</p>
+                <p className="text-gray-500 text-sm leading-relaxed flex-grow">Connect your PM tools (Basecamp, Jira) and link your communication channels.</p>
                 <span className="text-indigo-600 font-bold text-sm mt-6 inline-block group-hover:underline">Configure Tools →</span>
               </div>
             </Link>
@@ -117,25 +115,35 @@ export default async function Home() {
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-50">
-                                {workflows.map((workflow) => (
-                                    <tr key={workflow.id} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="px-6 py-5 whitespace-nowrap">
-                                            <div className="flex items-center"><span className="text-2xl mr-4">🐙</span><div><div className="text-sm font-bold text-gray-900">{workflow.repo_name}</div></div></div>
-                                        </td>
-                                        <td className="px-6 py-5 whitespace-nowrap">
-                                            <div className="flex items-center"><span className="text-xl mr-3">⛺</span><span className="text-sm font-semibold text-gray-700 capitalize">{workflow.pm_provider}</span></div>
-                                        </td>
-                                        <td className="px-6 py-5 whitespace-nowrap">
-                                             {workflow.communication_config?.channel_id ? (
-                                                <div className="flex items-center"><span className="text-xl mr-3">🎮</span><span className="text-sm font-semibold text-indigo-700 capitalize bg-indigo-50 px-2 py-1 rounded-md">Discord</span></div>
-                                              ) : <span className="text-sm font-medium text-gray-400 italic bg-gray-50 px-2 py-1 rounded-md border border-gray-100">Muted</span>}
-                                        </td>
-                                        <td className="px-6 py-5 whitespace-nowrap text-right">
-                                            <span className="px-3 py-1 inline-flex text-xs font-bold rounded-full bg-emerald-100 text-emerald-800 uppercase tracking-wider mr-4">Active</span>
-                                            <Link href="/repositories" className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors">Configure ➔</Link>
-                                        </td>
-                                    </tr>
-                                ))}
+                                {workflows.map((workflow) => {
+                                    // 🌟 DYNAMIC UI CHECK
+                                    const isJira = workflow.pm_provider === 'jira';
+                                    const pmIcon = isJira ? '📊' : '⛺';
+
+                                    return (
+                                        <tr key={workflow.id} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="px-6 py-5 whitespace-nowrap">
+                                                <div className="flex items-center"><span className="text-2xl mr-4">🐙</span><div><div className="text-sm font-bold text-gray-900">{workflow.repo_name}</div></div></div>
+                                            </td>
+                                            <td className="px-6 py-5 whitespace-nowrap">
+                                                {/* 🌟 DYNAMIC PROVIDER ICON */}
+                                                <div className="flex items-center">
+                                                    <span className="text-xl mr-3">{pmIcon}</span>
+                                                    <span className="text-sm font-semibold text-gray-700 capitalize">{workflow.pm_provider}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-5 whitespace-nowrap">
+                                                 {workflow.communication_config?.channel_id ? (
+                                                    <div className="flex items-center"><span className="text-xl mr-3">🎮</span><span className="text-sm font-semibold text-indigo-700 capitalize bg-indigo-50 px-2 py-1 rounded-md">Discord</span></div>
+                                                  ) : <span className="text-sm font-medium text-gray-400 italic bg-gray-50 px-2 py-1 rounded-md border border-gray-100">Muted</span>}
+                                            </td>
+                                            <td className="px-6 py-5 whitespace-nowrap text-right">
+                                                <span className="px-3 py-1 inline-flex text-xs font-bold rounded-full bg-emerald-100 text-emerald-800 uppercase tracking-wider mr-4">Active</span>
+                                                <Link href="/repositories" className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors">Configure ➔</Link>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -201,7 +209,7 @@ export default async function Home() {
                   <span className="mr-3 text-2xl">💻</span> TRON VS Code Extension
                 </h3>
                 <p className="text-slate-400 mt-2 text-sm leading-relaxed mb-6">
-                  Sync your Basecamp tickets directly to your editor. Generate new branches with 1-click and automate column movements without leaving VS Code.
+                  Sync your PM tickets directly to your editor. Generate new branches with 1-click and automate column movements without leaving VS Code.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3">
                     <a href="/tron-vscode-0.0.1.vsix" download="tron-vscode-0.0.1.vsix" className="bg-indigo-600 hover:bg-indigo-500 px-6 py-3 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center shadow-lg">
@@ -223,25 +231,34 @@ export default async function Home() {
                  <div className="p-8 text-center text-gray-500 text-sm">No repositories have been assigned by an admin.</div>
              ) : (
                  <ul className="divide-y divide-gray-50">
-                     {workflows.map((workflow) => (
-                         <li key={workflow.id} className="p-6 flex items-center justify-between hover:bg-gray-50/50 transition-colors">
-                             <div className="flex items-center">
-                                 <span className="text-3xl mr-4 drop-shadow-sm">🐙</span>
-                                 <div>
-                                     <p className="font-bold text-gray-900">{workflow.repo_name}</p>
-                                     <div className="flex items-center mt-1 space-x-2">
-                                         <span className="inline-flex items-center text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">⛺ {workflow.pm_provider}</span>
-                                         <span className="inline-flex items-center text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full shadow-sm">
-                                             <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5"></span> Syncing
-                                         </span>
+                     {workflows.map((workflow) => {
+                         // 🌟 DYNAMIC UI CHECK FOR DEV VIEW
+                         const isJira = workflow.pm_provider === 'jira';
+                         const pmIcon = isJira ? '📊' : '⛺';
+
+                         return (
+                             <li key={workflow.id} className="p-6 flex items-center justify-between hover:bg-gray-50/50 transition-colors">
+                                 <div className="flex items-center">
+                                     <span className="text-3xl mr-4 drop-shadow-sm">🐙</span>
+                                     <div>
+                                         <p className="font-bold text-gray-900">{workflow.repo_name}</p>
+                                         <div className="flex items-center mt-1 space-x-2">
+                                             {/* 🌟 DYNAMIC PROVIDER ICON */}
+                                             <span className="inline-flex items-center text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded capitalize">
+                                                 {pmIcon} {workflow.pm_provider}
+                                             </span>
+                                             <span className="inline-flex items-center text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full shadow-sm">
+                                                 <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5"></span> Syncing
+                                             </span>
+                                         </div>
                                      </div>
                                  </div>
-                             </div>
-                             <a href={`https://github.com/${workflow.repo_name}`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-4 py-2 rounded-lg transition-all">
-                                 View Code ↗
-                             </a>
-                         </li>
-                     ))}
+                                 <a href={`https://github.com/${workflow.repo_name}`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-4 py-2 rounded-lg transition-all">
+                                     View Code ↗
+                                 </a>
+                             </li>
+                         );
+                     })}
                  </ul>
              )}
           </div>
