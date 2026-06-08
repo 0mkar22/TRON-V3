@@ -64,7 +64,7 @@ export async function saveWorkflowAction(payload) {
         pm_project_id: payload.pmProjectId,
         mapping: payload.mapping,
         communication_config: payload.communication_config
-    }, { onConflict: 'repo_provider_unique' }); // 🌟 FIXED: Use the exact SQL constraint name!
+    }, { onConflict: 'org_id,repo_name,pm_provider' }); // 🌟 FIXED: Swapped back to comma-separated columns!
 
     // 🌟 UX FIX: Return the error securely instead of throwing it so Next.js doesn't crash!
     if (error) {
