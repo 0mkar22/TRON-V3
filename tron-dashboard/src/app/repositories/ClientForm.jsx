@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 
 import { 
     saveWorkflowAction, 
@@ -16,7 +15,7 @@ export default function ClientForm({ connectedProviders = [] }) {
   const router = useRouter();
   
   const [formData, setFormData] = useState({
-    repoName: '', pmProvider: 'basecamp', pmProjectId: '', todoCol: '', branchCol: '', prCol: '', doneCol: ''
+    repoName: '', pmProvider: '', pmProjectId: '', todoCol: '', branchCol: '', prCol: '', doneCol: ''
   });
 
   const [boardColumns, setBoardColumns] = useState([]);
@@ -24,7 +23,9 @@ export default function ClientForm({ connectedProviders = [] }) {
   const [basecampProjects, setBasecampProjects] = useState([]);
   const [isLoadingBcProjects, setIsLoadingBcProjects] = useState(true);
   
+  // 🌟 Identify which integrations are active
   const isBcConnected = connectedProviders.includes('basecamp');
+  const isJiraConnected = connectedProviders.includes('jira'); // 🌟 ADDED JIRA CHECK
   const isGithubConnected = connectedProviders.includes('github');
   const isDiscordConnected = connectedProviders.includes('discord');
   
@@ -36,6 +37,14 @@ export default function ClientForm({ connectedProviders = [] }) {
   const [loading, setLoading] = useState(false);
   const [githubRepos, setGithubRepos] = useState([]);
   const [isLoadingRepos, setIsLoadingRepos] = useState(true);
+
+  // Set the default PM provider if one is connected but not selected
+  useEffect(() => {
+    if (!formData.pmProvider) {
+      if (isBcConnected) setFormData(prev => ({ ...prev, pmProvider: 'basecamp' }));
+      else if (isJiraConnected) setFormData(prev => ({ ...prev, pmProvider: 'jira' }));
+    }
+  }, [isBcConnected, isJiraConnected, formData.pmProvider]);
 
   useEffect(() => {
     if (!isGithubConnected) { setIsLoadingRepos(false); return; }
@@ -59,7 +68,13 @@ export default function ClientForm({ connectedProviders = [] }) {
       if (!formData.pmProjectId) return alert("Please select a Project first!");
       setFetchingColumns(true);
       try {
-          setBoardColumns(await fetchBasecampColumns(formData.pmProjectId));
+          if (formData.pmProvider === 'basecamp') {
+              setBoardColumns(await fetchBasecampColumns(formData.pmProjectId));
+          } else if (formData.pmProvider === 'jira') {
+              // Note: You will need to build the fetchJiraColumns action later!
+              alert("Jira workflow mapping is coming soon!"); 
+              setBoardColumns([]);
+          }
       } catch (error) {
           alert("Failed to fetch columns. Check terminal logs.");
       } finally {
@@ -83,7 +98,7 @@ export default function ClientForm({ connectedProviders = [] }) {
     try {
       const result = await saveWorkflowAction(payload);
       setStatus({ type: 'success', message: result.message });
-      setFormData({ repoName: '', pmProvider: 'basecamp', pmProjectId: '', todoCol: '', branchCol: '', prCol: '', doneCol: '' });
+      setFormData({ repoName: '', pmProvider: isBcConnected ? 'basecamp' : (isJiraConnected ? 'jira' : ''), pmProjectId: '', todoCol: '', branchCol: '', prCol: '', doneCol: '' });
       setBoardColumns([]);
       setSelectedChannel('');
     } catch (error) {
@@ -93,16 +108,12 @@ export default function ClientForm({ connectedProviders = [] }) {
     }
   };
 
-  // 🌟 UX FIX: Determine if the save button should be disabled
+  // Determine if the save button should be disabled
   const isSubmitDisabled = 
     loading || 
     !formData.repoName || 
     !formData.pmProjectId || 
-    boardColumns.length === 0 || 
-    !formData.todoCol || 
-    !formData.branchCol || 
-    !formData.prCol || 
-    !formData.doneCol;
+    (formData.pmProvider === 'basecamp' && (boardColumns.length === 0 || !formData.todoCol || !formData.branchCol || !formData.prCol || !formData.doneCol));
 
   return (
       <form onSubmit={handleSubmit} className="space-y-8">
@@ -128,33 +139,75 @@ export default function ClientForm({ connectedProviders = [] }) {
         {/* PM Section */}
         <div className="space-y-4">
             <label className="block text-sm font-semibold text-gray-900">Target Project</label>
-            <div className="flex flex-col sm:flex-row gap-3">
-                <select className="w-full sm:w-1/3 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm" value={formData.pmProvider} onChange={(e) => setFormData({ ...formData, pmProvider: e.target.value })}>
-                    <option value="basecamp">Basecamp</option>
-                </select>
-
-                <div className="w-full sm:w-2/3 flex gap-2">
-                    {isLoadingBcProjects ? (
-                        <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-400 text-sm animate-pulse">Loading projects...</div>
-                    ) : !isBcConnected ? (
-                        <div className="w-full px-4 py-3 border border-red-200 rounded-xl bg-red-50 text-red-700 text-sm flex justify-between items-center">
-                            <span className="font-medium">Basecamp not connected.</span>
-                        </div>
-                    ) : (
-                        <select required value={formData.pmProjectId} onChange={(e) => setFormData({ ...formData, pmProjectId: e.target.value })} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm">
-                            <option value="" disabled>Select a project...</option>
-                            {basecampProjects.length > 0 ? basecampProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>) : <option disabled>Failed to load projects</option>}
-                        </select>
-                    )}
-                    <button type="button" onClick={handleFetchColumns} disabled={fetchingColumns || !formData.pmProjectId} className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-xl transition-colors disabled:opacity-50 whitespace-nowrap text-sm font-bold shadow-sm">
-                        {fetchingColumns ? '...' : 'Fetch'}
-                    </button>
+            
+            {/* Check if NO providers are connected at all */}
+            {!isBcConnected && !isJiraConnected ? (
+                <div className="w-full px-4 py-3 border border-red-200 rounded-xl bg-red-50 text-red-700 text-sm flex justify-between items-center">
+                    <span className="font-medium">No Project Management tools connected.</span>
+                    <button type="button" onClick={() => router.push('/integrations')} className="font-bold underline hover:text-red-900">Connect Basecamp or Jira</button>
                 </div>
-            </div>
+            ) : (
+                <div className="flex flex-col sm:flex-row gap-3">
+                    {/* 🌟 DYNAMIC PM PROVIDER DROPDOWN */}
+                    <select 
+                        className="w-full sm:w-1/3 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm" 
+                        value={formData.pmProvider} 
+                        onChange={(e) => {
+                            setFormData({ ...formData, pmProvider: e.target.value, pmProjectId: '', todoCol: '', branchCol: '', prCol: '', doneCol: '' });
+                            setBoardColumns([]);
+                        }}
+                    >
+                        {isBcConnected && <option value="basecamp">Basecamp</option>}
+                        {isJiraConnected && <option value="jira">Jira</option>}
+                    </select>
+
+                    <div className="w-full sm:w-2/3 flex gap-2">
+                        {/* If Basecamp is selected */}
+                        {formData.pmProvider === 'basecamp' && (
+                            <>
+                                {isLoadingBcProjects ? (
+                                    <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-400 text-sm animate-pulse">Loading projects...</div>
+                                ) : (
+                                    <select required value={formData.pmProjectId} onChange={(e) => setFormData({ ...formData, pmProjectId: e.target.value })} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm">
+                                        <option value="" disabled>Select a project...</option>
+                                        {basecampProjects.length > 0 ? basecampProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>) : <option disabled>Failed to load projects</option>}
+                                    </select>
+                                )}
+                                <button type="button" onClick={handleFetchColumns} disabled={fetchingColumns || !formData.pmProjectId} className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-xl transition-colors disabled:opacity-50 whitespace-nowrap text-sm font-bold shadow-sm">
+                                    {fetchingColumns ? '...' : 'Fetch'}
+                                </button>
+                            </>
+                        )}
+
+                        {/* If Jira is selected */}
+                        {formData.pmProvider === 'jira' && (
+                            <div className="w-full px-4 py-3 border border-sky-200 rounded-xl bg-sky-50 text-sky-700 text-sm flex items-center">
+                                <span className="font-medium">Jira workspace selected. Enter the Project Key below.</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
 
-        {/* Board Mapping Section */}
-        {boardColumns.length > 0 && (
+        {/* 🌟 JIRA PROJECT KEY INPUT */}
+        {formData.pmProvider === 'jira' && (
+            <div className="space-y-4">
+                <label className="block text-sm font-semibold text-gray-900">Jira Project Key</label>
+                <input 
+                    type="text" 
+                    required 
+                    placeholder="e.g. TRON, ENG, PROJ" 
+                    value={formData.pmProjectId} 
+                    onChange={(e) => setFormData({ ...formData, pmProjectId: e.target.value.toUpperCase() })} 
+                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all text-sm font-mono"
+                />
+                <p className="text-xs text-gray-500 mt-1">This is the short prefix on your Jira tickets (e.g., if your tickets are &quot;TRON-123&quot;, the key is &quot;TRON&quot;). Workflow mapping for Jira is handled automatically by Atlassian transition states.</p>
+            </div>
+        )}
+
+        {/* Basecamp Board Mapping Section */}
+        {formData.pmProvider === 'basecamp' && boardColumns.length > 0 && (
             <div className="p-5 bg-indigo-50/50 rounded-xl border border-indigo-100 grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wider">To-Do Column</label>
