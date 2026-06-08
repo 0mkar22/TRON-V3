@@ -23,9 +23,9 @@ export default function ClientForm({ connectedProviders = [] }) {
   const [basecampProjects, setBasecampProjects] = useState([]);
   const [isLoadingBcProjects, setIsLoadingBcProjects] = useState(true);
   
-  // 🌟 Identify which integrations are active
+  // Identify which integrations are active
   const isBcConnected = connectedProviders.includes('basecamp');
-  const isJiraConnected = connectedProviders.includes('jira'); // 🌟 ADDED JIRA CHECK
+  const isJiraConnected = connectedProviders.includes('jira');
   const isGithubConnected = connectedProviders.includes('github');
   const isDiscordConnected = connectedProviders.includes('discord');
   
@@ -70,10 +70,6 @@ export default function ClientForm({ connectedProviders = [] }) {
       try {
           if (formData.pmProvider === 'basecamp') {
               setBoardColumns(await fetchBasecampColumns(formData.pmProjectId));
-          } else if (formData.pmProvider === 'jira') {
-              // Note: You will need to build the fetchJiraColumns action later!
-              alert("Jira workflow mapping is coming soon!"); 
-              setBoardColumns([]);
           }
       } catch (error) {
           alert("Failed to fetch columns. Check terminal logs.");
@@ -140,7 +136,6 @@ export default function ClientForm({ connectedProviders = [] }) {
         <div className="space-y-4">
             <label className="block text-sm font-semibold text-gray-900">Target Project</label>
             
-            {/* Check if NO providers are connected at all */}
             {!isBcConnected && !isJiraConnected ? (
                 <div className="w-full px-4 py-3 border border-red-200 rounded-xl bg-red-50 text-red-700 text-sm flex justify-between items-center">
                     <span className="font-medium">No Project Management tools connected.</span>
@@ -148,7 +143,6 @@ export default function ClientForm({ connectedProviders = [] }) {
                 </div>
             ) : (
                 <div className="flex flex-col sm:flex-row gap-3">
-                    {/* 🌟 DYNAMIC PM PROVIDER DROPDOWN */}
                     <select 
                         className="w-full sm:w-1/3 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm" 
                         value={formData.pmProvider} 
@@ -190,7 +184,7 @@ export default function ClientForm({ connectedProviders = [] }) {
             )}
         </div>
 
-        {/* 🌟 JIRA PROJECT KEY INPUT */}
+        {/* 🌟 JIRA PROJECT KEY INPUT & UX CONFIRMATION */}
         {formData.pmProvider === 'jira' && (
             <div className="space-y-4">
                 <label className="block text-sm font-semibold text-gray-900">Jira Project Key</label>
@@ -202,7 +196,20 @@ export default function ClientForm({ connectedProviders = [] }) {
                     onChange={(e) => setFormData({ ...formData, pmProjectId: e.target.value.toUpperCase() })} 
                     className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all text-sm font-mono"
                 />
-                <p className="text-xs text-gray-500 mt-1">This is the short prefix on your Jira tickets (e.g., if your tickets are &quot;TRON-123&quot;, the key is &quot;TRON&quot;). Workflow mapping for Jira is handled automatically by Atlassian transition states.</p>
+                <p className="text-xs text-gray-500 mt-1">This is the short prefix on your Jira tickets (e.g., if your tickets are &quot;TRON-123&quot;, the key is &quot;TRON&quot;).</p>
+                
+                {/* 🌟 UX FIX: The Success Confirmation Block */}
+                {formData.pmProjectId.length >= 2 && (
+                    <div className="mt-4 p-4 bg-sky-50 border border-sky-200 rounded-xl flex items-start gap-3 animate-fade-in-up">
+                        <span className="text-xl">✅</span>
+                        <div>
+                            <h4 className="text-sm font-bold text-sky-900">Ready to Map Workspace: {formData.pmProjectId}</h4>
+                            <p className="text-xs text-sky-700 mt-1 leading-relaxed">
+                                You do not need to manually map columns for Jira! TRON uses Jira&apos;s internal API to automatically read your custom workflows and safely push tickets through the correct transition states (In Progress → In Review → Done). 
+                            </p>
+                        </div>
+                    </div>
+                )}
             </div>
         )}
 
