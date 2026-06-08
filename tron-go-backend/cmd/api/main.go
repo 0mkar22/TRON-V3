@@ -78,8 +78,12 @@ func main() {
 		api.GET("/admin/dashboard-workflows", handlers.GetDashboardWorkflows)
 		api.GET("/admin/system-status", handlers.GetSystemStatus)
 		api.POST("/admin/invite-developer", handlers.InviteDeveloper)
+
+		// 🔌 Integrations
 		api.POST("/integrations/setup", handlers.SetupIntegration)
 		api.POST("/auth/basecamp/init", handlers.InitBasecampAuth)
+		api.POST("/integrations/jira", handlers.SaveJiraIntegration) // 🌟 ADDED: Jira setup endpoint
+
 		api.POST("/repositories", handlers.LinkRepository)
 		api.GET("/admin/basecamp-projects", handlers.GetBasecampProjects)
 		api.GET("/admin/discord-status", handlers.GetDiscordStatus)

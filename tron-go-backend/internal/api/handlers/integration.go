@@ -17,7 +17,7 @@ import (
 )
 
 // ==========================================
-// 1. GENERIC INTEGRATION SETUP (GitHub/Jira/Monday)
+// 1. GENERIC INTEGRATION SETUP (GitHub)
 // ==========================================
 func SetupIntegration(c *gin.Context) {
 	var body struct {
@@ -177,7 +177,70 @@ func BasecampCallback(c *gin.Context) {
 	fmt.Println("🎉 All done! Sending success redirect.")
 	frontendURL := os.Getenv("FRONTEND_URL")
 	if frontendURL == "" {
-		frontendURL = "http://localhost:3001"
+		frontendURL = "http://localhost:3000"
 	}
 	c.Redirect(http.StatusFound, frontendURL+"/integrations")
+}
+
+// ==========================================
+// 4. JIRA INTEGRATION SETUP
+// ==========================================
+func SaveJiraIntegration(c *gin.Context) {
+	// Require orgId from middleware
+	orgID := c.GetString("orgId")
+	if orgID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: Missing organization context"})
+		return
+	}
+
+	var body struct {
+		BaseURL  string `json:"baseUrl" binding:"required"`
+		Email    string `json:"email" binding:"required,email"`
+		APIToken string `json:"apiToken" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or missing Jira credentials."})
+		return
+	}
+
+	fmt.Printf("👉 Securing Jira credentials for Org: %s\n", orgID)
+
+	// 1. Bundle credentials to store securely in the Vault
+	jiraCredentials, _ := json.Marshal(map[string]string{
+		"baseUrl":  body.BaseURL,
+		"email":    body.Email,
+		"apiToken": body.APIToken,
+	})
+
+	// 2. Insert into Supabase Vault
+	secretName := fmt.Sprintf("jira_active_%s_%d", orgID, time.Now().Unix())
+	secretID, err := services.InsertSecret(secretName, "Active API keys for Jira", string(jiraCredentials))
+	if err != nil {
+		fmt.Printf("❌ [JIRA] Vault Error for Org %s: %v\n", orgID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Vault Error: Failed to secure Jira keys"})
+		return
+	}
+
+	// 3. Clean up existing secret if replacing
+	var existingInt models.Integration
+	if err := database.DB.Where("provider = ? AND org_id = ?", "jira", orgID).First(&existingInt).Error; err == nil && existingInt.SecretID != nil {
+		services.DeleteSecret(*existingInt.SecretID) // Delete old vault record
+	}
+
+	// 4. Upsert the Integration record in GORM
+	integration := models.Integration{
+		OrgID:    orgID,
+		Provider: "jira",
+		SecretID: &secretID,
+	}
+
+	if err := database.DB.Save(&integration).Error; err != nil {
+		fmt.Printf("❌ [JIRA] DB Error for Org %s: %v\n", orgID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database Error: Failed to link integration"})
+		return
+	}
+
+	fmt.Printf("✅ [JIRA] Successfully connected Jira for Org: %s\n", orgID)
+	c.JSON(http.StatusOK, gin.H{"message": "Jira integration connected successfully!"})
 }
