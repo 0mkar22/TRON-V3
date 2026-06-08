@@ -38,7 +38,6 @@ async function getSecureAdminOrgId() {
 export async function saveWorkflowAction(payload) {
     const orgId = await getSecureAdminOrgId();
     
-    // 🌟 Retrieve the active token to pass to Go
     const supabase = await createClient();
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
@@ -65,9 +64,13 @@ export async function saveWorkflowAction(payload) {
         pm_project_id: payload.pmProjectId,
         mapping: payload.mapping,
         communication_config: payload.communication_config
-    }, { onConflict: 'org_id,repo_name,pm_provider' }); // 🌟 FIXED: Resolves conflicts using the new composite key
+    }, { onConflict: 'repo_provider_unique' }); // 🌟 FIXED: Use the exact SQL constraint name!
 
-    if (error) throw new Error(error.message);
+    // 🌟 UX FIX: Return the error securely instead of throwing it so Next.js doesn't crash!
+    if (error) {
+        console.error("Supabase Database Error:", error);
+        return { success: false, message: error.message }; 
+    }
 
     revalidatePath('/repositories');
     revalidatePath('/');

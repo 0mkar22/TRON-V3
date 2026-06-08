@@ -84,25 +84,32 @@ export default function ClientForm({ connectedProviders = [] }) {
     setStatus({ type: '', message: '' });
 
     const payload = {
-      repoName: formData.repoName,
-      pmProvider: formData.pmProvider,
-      pmProjectId: formData.pmProjectId,
-      mapping: { todo: formData.todoCol, branch_created: formData.branchCol, pull_request_opened: formData.prCol, pull_request_closed: formData.doneCol },
-      communication_config: isDiscordConnected && selectedChannel ? { provider: 'discord_bot', channel_id: selectedChannel } : null
+        repoName: formData.repoName,
+        pmProvider: formData.pmProvider,
+        pmProjectId: formData.pmProjectId,
+        mapping: { todo: formData.todoCol, branch_created: formData.branchCol, pull_request_opened: formData.prCol, pull_request_closed: formData.doneCol },
+        communication_config: isDiscordConnected && selectedChannel ? { provider: 'discord_bot', channel_id: selectedChannel } : null
     };
 
     try {
-      const result = await saveWorkflowAction(payload);
-      setStatus({ type: 'success', message: result.message });
-      setFormData({ repoName: '', pmProvider: isBcConnected ? 'basecamp' : (isJiraConnected ? 'jira' : ''), pmProjectId: '', todoCol: '', branchCol: '', prCol: '', doneCol: '' });
-      setBoardColumns([]);
-      setSelectedChannel('');
+        const result = await saveWorkflowAction(payload);
+        
+        // 🌟 Check the success flag explicitly
+        if (result.success) {
+            setStatus({ type: 'success', message: result.message });
+            setFormData({ repoName: '', pmProvider: isBcConnected ? 'basecamp' : (isJiraConnected ? 'jira' : ''), pmProjectId: '', todoCol: '', branchCol: '', prCol: '', doneCol: '' });
+            setBoardColumns([]);
+            setSelectedChannel('');
+        } else {
+            // Display the exact database error returned from Supabase
+            setStatus({ type: 'error', message: `Database Error: ${result.message}` });
+        }
     } catch (error) {
-      setStatus({ type: 'error', message: error.message || 'Failed to link repository.' });
+        setStatus({ type: 'error', message: error.message || 'Failed to link repository.' });
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  };
+};
 
   // Determine if the save button should be disabled
   const isSubmitDisabled = 
