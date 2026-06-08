@@ -34,6 +34,7 @@ export default async function IntegrationsPage({ searchParams }) {
     const getIntegration = (provider) => integrations?.find(i => i.provider === provider);
     const github = getIntegration('github');
     const basecamp = getIntegration('basecamp');
+    const jira = getIntegration('jira'); // 🌟 ADDED JIRA
     const discord = getIntegration('discord');
     const slack = getIntegration('slack');
 
@@ -87,7 +88,7 @@ export default async function IntegrationsPage({ searchParams }) {
     };
 
     // ==========================================
-    // 🌟 SECURE VAULT SERVER ACTIONS (SLACK, DISCORD, BASECAMP)
+    // 🌟 SECURE VAULT SERVER ACTIONS (SLACK, DISCORD, BASECAMP, JIRA)
     // ==========================================
     const saveIntegration = async (formData) => {
         'use server';
@@ -95,7 +96,6 @@ export default async function IntegrationsPage({ searchParams }) {
         const provider = formData.get('provider');
         let redirectUrl = null;
 
-        // 🌟 FIX 1: Grab the active session token so Go doesn't block us!
         const { data: { session } } = await supabaseServer.auth.getSession();
         const token = session?.access_token;
 
@@ -111,7 +111,7 @@ export default async function IntegrationsPage({ searchParams }) {
                     method: 'POST', 
                     headers: { 
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}` // 🌟 FIX 2: Hand the token to the Go backend!
+                        'Authorization': `Bearer ${token}` 
                     },
                     body: JSON.stringify({
                         accountId: formData.get('accountId'),
@@ -125,12 +125,34 @@ export default async function IntegrationsPage({ searchParams }) {
                     const data = await res.json();
                     if (data.redirectUrl) redirectUrl = data.redirectUrl;
                 } else {
-                    // 🌟 FIX 3: Catch and log the exact error instead of failing silently
                     const errText = await res.text();
                     console.error("❌ Backend Basecamp Init Failed:", res.status, errText);
                 }
             } catch (error) {
                 console.error(`❌ Failed to init Basecamp via Render:`, error);
+            }
+        } else if (provider === 'jira') {
+            // 🌟 ADDED JIRA HANDLER
+            try {
+                const res = await fetch(`${process.env.BACKEND_URL}/api/integrations/jira`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}` // Pass the user token to the Go backend
+                    },
+                    body: JSON.stringify({
+                        baseUrl: formData.get('baseUrl'),
+                        email: formData.get('email'),
+                        apiToken: formData.get('apiToken')
+                    })
+                });
+
+                if (!res.ok) {
+                    const errText = await res.text();
+                    console.error("❌ Backend Jira Save Failed:", res.status, errText);
+                }
+            } catch (error) {
+                console.error(`❌ Failed to save Jira via backend:`, error);
             }
         } else {
             const rawToken = formData.get('token');
@@ -186,7 +208,6 @@ export default async function IntegrationsPage({ searchParams }) {
         const supabaseServer = await createClient();
         const provider = formData.get('provider');
         
-        // 🌟 FIX: Grab the session so we have the access token for the backend!
         const { data: { session } } = await supabaseServer.auth.getSession();
         const token = session?.access_token;
         
@@ -204,7 +225,7 @@ export default async function IntegrationsPage({ searchParams }) {
                 const uninstallRes = await fetch(`${process.env.BACKEND_URL}/api/admin/github-uninstall?orgId=${actionOrgId}`, {
                     method: 'DELETE',
                     headers: {
-                        'Authorization': `Bearer ${token}` // 🌟 Send the token to Go!
+                        'Authorization': `Bearer ${token}` 
                     }
                 });
 
@@ -217,7 +238,7 @@ export default async function IntegrationsPage({ searchParams }) {
                 console.log("✅ GitHub app successfully uninstalled from GitHub API.");
             }
 
-            // ONLY clean up the local database IF the GitHub API call succeeded
+            // ONLY clean up the local database IF the API call succeeded
             await supabaseServer.from('integrations').delete().match({ provider, org_id: actionOrgId });
             if (provider === 'discord') {
                 await supabaseServer.from('integrations').delete().match({ provider: 'discord_bot', org_id: actionOrgId });
@@ -278,7 +299,7 @@ export default async function IntegrationsPage({ searchParams }) {
                         Version Control
                     </h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* 🌟 NEW GITHUB APP CARD */}
+                        {/* 🌟 GITHUB APP CARD */}
                         <div className={`bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border ${github ? 'border-gray-300 ring-2 ring-gray-900' : 'border-gray-200'} overflow-hidden flex flex-col transition-all`}>
                             <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
                                 <div className="flex items-center space-x-3">
@@ -387,13 +408,59 @@ export default async function IntegrationsPage({ searchParams }) {
                             </div>
                         </div>
 
-                        {/* Jira Coming Soon */}
-                         <div className="bg-gray-50/50 rounded-2xl border border-dashed border-gray-300 p-6 flex flex-col justify-center items-center text-center opacity-70 min-h-[300px]">
-                            <span className="text-3xl grayscale mb-3">📊</span>
-                            <h3 className="text-lg font-bold text-gray-500 mb-1">Jira</h3>
-                            <p className="text-sm text-gray-400 mb-4">Enterprise issue tracking.</p>
-                            <span className="bg-gray-200 text-gray-500 text-xs font-bold px-3 py-1 rounded-full">Coming Soon</span>
+                        {/* 🌟 JIRA CARD */}
+                        <div className={`bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border ${jira ? 'border-sky-200 ring-2 ring-sky-500' : 'border-gray-100'} overflow-hidden flex flex-col transition-all`}>
+                            <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                                <div className="flex items-center space-x-3">
+                                    <span className="text-2xl">📊</span>
+                                    <h3 className="text-lg font-bold text-gray-900">Jira</h3>
+                                </div>
+                                {jira && <span className="bg-sky-100 text-sky-700 text-xs font-bold px-3 py-1 rounded-full">Active</span>}
+                            </div>
+                            
+                            <div className="p-6 flex flex-col flex-grow">
+                                <div className="mb-5 flex-grow space-y-3">
+                                    {!jira ? (
+                                        <>
+                                            <p className="text-gray-500 text-sm font-medium">How to connect:</p>
+                                            <ul className="text-sm text-gray-500 space-y-2 list-decimal pl-4 marker:text-sky-400">
+                                                <li>Go to your Atlassian Account Settings.</li>
+                                                <li>Navigate to <strong>Security &gt; Create API Token</strong>.</li>
+                                                <li>Copy your Base URL (e.g., <code className="bg-gray-100 text-gray-800 px-1 py-0.5 rounded text-xs">https://your-domain.atlassian.net</code>).</li>
+                                                <li>Provide your Jira account email and the API Token below.</li>
+                                            </ul>
+                                        </>
+                                    ) : (
+                                        <p className="text-gray-600 text-sm">
+                                            Jira is authorized. TRON is actively managing workflows and synchronizing issues.
+                                        </p>
+                                    )}
+                                </div>
+
+                                {jira ? (
+                                    <form action={deleteIntegration} className="flex justify-between items-center bg-sky-50 p-4 rounded-xl border border-sky-100 mt-auto">
+                                        <input type="hidden" name="provider" value="jira" />
+                                        <span className="text-sm font-semibold text-sky-900">Account Linked</span>
+                                        <button type="submit" className="text-red-600 hover:text-red-700 text-sm font-bold transition-colors">Disconnect</button>
+                                    </form>
+                                ) : (
+                                    <form action={saveIntegration} className="space-y-4 mt-auto">
+                                        <input type="hidden" name="provider" value="jira" />
+                                        
+                                        <div className="space-y-3">
+                                            <input name="baseUrl" type="url" required placeholder="Base URL (e.g. https://tron.atlassian.net)" className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all font-mono text-sm placeholder-gray-400" />
+                                            <input name="email" type="email" required placeholder="Jira Account Email" className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all font-mono text-sm placeholder-gray-400" />
+                                            <input name="apiToken" type="password" required placeholder="Jira API Token" className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all font-mono text-sm placeholder-gray-400" />
+                                        </div>
+                                        
+                                        <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm">
+                                            Connect Jira
+                                        </button>
+                                    </form>
+                                )}
+                            </div>
                         </div>
+
                     </div>
                 </section>
 
