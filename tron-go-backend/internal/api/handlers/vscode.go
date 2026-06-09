@@ -271,8 +271,40 @@ func CreateTask(c *gin.Context) {
 		return
 	}
 
-	newTicketID, _ := orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping)
-	c.JSON(http.StatusOK, gin.H{"resolvedId": newTicketID})
+	var resolvedTaskID string
+
+	if repo.PMProvider == "jira" {
+		fmt.Printf("🏗️ [JIRA] VS Code requested a new ticket creation for: %s\n", body.TaskInput)
+
+		// Securely load the Organization's Atlassian keys
+		var integration models.Integration
+		database.DB.Where("org_id = ? AND provider = 'jira'", orgID).First(&integration)
+
+		if integration.SecretID != nil {
+			decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
+			var creds map[string]string
+			json.Unmarshal([]byte(decryptedJSON), &creds)
+
+			jiraAPI := adapters.NewJiraAdapter(creds["baseUrl"], creds["email"], creds["apiToken"])
+
+			// Fire the creation!
+			newID, err := jiraAPI.CreateTicket(repo.PMProjectID, body.TaskInput)
+			if err == nil && newID != "" {
+				resolvedTaskID = newID
+			} else {
+				fmt.Printf("❌ [JIRA] Failed to create ticket: %v\n", err)
+				// Fallback generator so VS Code doesn't crash if Atlassian is down
+				re := regexp.MustCompile(`[^a-zA-Z0-9]`)
+				resolvedTaskID = strings.ToLower(re.ReplaceAllString(body.TaskInput, "-"))
+			}
+		}
+	} else {
+		// ⛺ EXISTING BASECAMP LOGIC
+		resolvedTaskID, _ = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping)
+	}
+
+	// Tell VS Code the ID so it can mint the git branch (e.g., KAN-5-AI-Suggestion-Name)
+	c.JSON(http.StatusOK, gin.H{"resolvedId": resolvedTaskID})
 }
 
 // ==========================================

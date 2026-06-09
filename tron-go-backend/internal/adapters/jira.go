@@ -266,3 +266,54 @@ func (j *JiraAdapter) TransitionIssue(ticketID, transitionID string) error {
 	log.Printf("🎯 [JIRA] Successfully transitioned ticket %s using Transition ID %s\n", ticketID, transitionID)
 	return nil
 }
+
+// ==========================================
+// 4. CREATE TICKET
+// ==========================================
+
+// CreateTicket generates a brand new issue on the Jira board
+func (j *JiraAdapter) CreateTicket(projectKey, summary string) (string, error) {
+	baseURL := strings.TrimSuffix(j.BaseURL, "/")
+	apiURL := fmt.Sprintf("%s/rest/api/3/issue", baseURL)
+
+	// Jira requires a strict payload format to create a ticket
+	payload := map[string]interface{}{
+		"fields": map[string]interface{}{
+			"project": map[string]string{
+				"key": projectKey,
+			},
+			"summary": summary,
+			"issuetype": map[string]string{
+				"name": "Task", // Defaulting to standard 'Task' type
+			},
+		},
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+	req, err := http.NewRequest("POST", apiURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return "", err
+	}
+	j.setAuthHeaders(req)
+
+	res, err := j.Client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(res.Body)
+
+	// HTTP 201 means Created!
+	if res.StatusCode != http.StatusCreated {
+		return "", fmt.Errorf("jira rejected creation (HTTP %d): %s", res.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		Key string `json:"key"`
+	}
+	json.Unmarshal(bodyBytes, &result)
+
+	fmt.Printf("✅ [JIRA] Successfully created new ticket: %s\n", result.Key)
+	return result.Key, nil
+}
