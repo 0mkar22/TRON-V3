@@ -328,9 +328,76 @@ func StartTask(c *gin.Context) {
 	if err == nil && repo.PMProvider != "none" {
 
 		if repo.PMProvider == "jira" {
+			ticketID := adapters.ExtractTicketID(body.TaskInput)
+
+			if ticketID != "" {
+				// ---------------------------------------------------------
+				// SCENARIO 1: EXISTING TICKET (Move it to In Progress)
+				// ---------------------------------------------------------
+				resolvedTaskID = ticketID
+				fmt.Printf("🚚 [JIRA] Starting task %s. Searching for 'In Progress' transition...\n", ticketID)
+
+				var integration models.Integration
+				database.DB.Where("org_id = ? AND provider = 'jira'", orgID).First(&integration)
+
+				if integration.SecretID != nil {
+					decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
+					var creds map[string]string
+					json.Unmarshal([]byte(decryptedJSON), &creds)
+
+					jiraAPI := adapters.NewJiraAdapter(creds["baseUrl"], creds["email"], creds["apiToken"])
+					transitions, _ := jiraAPI.GetAvailableTransitions(ticketID)
+
+					for _, t := range transitions {
+						name, _ := t["name"].(string)
+						if strings.Contains(strings.ToLower(name), "progress") || strings.Contains(strings.ToLower(name), "doing") {
+							transitionID, _ := t["id"].(string)
+							jiraAPI.TransitionIssue(ticketID, transitionID)
+							break
+						}
+					}
+				}
+			} else {
+				// ---------------------------------------------------------
+				// 🌟 SCENARIO 2: BRAND NEW TASK (AI Suggestion - Create It!)
+				// ---------------------------------------------------------
+				fmt.Printf("🏗️ [JIRA] No ID found. Creating a brand new ticket for: %s\n", body.TaskInput)
+
+				var integration models.Integration
+				database.DB.Where("org_id = ? AND provider = 'jira'", orgID).First(&integration)
+
+				if integration.SecretID != nil {
+					decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
+					var creds map[string]string
+					json.Unmarshal([]byte(decryptedJSON), &creds)
+
+					jiraAPI := adapters.NewJiraAdapter(creds["baseUrl"], creds["email"], creds["apiToken"])
+
+					// Fire the creation payload to Atlassian!
+					newID, err := jiraAPI.CreateTicket(repo.PMProjectID, body.TaskInput)
+					if err == nil && newID != "" {
+						resolvedTaskID = newID
+
+						// Immediately move the newly minted ticket to "In Progress"
+						transitions, _ := jiraAPI.GetAvailableTransitions(newID)
+						for _, t := range transitions {
+							name, _ := t["name"].(string)
+							if strings.Contains(strings.ToLower(name), "progress") || strings.Contains(strings.ToLower(name), "doing") {
+								transitionID, _ := t["id"].(string)
+								jiraAPI.TransitionIssue(newID, transitionID)
+								break
+							}
+						}
+					} else {
+						fmt.Printf("❌ [JIRA] Creation failed! Falling back to raw text. Error: %v\n", err)
+					}
+				}
+			}
+
+		} else {
 			// ⛺ EXISTING BASECAMP LOGIC (Untouched)
 			var exactCardUrl string
-			resolvedTaskID, exactCardUrl = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping) // 🌟 FIXED: Removed the colon!
+			resolvedTaskID, exactCardUrl = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping)
 
 			extractID := func(key string) string {
 				if val, ok := mapping[key].(string); ok {
