@@ -290,6 +290,12 @@ func (j *JiraAdapter) CreateTicket(projectKey, summary string) (string, error) {
 	}
 
 	payloadBytes, _ := json.Marshal(payload)
+
+	// 🪤 TRAP 1: What exactly are we sending to Jira?
+	fmt.Printf("\n================================================\n")
+	fmt.Printf("📤 [JIRA TRAP] Sending Create Request to %s\n", apiURL)
+	fmt.Printf("📦 [JIRA TRAP] Payload: %s\n", string(payloadBytes))
+
 	req, err := http.NewRequest("POST", apiURL, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return "", err
@@ -304,9 +310,12 @@ func (j *JiraAdapter) CreateTicket(projectKey, summary string) (string, error) {
 
 	bodyBytes, _ := io.ReadAll(res.Body)
 
-	// HTTP 201 means Created!
+	// 🪤 TRAP 2: What exactly did Jira say back?
 	if res.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("jira rejected creation (HTTP %d): %s", res.StatusCode, string(bodyBytes))
+		fmt.Printf("❌ [JIRA TRAP ERROR] HTTP %d\n", res.StatusCode)
+		fmt.Printf("🔍 [JIRA RAW RESPONSE]: %s\n", string(bodyBytes))
+		fmt.Printf("================================================\n\n")
+		return "", fmt.Errorf("jira rejected creation (HTTP %d)", res.StatusCode)
 	}
 
 	var result struct {
@@ -314,6 +323,8 @@ func (j *JiraAdapter) CreateTicket(projectKey, summary string) (string, error) {
 	}
 	json.Unmarshal(bodyBytes, &result)
 
-	fmt.Printf("✅ [JIRA] Successfully created new ticket: %s\n", result.Key)
+	fmt.Printf("✅ [JIRA SUCCESS] Successfully created new ticket: %s\n", result.Key)
+	fmt.Printf("================================================\n\n")
+
 	return result.Key, nil
 }
