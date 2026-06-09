@@ -103,16 +103,45 @@ func (w *basecampAdapterWrapper) AssignDeveloper(taskID, projectID, developer, o
 // ==========================================
 // 🛠️ HELPER: LOAD REPO & ORCHESTRATOR
 // ==========================================
-func getRepoAndOrchestrator(repoName string) (models.Repository, map[string]interface{}, *services.PMOrchestrator, error) {
+func getRepoAndOrchestrator(repoName string, orgID string) (models.Repository, map[string]interface{}, *services.PMOrchestrator, error) {
 	var repo models.Repository
-	if err := database.DB.Where("repo_name = ?", repoName).First(&repo).Error; err != nil {
+	// 🌟 FIX: Fetch the repository mapping using BOTH repoName and orgID to be secure.
+	// We get the first one, prioritizing whichever PM tool the user mapped.
+	if err := database.DB.Where("repo_name = ? AND org_id = ?", repoName, orgID).First(&repo).Error; err != nil {
 		return repo, nil, nil, err
 	}
 
 	var mapping map[string]interface{}
 	json.Unmarshal([]byte(repo.Mapping), &mapping)
 
-	orch := services.NewPMOrchestrator(adapters.NewBasecampAdapter())
+	var orch *services.PMOrchestrator
+
+	// 🌟 DYNAMIC ROUTING: Choose the correct adapter based on the DB!
+	if repo.PMProvider == "basecamp" {
+		orch = services.NewPMOrchestrator(adapters.NewBasecampAdapter())
+	} else if repo.PMProvider == "jira" {
+		// We use the Sprint 1 Jira Adapter. Note: You will need to build the JiraAdapter implementation
+		// of the PMAdapter interface in your services package if you haven't already!
+
+		// For now, we will initialize it securely by fetching the keys from the Vault via your DB.
+		var integration models.Integration
+		database.DB.Where("org_id = ? AND provider = 'jira'", orgID).First(&integration)
+
+		if integration.SecretID != nil {
+			decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
+			var creds map[string]string
+			json.Unmarshal([]byte(decryptedJSON), &creds)
+
+			// Assuming your JiraAdapter satisfies the PMAdapter interface
+			jiraAPI := adapters.NewJiraAdapter(creds["baseUrl"], creds["email"], creds["apiToken"])
+
+			// ⚠️ WARNING: If your services.NewPMOrchestrator strictly requires a BasecampAdapter type,
+			// you must update that interface in your services package to accept a generic PM interface!
+			// orch = services.NewPMOrchestrator(jiraAPI)
+			_ = jiraAPI // temporary bypass until interface is updated
+		}
+	}
+
 	return repo, mapping, orch, nil
 }
 
@@ -147,9 +176,21 @@ func GetTickets(c *gin.Context) {
 	repoName := c.Query("repo")
 	orgID := c.GetString("orgId")
 
-	repo, mapping, orch, err := getRepoAndOrchestrator(repoName)
+	// 🌟 Pass orgID down to the helper
+	repo, mapping, orch, err := getRepoAndOrchestrator(repoName, orgID)
 	if err != nil || repo.PMProvider == "none" {
 		c.JSON(http.StatusOK, gin.H{"isMapped": false, "tickets": []interface{}{}})
+		return
+	}
+
+	// 🌟 Temporary fallback while you implement the Jira Interface methods
+	if repo.PMProvider == "jira" {
+		c.JSON(http.StatusOK, gin.H{
+			"isMapped": true,
+			"tickets": []map[string]string{
+				{"id": repo.PMProjectID + "-101", "title": "Jira Task Fetching Coming Soon", "description": "This repo is correctly mapped to Jira. The backend fetch logic is pending interface updates."},
+			},
+		})
 		return
 	}
 
@@ -190,7 +231,7 @@ func CreateTask(c *gin.Context) {
 	c.ShouldBindJSON(&body)
 	orgID := c.GetString("orgId")
 
-	repo, mapping, orch, err := getRepoAndOrchestrator(body.RepoName)
+	repo, mapping, orch, err := getRepoAndOrchestrator(body.RepoName, orgID)
 	if err != nil || repo.PMProvider == "none" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No PM tool configured in database."})
 		return
@@ -212,7 +253,7 @@ func StartTask(c *gin.Context) {
 	c.ShouldBindJSON(&body)
 	orgID := c.GetString("orgId")
 
-	repo, mapping, orch, err := getRepoAndOrchestrator(body.RepoName)
+	repo, mapping, orch, err := getRepoAndOrchestrator(body.RepoName, orgID)
 
 	// Fallback ID generation if PM isn't linked
 	re := regexp.MustCompile(`[^a-zA-Z0-9]`)
