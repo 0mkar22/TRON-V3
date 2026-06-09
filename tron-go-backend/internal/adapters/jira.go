@@ -59,7 +59,7 @@ func (j *JiraAdapter) GetTickets(projectKey string) []services.Ticket {
 	jql := fmt.Sprintf("project='%s' AND statusCategory != Done", projectKey)
 	encodedJQL := url.QueryEscape(jql)
 
-	apiURL := fmt.Sprintf("%s/rest/api/3/search?jql=%s", baseURL, encodedJQL)
+	apiURL := fmt.Sprintf("%s/rest/api/3/search/jql?jql=%s", baseURL, encodedJQL)
 
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
