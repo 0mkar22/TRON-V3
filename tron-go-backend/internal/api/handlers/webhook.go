@@ -7,12 +7,15 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	// Make sure this path matches your actual module structure
 	"github.com/tron-v3.1/tron-go-backend/internal/adapters"
+	"github.com/tron-v3.1/tron-go-backend/internal/models"
+	"github.com/tron-v3.1/tron-go-backend/internal/services"
+	"github.com/tron-v3.1/tron-go-backend/pkg/database"
 	"github.com/tron-v3.1/tron-go-backend/pkg/redis"
 )
 
@@ -65,15 +68,14 @@ func HandleGitHubWebhook(c *gin.Context) {
 				if ticketID != "" {
 					log.Printf("🔍 [JIRA] Found Ticket [%s] in branch [%s]", ticketID, branchName)
 
-					// Determine the Jira target state based on the GitHub action
 					targetStateName := "In Review" // Default for opened/reopened
 					if action == "closed" {
-						// Note: If PR is closed but not merged, you might want logic to handle that differently
 						targetStateName = "Done"
 					}
 
-					// Fire the Jira transition in a background Goroutine so we don't block the webhook!
-					go processJiraTransition(ticketID, targetStateName)
+					// 🌟 FIX: Pass the Repo Name so we know WHICH Organization's keys to decrypt!
+					repoFullName, _ := payload["repository"].(map[string]interface{})["full_name"].(string)
+					go processJiraTransition(ticketID, targetStateName, repoFullName)
 				}
 			}
 		}
@@ -100,15 +102,46 @@ func HandleGitHubWebhook(c *gin.Context) {
 	c.String(http.StatusOK, "Webhook received and queued")
 }
 
-// processJiraTransition handles the background communication with Atlassian
-func processJiraTransition(ticketID, targetStateName string) {
-	jira := adapters.NewJiraAdapter(
-		os.Getenv("JIRA_BASE_URL"),
-		os.Getenv("JIRA_EMAIL"),
-		os.Getenv("JIRA_API_TOKEN"),
-	)
+// processJiraTransition handles the background communication securely via the Vault
+func processJiraTransition(ticketID, targetStateName, repoName string) {
+	// 1. Find the Organization that owns this Repository
+	var repo models.Repository
+	if err := database.DB.Where("repo_name = ?", repoName).First(&repo).Error; err != nil {
+		log.Printf("❌ [JIRA] Aborting transition. Could not find repository '%s' in DB.", repoName)
+		return
+	}
 
-	transitions, err := jira.GetAvailableTransitions(ticketID)
+	// Make sure they actually want to use Jira!
+	if repo.PMProvider != "jira" {
+		return
+	}
+
+	// 2. Fetch their encrypted Jira keys from the Vault
+	var integration models.Integration
+	if err := database.DB.Where("org_id = ? AND provider = 'jira'", repo.OrgID).First(&integration).Error; err != nil {
+		log.Printf("❌ [JIRA] Could not find Jira integration keys for Org: %s\n", repo.OrgID)
+		return
+	}
+
+	if integration.SecretID == nil {
+		return
+	}
+
+	// 3. Decrypt the keys
+	decryptedJSON, err := services.GetDecryptedSecret(*integration.SecretID)
+	if err != nil {
+		log.Printf("❌ [JIRA] Failed to decrypt Jira keys: %v\n", err)
+		return
+	}
+
+	var creds map[string]string
+	json.Unmarshal([]byte(decryptedJSON), &creds)
+
+	// 4. Boot the Adapter dynamically!
+	jiraAPI := adapters.NewJiraAdapter(creds["baseUrl"], creds["email"], creds["apiToken"])
+
+	// 5. Execute the Transition
+	transitions, err := jiraAPI.GetAvailableTransitions(ticketID)
 	if err != nil {
 		log.Printf("❌ [JIRA] Failed to pull states for %s: %v\n", ticketID, err)
 		return
@@ -116,15 +149,19 @@ func processJiraTransition(ticketID, targetStateName string) {
 
 	var matchedTransitionID string
 	for _, t := range transitions {
-		if name, ok := t["name"].(string); ok && name == targetStateName {
+		// Jira sometimes uses "In Review", "Under Review", or "Review" depending on the board
+		name, _ := t["name"].(string)
+		if strings.Contains(strings.ToLower(name), strings.ToLower(targetStateName)) {
 			matchedTransitionID = t["id"].(string)
 			break
 		}
 	}
 
 	if matchedTransitionID != "" {
-		if err := jira.TransitionIssue(ticketID, matchedTransitionID); err != nil {
+		if err := jiraAPI.TransitionIssue(ticketID, matchedTransitionID); err != nil {
 			log.Printf("❌ [JIRA] Failed to transition %s to %s: %v\n", ticketID, targetStateName, err)
+		} else {
+			log.Printf("✅ [JIRA] Automatically moved ticket %s to %s via Webhook!\n", ticketID, targetStateName)
 		}
 	} else {
 		log.Printf("⚠️ [JIRA] Transition to '%s' is not currently allowed or available for ticket %s\n", targetStateName, ticketID)
