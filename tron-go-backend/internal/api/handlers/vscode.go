@@ -195,7 +195,13 @@ func GetTickets(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"isMapped": true,
 			"tickets": []map[string]string{
-				{"id": repo.PMProjectID + "-101", "title": "Jira Task Fetching Coming Soon", "description": "This repo is correctly mapped to Jira."},
+				{
+					"id":          repo.PMProjectID + "-101",
+					"title":       "Jira Task Fetching Coming Soon",
+					"description": "This repo is correctly mapped to Jira.",
+					"status":      "Todo", // 🌟 FIX: Tells VS Code what to put in the brackets!
+					"url":         "https://example.atlassian.net/browse/" + repo.PMProjectID + "-101",
+				},
 			},
 		})
 		fmt.Println("================================================")
