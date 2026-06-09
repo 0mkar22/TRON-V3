@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -51,16 +52,22 @@ func (j *JiraAdapter) setAuthHeaders(req *http.Request) {
 
 // GetTickets fetches all active (non-Done) issues for a specific Jira Project Key
 func (j *JiraAdapter) GetTickets(projectKey string) []services.Ticket {
-	// JQL: Give me everything in this project that isn't already Done
-	url := fmt.Sprintf("%s/rest/api/2/search?jql=project='%s'+AND+statusCategory!=Done", j.BaseURL, projectKey)
+	// 🌟 FIX 1: Strip any accidental trailing slashes from the BaseURL
+	baseURL := strings.TrimSuffix(j.BaseURL, "/")
 
-	req, err := http.NewRequest("GET", url, nil)
+	// 🌟 FIX 2: Safely encode the JQL so Jira doesn't reject it
+	jql := fmt.Sprintf("project='%s' AND statusCategory != Done", projectKey)
+	encodedJQL := url.QueryEscape(jql)
+
+	apiURL := fmt.Sprintf("%s/rest/api/2/search?jql=%s", baseURL, encodedJQL)
+
+	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		fmt.Printf("❌ [JIRA API] Failed to create request: %v\n", err)
 		return []services.Ticket{}
 	}
 
-	j.setAuthHeaders(req) // Use your existing helper!
+	j.setAuthHeaders(req)
 
 	res, err := j.Client.Do(req)
 	if err != nil {
@@ -68,6 +75,13 @@ func (j *JiraAdapter) GetTickets(projectKey string) []services.Ticket {
 		return []services.Ticket{}
 	}
 	defer res.Body.Close()
+
+	// 🌟 FIX 3: Actually check the HTTP Status Code!
+	if res.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		fmt.Printf("❌ [JIRA API] HTTP %d: Jira rejected the request: %s\n", res.StatusCode, string(bodyBytes))
+		return []services.Ticket{}
+	}
 
 	// Parse the Atlassian JSON response
 	var result struct {
