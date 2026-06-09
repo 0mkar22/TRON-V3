@@ -68,14 +68,16 @@ func HandleGitHubWebhook(c *gin.Context) {
 				if ticketID != "" {
 					log.Printf("🔍 [JIRA] Found Ticket [%s] in branch [%s]", ticketID, branchName)
 
-					targetStateName := "In Review" // Default for opened/reopened
+					// 🌟 NEW LOGIC: Provide a list of acceptable column names
+					targetStateNames := []string{"In Review", "Under Review", "Code Review", "Review"}
 					if action == "closed" {
-						targetStateName = "Done"
+						targetStateNames = []string{"Done", "Closed", "Resolved"}
 					}
 
-					// 🌟 FIX: Pass the Repo Name so we know WHICH Organization's keys to decrypt!
 					repoFullName, _ := payload["repository"].(map[string]interface{})["full_name"].(string)
-					go processJiraTransition(ticketID, targetStateName, repoFullName)
+
+					// Pass the array down to the worker!
+					go processJiraTransition(ticketID, targetStateNames, repoFullName)
 				}
 			}
 		}
@@ -103,7 +105,7 @@ func HandleGitHubWebhook(c *gin.Context) {
 }
 
 // processJiraTransition handles the background communication securely via the Vault
-func processJiraTransition(ticketID, targetStateName, repoName string) {
+func processJiraTransition(ticketID string, targetStateNames []string, repoName string) {
 	// 1. Find the Organization that owns this Repository
 	var repo models.Repository
 	if err := database.DB.Where("repo_name = ?", repoName).First(&repo).Error; err != nil {
@@ -148,22 +150,33 @@ func processJiraTransition(ticketID, targetStateName, repoName string) {
 	}
 
 	var matchedTransitionID string
+	var finalColumnName string
+
 	for _, t := range transitions {
-		// Jira sometimes uses "In Review", "Under Review", or "Review" depending on the board
 		name, _ := t["name"].(string)
-		if strings.Contains(strings.ToLower(name), strings.ToLower(targetStateName)) {
-			matchedTransitionID = t["id"].(string)
+
+		// 🌟 NEW LOGIC: Check if this Jira transition matches ANY of our allowed synonyms
+		for _, allowedName := range targetStateNames {
+			if strings.Contains(strings.ToLower(name), strings.ToLower(allowedName)) {
+				matchedTransitionID = t["id"].(string)
+				finalColumnName = name // Save the exact Jira name for our logs
+				break
+			}
+		}
+
+		// Break the outer loop if we found a match
+		if matchedTransitionID != "" {
 			break
 		}
 	}
 
 	if matchedTransitionID != "" {
 		if err := jiraAPI.TransitionIssue(ticketID, matchedTransitionID); err != nil {
-			log.Printf("❌ [JIRA] Failed to transition %s to %s: %v\n", ticketID, targetStateName, err)
+			log.Printf("❌ [JIRA] Failed to transition %s to %s: %v\n", ticketID, finalColumnName, err)
 		} else {
-			log.Printf("✅ [JIRA] Automatically moved ticket %s to %s via Webhook!\n", ticketID, targetStateName)
+			log.Printf("✅ [JIRA] Automatically moved ticket %s to %s via Webhook!\n", ticketID, finalColumnName)
 		}
 	} else {
-		log.Printf("⚠️ [JIRA] Transition to '%s' is not currently allowed or available for ticket %s\n", targetStateName, ticketID)
+		log.Printf("⚠️ [JIRA] Transition to any of %v is not currently allowed or available for ticket %s\n", targetStateNames, ticketID)
 	}
 }
