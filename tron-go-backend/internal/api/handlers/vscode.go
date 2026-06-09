@@ -191,19 +191,34 @@ func GetTickets(c *gin.Context) {
 	}
 
 	if repo.PMProvider == "jira" {
-		fmt.Println("🚀 [API SUCCESS] Firing Jira Placeholder to VS Code!")
+		fmt.Println("🚀 [API TRAP] Fetching REAL tickets from Jira API...")
+
+		var integration models.Integration
+		database.DB.Where("org_id = ? AND provider = 'jira'", orgID).First(&integration)
+
+		var tickets []services.Ticket
+
+		if integration.SecretID != nil {
+			// Decrypt the keys from your Vault
+			decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
+			var creds map[string]string
+			json.Unmarshal([]byte(decryptedJSON), &creds)
+
+			// Boot the adapter and fetch the real data
+			jiraAPI := adapters.NewJiraAdapter(creds["baseUrl"], creds["email"], creds["apiToken"])
+			tickets = jiraAPI.GetTickets(repo.PMProjectID)
+		}
+
+		if tickets == nil {
+			tickets = make([]services.Ticket, 0)
+		}
+
+		fmt.Printf("✅ [JIRA SUCCESS] Returning %d real Atlassian tickets to VS Code.\n", len(tickets))
 		c.JSON(http.StatusOK, gin.H{
 			"isMapped": true,
-			"tickets": []map[string]string{
-				{
-					"id":          repo.PMProjectID + "-101",
-					"title":       "Jira Task Fetching Coming Soon",
-					"description": "This repo is correctly mapped to Jira.",
-					"status":      "Todo", // 🌟 FIX: Tells VS Code what to put in the brackets!
-					"url":         "https://example.atlassian.net/browse/" + repo.PMProjectID + "-101",
-				},
-			},
+			"tickets":  tickets,
 		})
+
 		fmt.Println("================================================")
 		return
 	}

@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/tron-v3.1/tron-go-backend/internal/services" // 🌟 ADDED: Required for the Ticket struct
 )
 
 type JiraAdapter struct {
@@ -42,6 +44,65 @@ func (j *JiraAdapter) setAuthHeaders(req *http.Request) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 }
+
+// ==========================================
+// 1. VS CODE: GET ACTIVE TICKETS
+// ==========================================
+
+// GetTickets fetches all active (non-Done) issues for a specific Jira Project Key
+func (j *JiraAdapter) GetTickets(projectKey string) []services.Ticket {
+	// JQL: Give me everything in this project that isn't already Done
+	url := fmt.Sprintf("%s/rest/api/2/search?jql=project='%s'+AND+statusCategory!=Done", j.BaseURL, projectKey)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		fmt.Printf("❌ [JIRA API] Failed to create request: %v\n", err)
+		return []services.Ticket{}
+	}
+
+	j.setAuthHeaders(req) // Use your existing helper!
+
+	res, err := j.Client.Do(req)
+	if err != nil {
+		fmt.Printf("❌ [JIRA API] Failed to fetch tickets: %v\n", err)
+		return []services.Ticket{}
+	}
+	defer res.Body.Close()
+
+	// Parse the Atlassian JSON response
+	var result struct {
+		Issues []struct {
+			Key    string `json:"key"`
+			Fields struct {
+				Summary string `json:"summary"`
+				Status  struct {
+					Name string `json:"name"`
+				} `json:"status"`
+			} `json:"fields"`
+		} `json:"issues"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		fmt.Printf("❌ [JIRA API] Failed to parse response: %v\n", err)
+		return []services.Ticket{}
+	}
+
+	// Map Jira issues to your standard TRON Ticket struct
+	var tickets []services.Ticket
+	for _, issue := range result.Issues {
+		tickets = append(tickets, services.Ticket{
+			ID:    issue.Key,
+			Title: issue.Fields.Summary,
+			State: issue.Fields.Status.Name,
+		})
+	}
+
+	return tickets
+}
+
+// ==========================================
+// 2. FETCH AVAILABLE TRANSITIONS
+// ==========================================
 
 // GetAvailableTransitions asks Jira what state changes are allowed for this ticket
 func (j *JiraAdapter) GetAvailableTransitions(ticketID string) ([]map[string]interface{}, error) {
