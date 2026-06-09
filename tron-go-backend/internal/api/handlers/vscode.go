@@ -328,47 +328,6 @@ func StartTask(c *gin.Context) {
 	if err == nil && repo.PMProvider != "none" {
 
 		if repo.PMProvider == "jira" {
-			// 🌟 NEW JIRA LOGIC: Use the dynamic API instead of hardcoded DB columns!
-			ticketID := adapters.ExtractTicketID(body.TaskInput)
-			if ticketID != "" {
-				resolvedTaskID = ticketID // Ensure git branch gets named cleanly (e.g., KAN-4)
-				fmt.Printf("🚚 [JIRA] Starting task %s. Searching for 'In Progress' transition...\n", ticketID)
-
-				var integration models.Integration
-				database.DB.Where("org_id = ? AND provider = 'jira'", orgID).First(&integration)
-
-				if integration.SecretID != nil {
-					decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
-					var creds map[string]string
-					json.Unmarshal([]byte(decryptedJSON), &creds)
-
-					jiraAPI := adapters.NewJiraAdapter(creds["baseUrl"], creds["email"], creds["apiToken"])
-
-					// Ask Jira what transitions are currently allowed for this specific ticket
-					transitions, _ := jiraAPI.GetAvailableTransitions(ticketID)
-					moved := false
-
-					for _, t := range transitions {
-						name, _ := t["name"].(string)
-						// Look for a column named "In Progress" (or "Doing", etc.)
-						if strings.Contains(strings.ToLower(name), "progress") || strings.Contains(strings.ToLower(name), "doing") {
-							transitionID, _ := t["id"].(string)
-							err := jiraAPI.TransitionIssue(ticketID, transitionID)
-							if err == nil {
-								fmt.Println("✅ [JIRA] Successfully moved ticket to In Progress!")
-								moved = true
-							}
-							break
-						}
-					}
-
-					if !moved {
-						fmt.Println("⚠️ [JIRA] Could not find a valid transition to 'In Progress'")
-					}
-				}
-			}
-
-		} else {
 			// ⛺ EXISTING BASECAMP LOGIC (Untouched)
 			var exactCardUrl string
 			resolvedTaskID, exactCardUrl = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping) // 🌟 FIXED: Removed the colon!
