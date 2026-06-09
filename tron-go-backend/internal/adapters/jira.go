@@ -52,14 +52,13 @@ func (j *JiraAdapter) setAuthHeaders(req *http.Request) {
 
 // GetTickets fetches all active (non-Done) issues for a specific Jira Project Key
 func (j *JiraAdapter) GetTickets(projectKey string) []services.Ticket {
-	// 🌟 FIX 1: Strip any accidental trailing slashes from the BaseURL
 	baseURL := strings.TrimSuffix(j.BaseURL, "/")
 
-	// 🌟 FIX 2: Safely encode the JQL so Jira doesn't reject it
 	jql := fmt.Sprintf("project='%s' AND statusCategory != Done", projectKey)
 	encodedJQL := url.QueryEscape(jql)
 
-	apiURL := fmt.Sprintf("%s/rest/api/3/search/jql?jql=%s", baseURL, encodedJQL)
+	// 🌟 FIX 1: Explicitly tell Jira to return the summary and status fields!
+	apiURL := fmt.Sprintf("%s/rest/api/3/search/jql?jql=%s&fields=summary,status", baseURL, encodedJQL)
 
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
@@ -76,12 +75,19 @@ func (j *JiraAdapter) GetTickets(projectKey string) []services.Ticket {
 	}
 	defer res.Body.Close()
 
-	// 🌟 FIX 3: Actually check the HTTP Status Code!
+	// 🌟 FIX 2: Capture the raw body payload before we attempt to decode it
+	bodyBytes, err := io.ReadAll(res.Body)
+	if err != nil {
+		return []services.Ticket{}
+	}
+
 	if res.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(res.Body)
 		fmt.Printf("❌ [JIRA API] HTTP %d: Jira rejected the request: %s\n", res.StatusCode, string(bodyBytes))
 		return []services.Ticket{}
 	}
+
+	// 🪤 THE ULTIMATE TRAP: Print exactly what JSON Jira sent us to the Render logs!
+	fmt.Printf("\n🔍 [JIRA RAW RESPONSE]: %s\n\n", string(bodyBytes))
 
 	// Parse the Atlassian JSON response
 	var result struct {
@@ -96,7 +102,8 @@ func (j *JiraAdapter) GetTickets(projectKey string) []services.Ticket {
 		} `json:"issues"`
 	}
 
-	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+	// Use json.Unmarshal since we already read the bytes
+	if err := json.Unmarshal(bodyBytes, &result); err != nil {
 		fmt.Printf("❌ [JIRA API] Failed to parse response: %v\n", err)
 		return []services.Ticket{}
 	}
