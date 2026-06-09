@@ -289,43 +289,86 @@ func StartTask(c *gin.Context) {
 
 	repo, mapping, orch, err := getRepoAndOrchestrator(body.RepoName, orgID)
 
-	// Fallback ID generation if PM isn't linked
+	// Fallback ID generation
 	re := regexp.MustCompile(`[^a-zA-Z0-9]`)
 	resolvedTaskID := strings.ToLower(re.ReplaceAllString(body.TaskInput, "-"))
 
 	if err == nil && repo.PMProvider != "none" {
-		// 🌟 FIX: Capture both the ID and the exactUrl
-		resolvedTaskID, exactCardUrl := orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping)
 
-		extractID := func(key string) string {
-			if val, ok := mapping[key].(string); ok {
-				return val
-			} else if val, ok := mapping[key].(float64); ok {
-				return fmt.Sprintf("%.0f", val)
+		if repo.PMProvider == "jira" {
+			// 🌟 NEW JIRA LOGIC: Use the dynamic API instead of hardcoded DB columns!
+			ticketID := adapters.ExtractTicketID(body.TaskInput)
+			if ticketID != "" {
+				resolvedTaskID = ticketID // Ensure git branch gets named cleanly (e.g., KAN-4)
+				fmt.Printf("🚚 [JIRA] Starting task %s. Searching for 'In Progress' transition...\n", ticketID)
+
+				var integration models.Integration
+				database.DB.Where("org_id = ? AND provider = 'jira'", orgID).First(&integration)
+
+				if integration.SecretID != nil {
+					decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
+					var creds map[string]string
+					json.Unmarshal([]byte(decryptedJSON), &creds)
+
+					jiraAPI := adapters.NewJiraAdapter(creds["baseUrl"], creds["email"], creds["apiToken"])
+
+					// Ask Jira what transitions are currently allowed for this specific ticket
+					transitions, _ := jiraAPI.GetAvailableTransitions(ticketID)
+					moved := false
+
+					for _, t := range transitions {
+						name, _ := t["name"].(string)
+						// Look for a column named "In Progress" (or "Doing", etc.)
+						if strings.Contains(strings.ToLower(name), "progress") || strings.Contains(strings.ToLower(name), "doing") {
+							transitionID, _ := t["id"].(string)
+							err := jiraAPI.TransitionIssue(ticketID, transitionID)
+							if err == nil {
+								fmt.Println("✅ [JIRA] Successfully moved ticket to In Progress!")
+								moved = true
+							}
+							break
+						}
+					}
+
+					if !moved {
+						fmt.Println("⚠️ [JIRA] Could not find a valid transition to 'In Progress'")
+					}
+				}
 			}
-			return ""
-		}
 
-		inProgressID := extractID("branch_created")
-		if inProgressID == "" {
-			inProgressID = extractID("in_progress")
-		}
-
-		if inProgressID != "" && exactCardUrl != "" {
-			fmt.Printf("🚚 [API] Moving task using exact URL to In Progress column (%s)...\n", inProgressID)
-			// 🌟 FIX: Pass exactCardUrl
-			orch.UpdateTicketStatus(repo.PMProvider, repo.PMProjectID, exactCardUrl, inProgressID, orgID)
 		} else {
-			fmt.Printf("⚠️ [API] Could not find 'in_progress' mapping or exact URL!\n")
+			// ⛺ EXISTING BASECAMP LOGIC (Untouched)
+			var exactCardUrl string
+			resolvedTaskID, exactCardUrl = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping) // 🌟 FIXED: Removed the colon!
+
+			extractID := func(key string) string {
+				if val, ok := mapping[key].(string); ok {
+					return val
+				} else if val, ok := mapping[key].(float64); ok {
+					return fmt.Sprintf("%.0f", val)
+				}
+				return ""
+			}
+
+			inProgressID := extractID("branch_created")
+			if inProgressID == "" {
+				inProgressID = extractID("in_progress")
+			}
+
+			if inProgressID != "" && exactCardUrl != "" {
+				fmt.Printf("🚚 [API] Moving task using exact URL to In Progress column (%s)...\n", inProgressID)
+				orch.UpdateTicketStatus(repo.PMProvider, repo.PMProjectID, exactCardUrl, inProgressID, orgID)
+			} else {
+				fmt.Printf("⚠️ [API] Could not find 'in_progress' mapping or exact URL!\n")
+			}
+
+			if body.Developer != "" && exactCardUrl != "" {
+				fmt.Printf("👤 [API] Attempting to assign developer: %s\n", body.Developer)
+				orch.AssignTicket(repo.PMProvider, repo.PMProjectID, exactCardUrl, body.Developer, orgID)
+			}
 		}
 
-		if body.Developer != "" && exactCardUrl != "" {
-			fmt.Printf("👤 [API] Attempting to assign developer: %s\n", body.Developer)
-			// 🌟 FIX: Pass exactCardUrl
-			orch.AssignTicket(repo.PMProvider, repo.PMProjectID, exactCardUrl, body.Developer, orgID)
-		}
-
-		// Push to Worker Queue
+		// Push to Worker Queue (Common to both Jira and Basecamp)
 		queuePayload := map[string]interface{}{
 			"eventType": "local_start",
 			"payload": map[string]interface{}{
@@ -334,8 +377,6 @@ func StartTask(c *gin.Context) {
 			},
 		}
 		queueJSON, _ := json.Marshal(queuePayload)
-
-		// 🌟 FIX 2: Send this to the exact queue name the Worker is actually listening to
 		redis.Client.LPush(context.Background(), "tron:v3_secret_queue", queueJSON)
 	}
 
