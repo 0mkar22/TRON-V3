@@ -15,7 +15,7 @@ export default function ClientForm({ connectedProviders = [] }) {
   const router = useRouter();
   
   const [formData, setFormData] = useState({
-    repoName: '', pmProvider: '', pmProjectId: '', todoCol: '', branchCol: '', prCol: '', doneCol: ''
+    repoName: '', pmProvider: '', pmProjectId: '', teamKey: '', todoCol: '', branchCol: '', prCol: '', doneCol: ''
   });
 
   const [boardColumns, setBoardColumns] = useState([]);
@@ -26,6 +26,7 @@ export default function ClientForm({ connectedProviders = [] }) {
   // Identify which integrations are active
   const isBcConnected = connectedProviders.includes('basecamp');
   const isJiraConnected = connectedProviders.includes('jira');
+  const isLinearConnected = connectedProviders.includes('linear');
   const isGithubConnected = connectedProviders.includes('github');
   const isDiscordConnected = connectedProviders.includes('discord');
   
@@ -43,8 +44,9 @@ export default function ClientForm({ connectedProviders = [] }) {
     if (!formData.pmProvider) {
       if (isBcConnected) setFormData(prev => ({ ...prev, pmProvider: 'basecamp' }));
       else if (isJiraConnected) setFormData(prev => ({ ...prev, pmProvider: 'jira' }));
+      else if (isLinearConnected) setFormData(prev => ({ ...prev, pmProvider: 'linear' }));
     }
-  }, [isBcConnected, isJiraConnected, formData.pmProvider]);
+  }, [isBcConnected, isJiraConnected, isLinearConnected, formData.pmProvider]);
 
   useEffect(() => {
     if (!isGithubConnected) { setIsLoadingRepos(false); return; }
@@ -83,25 +85,31 @@ export default function ClientForm({ connectedProviders = [] }) {
     setLoading(true);
     setStatus({ type: '', message: '' });
 
+    // 🌟 Dynamically build the mapping JSON based on the active provider
+    let finalMapping = {};
+    if (formData.pmProvider === 'basecamp') {
+        finalMapping = { todo: formData.todoCol, branch_created: formData.branchCol, pull_request_opened: formData.prCol, pull_request_closed: formData.doneCol };
+    } else if (formData.pmProvider === 'linear') {
+        finalMapping = { team_key: formData.teamKey.toUpperCase().trim() };
+    }
+
     const payload = {
         repoName: formData.repoName,
         pmProvider: formData.pmProvider,
-        pmProjectId: formData.pmProjectId,
-        mapping: { todo: formData.todoCol, branch_created: formData.branchCol, pull_request_opened: formData.prCol, pull_request_closed: formData.doneCol },
+        pmProjectId: formData.pmProjectId.trim(),
+        mapping: finalMapping,
         communication_config: isDiscordConnected && selectedChannel ? { provider: 'discord_bot', channel_id: selectedChannel } : null
     };
 
     try {
         const result = await saveWorkflowAction(payload);
         
-        // 🌟 Check the success flag explicitly
         if (result.success) {
             setStatus({ type: 'success', message: result.message });
-            setFormData({ repoName: '', pmProvider: isBcConnected ? 'basecamp' : (isJiraConnected ? 'jira' : ''), pmProjectId: '', todoCol: '', branchCol: '', prCol: '', doneCol: '' });
+            setFormData({ repoName: '', pmProvider: isBcConnected ? 'basecamp' : (isJiraConnected ? 'jira' : (isLinearConnected ? 'linear' : '')), pmProjectId: '', teamKey: '', todoCol: '', branchCol: '', prCol: '', doneCol: '' });
             setBoardColumns([]);
             setSelectedChannel('');
         } else {
-            // Display the exact database error returned from Supabase
             setStatus({ type: 'error', message: `Database Error: ${result.message}` });
         }
     } catch (error) {
@@ -109,14 +117,15 @@ export default function ClientForm({ connectedProviders = [] }) {
     } finally {
         setLoading(false);
     }
-};
+  };
 
   // Determine if the save button should be disabled
   const isSubmitDisabled = 
     loading || 
     !formData.repoName || 
     !formData.pmProjectId || 
-    (formData.pmProvider === 'basecamp' && (boardColumns.length === 0 || !formData.todoCol || !formData.branchCol || !formData.prCol || !formData.doneCol));
+    (formData.pmProvider === 'basecamp' && (boardColumns.length === 0 || !formData.todoCol || !formData.branchCol || !formData.prCol || !formData.doneCol)) ||
+    (formData.pmProvider === 'linear' && !formData.teamKey); // 🌟 Block if missing Linear Team Key
 
   return (
       <form onSubmit={handleSubmit} className="space-y-8">
@@ -143,10 +152,10 @@ export default function ClientForm({ connectedProviders = [] }) {
         <div className="space-y-4">
             <label className="block text-sm font-semibold text-gray-900">Target Project</label>
             
-            {!isBcConnected && !isJiraConnected ? (
+            {!isBcConnected && !isJiraConnected && !isLinearConnected ? (
                 <div className="w-full px-4 py-3 border border-red-200 rounded-xl bg-red-50 text-red-700 text-sm flex justify-between items-center">
                     <span className="font-medium">No Project Management tools connected.</span>
-                    <button type="button" onClick={() => router.push('/integrations')} className="font-bold underline hover:text-red-900">Connect Basecamp or Jira</button>
+                    <button type="button" onClick={() => router.push('/integrations')} className="font-bold underline hover:text-red-900">Connect a Tool</button>
                 </div>
             ) : (
                 <div className="flex flex-col sm:flex-row gap-3">
@@ -154,12 +163,14 @@ export default function ClientForm({ connectedProviders = [] }) {
                         className="w-full sm:w-1/3 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm" 
                         value={formData.pmProvider} 
                         onChange={(e) => {
-                            setFormData({ ...formData, pmProvider: e.target.value, pmProjectId: '', todoCol: '', branchCol: '', prCol: '', doneCol: '' });
+                            setFormData({ ...formData, pmProvider: e.target.value, pmProjectId: '', teamKey: '', todoCol: '', branchCol: '', prCol: '', doneCol: '' });
                             setBoardColumns([]);
                         }}
                     >
+                        <option value="" disabled>Select Provider</option>
                         {isBcConnected && <option value="basecamp">Basecamp</option>}
                         {isJiraConnected && <option value="jira">Jira</option>}
+                        {isLinearConnected && <option value="linear">Linear</option>}
                     </select>
 
                     <div className="w-full sm:w-2/3 flex gap-2">
@@ -186,6 +197,13 @@ export default function ClientForm({ connectedProviders = [] }) {
                                 <span className="font-medium">Jira workspace selected. Enter the Project Key below.</span>
                             </div>
                         )}
+
+                        {/* If Linear is selected */}
+                        {formData.pmProvider === 'linear' && (
+                            <div className="w-full px-4 py-3 border border-purple-200 rounded-xl bg-purple-50 text-purple-700 text-sm flex items-center">
+                                <span className="font-medium">Linear selected. Enter Team details below.</span>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -205,7 +223,6 @@ export default function ClientForm({ connectedProviders = [] }) {
                 />
                 <p className="text-xs text-gray-500 mt-1">This is the short prefix on your Jira tickets (e.g., if your tickets are &quot;TRON-123&quot;, the key is &quot;TRON&quot;).</p>
                 
-                {/* 🌟 UX FIX: The Success Confirmation Block */}
                 {formData.pmProjectId.length >= 2 && (
                     <div className="mt-4 p-4 bg-sky-50 border border-sky-200 rounded-xl flex items-start gap-3 animate-fade-in-up">
                         <span className="text-xl">✅</span>
@@ -217,6 +234,37 @@ export default function ClientForm({ connectedProviders = [] }) {
                         </div>
                     </div>
                 )}
+            </div>
+        )}
+
+        {/* ⧓ LINEAR PROJECT MAPPING */}
+        {formData.pmProvider === 'linear' && (
+            <div className="space-y-5 p-5 bg-purple-50/50 border border-purple-100 rounded-xl animate-fade-in-up">
+                <div>
+                    <label className="block text-sm font-semibold text-purple-900">Linear Team UUID</label>
+                    <input 
+                        type="text" 
+                        required 
+                        placeholder="e.g. 4d2b33c1-09df-416b-ba1d-bfce451203aa" 
+                        value={formData.pmProjectId} 
+                        onChange={(e) => setFormData({ ...formData, pmProjectId: e.target.value })} 
+                        className="w-full mt-1.5 px-4 py-3 bg-white border border-purple-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all text-sm font-mono placeholder-gray-400"
+                    />
+                    <p className="text-xs text-purple-700 mt-1.5">Required for GraphQL mutations (creating new issues). Find this in your Linear team settings URL.</p>
+                </div>
+                
+                <div>
+                    <label className="block text-sm font-semibold text-purple-900">Linear Team Key</label>
+                    <input 
+                        type="text" 
+                        required 
+                        placeholder="e.g. ENG" 
+                        value={formData.teamKey} 
+                        onChange={(e) => setFormData({ ...formData, teamKey: e.target.value.toUpperCase() })} 
+                        className="w-full mt-1.5 px-4 py-3 bg-white border border-purple-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all text-sm font-mono placeholder-gray-400"
+                    />
+                    <p className="text-xs text-purple-700 mt-1.5">Required for fetching active boards. This is the prefix on your issues (e.g. ENG-123).</p>
+                </div>
             </div>
         )}
 

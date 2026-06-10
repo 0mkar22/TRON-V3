@@ -101,7 +101,7 @@ func (w *basecampAdapterWrapper) AssignDeveloper(taskID, projectID, developer, o
 }
 
 // ==========================================
-// 🛠️ HELPER: LOAD REPO & ORCHESTRATOR (WITH TRAPS)
+// 2. HELPER: LOAD REPO & ORCHESTRATOR (WITH TRAPS)
 // ==========================================
 func getRepoAndOrchestrator(repoName string, orgID string) (models.Repository, map[string]interface{}, *services.PMOrchestrator, error) {
 	var repo models.Repository
@@ -131,8 +131,9 @@ func getRepoAndOrchestrator(repoName string, orgID string) (models.Repository, m
 			fmt.Printf("❌ [VAULT FATAL] Could not find Jira keys in integrations table! Error: %v\n", err)
 		} else {
 			fmt.Println("✅ [VAULT SUCCESS] Retrieved Jira Integration Keys.")
-			// Temporary bypass logic is intact here
 		}
+	} else if repo.PMProvider == "linear" {
+		fmt.Println("⧓ [ADAPTER TRAP] Booting Linear Engine...")
 	}
 
 	return repo, mapping, orch, nil
@@ -172,7 +173,6 @@ func GetTickets(c *gin.Context) {
 	fmt.Println("\n================================================")
 	fmt.Printf("📥 [VS CODE INCOMING] Requesting tickets for: %s\n", repoName)
 
-	// 🚨 SUSPICION TRAP: Is VS Code actually sending the Auth token?
 	if orgID == "" {
 		fmt.Println("🚨 [AUTH FATAL] orgId is EMPTY! The VS Code extension might not be sending the Bearer token!")
 	}
@@ -190,6 +190,9 @@ func GetTickets(c *gin.Context) {
 		return
 	}
 
+	// ---------------------------------------------------------
+	// JIRA ROUTE
+	// ---------------------------------------------------------
 	if repo.PMProvider == "jira" {
 		fmt.Println("🚀 [API TRAP] Fetching REAL tickets from Jira API...")
 
@@ -199,12 +202,10 @@ func GetTickets(c *gin.Context) {
 		var tickets []services.Ticket
 
 		if integration.SecretID != nil {
-			// Decrypt the keys from your Vault
 			decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
 			var creds map[string]string
 			json.Unmarshal([]byte(decryptedJSON), &creds)
 
-			// Boot the adapter and fetch the real data
 			jiraAPI := adapters.NewJiraAdapter(creds["baseUrl"], creds["email"], creds["apiToken"])
 			tickets = jiraAPI.GetTickets(repo.PMProjectID)
 		}
@@ -223,6 +224,53 @@ func GetTickets(c *gin.Context) {
 		return
 	}
 
+	// ---------------------------------------------------------
+	// LINEAR ROUTE
+	// ---------------------------------------------------------
+	if repo.PMProvider == "linear" {
+		fmt.Println("🚀 [API TRAP] Fetching REAL tickets from Linear API...")
+
+		var integration models.Integration
+		database.DB.Where("org_id = ? AND provider = 'linear'", orgID).First(&integration)
+
+		var tickets []services.Ticket
+
+		if integration.SecretID != nil {
+			decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
+			var creds map[string]string
+			json.Unmarshal([]byte(decryptedJSON), &creds)
+
+			linearAPI := adapters.NewLinearAdapter(creds["apiKey"])
+
+			teamKey := ""
+			if val, ok := mapping["team_key"].(string); ok {
+				teamKey = val
+			}
+
+			if teamKey != "" {
+				tickets = linearAPI.GetTickets(teamKey)
+			} else {
+				fmt.Printf("⚠️ [LINEAR] Team Key mapping is missing for repo %s\n", repoName)
+			}
+		}
+
+		if tickets == nil {
+			tickets = make([]services.Ticket, 0)
+		}
+
+		fmt.Printf("✅ [LINEAR SUCCESS] Returning %d real Linear tickets to VS Code.\n", len(tickets))
+		c.JSON(http.StatusOK, gin.H{
+			"isMapped": true,
+			"tickets":  tickets,
+		})
+
+		fmt.Println("================================================")
+		return
+	}
+
+	// ---------------------------------------------------------
+	// BASECAMP ROUTE (FALLBACK)
+	// ---------------------------------------------------------
 	fmt.Println("🚀 [API TRAP] Fetching tickets from Basecamp API...")
 	tickets := orch.GetTickets(repo.PMProvider, repo.PMProjectID, orgID, mapping)
 
@@ -276,7 +324,6 @@ func CreateTask(c *gin.Context) {
 	if repo.PMProvider == "jira" {
 		fmt.Printf("🏗️ [JIRA] VS Code requested a new ticket creation for: %s\n", body.TaskInput)
 
-		// Securely load the Organization's Atlassian keys
 		var integration models.Integration
 		database.DB.Where("org_id = ? AND provider = 'jira'", orgID).First(&integration)
 
@@ -287,23 +334,41 @@ func CreateTask(c *gin.Context) {
 
 			jiraAPI := adapters.NewJiraAdapter(creds["baseUrl"], creds["email"], creds["apiToken"])
 
-			// Fire the creation!
 			newID, err := jiraAPI.CreateTicket(repo.PMProjectID, body.TaskInput)
 			if err == nil && newID != "" {
 				resolvedTaskID = newID
 			} else {
 				fmt.Printf("❌ [JIRA] Failed to create ticket: %v\n", err)
-				// Fallback generator so VS Code doesn't crash if Atlassian is down
+				re := regexp.MustCompile(`[^a-zA-Z0-9]`)
+				resolvedTaskID = strings.ToLower(re.ReplaceAllString(body.TaskInput, "-"))
+			}
+		}
+	} else if repo.PMProvider == "linear" {
+		fmt.Printf("🏗️ [LINEAR] VS Code requested a new ticket creation for: %s\n", body.TaskInput)
+
+		var integration models.Integration
+		database.DB.Where("org_id = ? AND provider = 'linear'", orgID).First(&integration)
+
+		if integration.SecretID != nil {
+			decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
+			var creds map[string]string
+			json.Unmarshal([]byte(decryptedJSON), &creds)
+
+			linearAPI := adapters.NewLinearAdapter(creds["apiKey"])
+
+			newID, err := linearAPI.CreateTicket(repo.PMProjectID, body.TaskInput)
+			if err == nil && newID != "" {
+				resolvedTaskID = newID
+			} else {
+				fmt.Printf("❌ [LINEAR] Failed to create ticket: %v\n", err)
 				re := regexp.MustCompile(`[^a-zA-Z0-9]`)
 				resolvedTaskID = strings.ToLower(re.ReplaceAllString(body.TaskInput, "-"))
 			}
 		}
 	} else {
-		// ⛺ EXISTING BASECAMP LOGIC
 		resolvedTaskID, _ = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping)
 	}
 
-	// Tell VS Code the ID so it can mint the git branch (e.g., KAN-5-AI-Suggestion-Name)
 	c.JSON(http.StatusOK, gin.H{"resolvedId": resolvedTaskID})
 }
 
@@ -321,7 +386,6 @@ func StartTask(c *gin.Context) {
 
 	repo, mapping, orch, err := getRepoAndOrchestrator(body.RepoName, orgID)
 
-	// Fallback ID generation
 	re := regexp.MustCompile(`[^a-zA-Z0-9]`)
 	resolvedTaskID := strings.ToLower(re.ReplaceAllString(body.TaskInput, "-"))
 
@@ -331,9 +395,6 @@ func StartTask(c *gin.Context) {
 			ticketID := adapters.ExtractTicketID(body.TaskInput)
 
 			if ticketID != "" {
-				// ---------------------------------------------------------
-				// SCENARIO 1: EXISTING TICKET (Move it to In Progress)
-				// ---------------------------------------------------------
 				resolvedTaskID = ticketID
 				fmt.Printf("🚚 [JIRA] Starting task %s. Searching for 'In Progress' transition...\n", ticketID)
 
@@ -358,9 +419,6 @@ func StartTask(c *gin.Context) {
 					}
 				}
 			} else {
-				// ---------------------------------------------------------
-				// 🌟 SCENARIO 2: BRAND NEW TASK (AI Suggestion - Create It!)
-				// ---------------------------------------------------------
 				fmt.Printf("🏗️ [JIRA] No ID found. Creating a brand new ticket for: %s\n", body.TaskInput)
 
 				var integration models.Integration
@@ -373,12 +431,10 @@ func StartTask(c *gin.Context) {
 
 					jiraAPI := adapters.NewJiraAdapter(creds["baseUrl"], creds["email"], creds["apiToken"])
 
-					// Fire the creation payload to Atlassian!
 					newID, err := jiraAPI.CreateTicket(repo.PMProjectID, body.TaskInput)
 					if err == nil && newID != "" {
 						resolvedTaskID = newID
 
-						// Immediately move the newly minted ticket to "In Progress"
 						transitions, _ := jiraAPI.GetAvailableTransitions(newID)
 						for _, t := range transitions {
 							name, _ := t["name"].(string)
@@ -394,8 +450,59 @@ func StartTask(c *gin.Context) {
 				}
 			}
 
+		} else if repo.PMProvider == "linear" {
+			ticketID := adapters.ExtractTicketID(body.TaskInput)
+
+			var integration models.Integration
+			database.DB.Where("org_id = ? AND provider = 'linear'", orgID).First(&integration)
+
+			if integration.SecretID != nil {
+				decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
+				var creds map[string]string
+				json.Unmarshal([]byte(decryptedJSON), &creds)
+
+				linearAPI := adapters.NewLinearAdapter(creds["apiKey"])
+
+				if ticketID != "" {
+					resolvedTaskID = ticketID
+					fmt.Printf("🚚 [LINEAR] Starting task %s. Searching for 'In Progress' state...\n", ticketID)
+
+					parts := strings.Split(ticketID, "-")
+					if len(parts) == 2 {
+						states, _ := linearAPI.GetAvailableStates(parts[0])
+						for _, s := range states {
+							name, _ := s["name"].(string)
+							if strings.Contains(strings.ToLower(name), "progress") || strings.Contains(strings.ToLower(name), "doing") {
+								linearAPI.TransitionIssue(ticketID, s["id"].(string))
+								break
+							}
+						}
+					}
+				} else {
+					fmt.Printf("🏗️ [LINEAR] No ID found. Creating a brand new ticket for: %s\n", body.TaskInput)
+					newID, err := linearAPI.CreateTicket(repo.PMProjectID, body.TaskInput)
+
+					if err == nil && newID != "" {
+						resolvedTaskID = newID
+
+						parts := strings.Split(newID, "-")
+						if len(parts) == 2 {
+							states, _ := linearAPI.GetAvailableStates(parts[0])
+							for _, s := range states {
+								name, _ := s["name"].(string)
+								if strings.Contains(strings.ToLower(name), "progress") || strings.Contains(strings.ToLower(name), "doing") {
+									linearAPI.TransitionIssue(newID, s["id"].(string))
+									break
+								}
+							}
+						}
+					} else {
+						fmt.Printf("❌ [LINEAR] Creation failed! Error: %v\n", err)
+					}
+				}
+			}
+
 		} else {
-			// ⛺ EXISTING BASECAMP LOGIC (Untouched)
 			var exactCardUrl string
 			resolvedTaskID, exactCardUrl = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping)
 
@@ -426,7 +533,7 @@ func StartTask(c *gin.Context) {
 			}
 		}
 
-		// Push to Worker Queue (Common to both Jira and Basecamp)
+		// Push to Worker Queue (Common to Jira, Linear, and Basecamp)
 		queuePayload := map[string]interface{}{
 			"eventType": "local_start",
 			"payload": map[string]interface{}{

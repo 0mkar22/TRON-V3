@@ -35,6 +35,7 @@ export default async function IntegrationsPage({ searchParams }) {
     const github = getIntegration('github');
     const basecamp = getIntegration('basecamp');
     const jira = getIntegration('jira'); // 🌟 ADDED JIRA
+    const linear = getIntegration('linear'); // ⧓ ADDED LINEAR
     const discord = getIntegration('discord');
     const slack = getIntegration('slack');
 
@@ -455,6 +456,56 @@ export default async function IntegrationsPage({ searchParams }) {
                                         
                                         <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm">
                                             Connect Jira
+                                        </button>
+                                    </form>
+                                )}
+                            </div>
+                        </div>
+                        {/* 🌟 LINEAR CARD */}
+                        <div className={`bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border ${linear ? 'border-purple-200 ring-2 ring-purple-500' : 'border-gray-100'} overflow-hidden flex flex-col transition-all`}>
+                            <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                                <div className="flex items-center space-x-3">
+                                    <span className="text-2xl font-black text-purple-600">⧓</span>
+                                    <h3 className="text-lg font-bold text-gray-900">Linear</h3>
+                                </div>
+                                {linear && <span className="bg-purple-100 text-purple-700 text-xs font-bold px-3 py-1 rounded-full">Active</span>}
+                            </div>
+                            
+                            <div className="p-6 flex flex-col flex-grow">
+                                <div className="mb-5 flex-grow space-y-3">
+                                    {!linear ? (
+                                        <>
+                                            <p className="text-gray-500 text-sm font-medium">How to connect:</p>
+                                            <ul className="text-sm text-gray-500 space-y-2 list-decimal pl-4 marker:text-purple-400">
+                                                <li>Go to your Linear Workspace Settings.</li>
+                                                <li>Navigate to <strong>API &gt; Personal API keys</strong>.</li>
+                                                <li>Generate a new key and paste it below.</li>
+                                                <li>TRON will use this to fire GraphQL mutations.</li>
+                                            </ul>
+                                        </>
+                                    ) : (
+                                        <p className="text-gray-600 text-sm">
+                                            Linear is authorized. TRON is actively managing workflows over the GraphQL API.
+                                        </p>
+                                    )}
+                                </div>
+
+                                {linear ? (
+                                    <form action={deleteIntegration} className="flex justify-between items-center bg-purple-50 p-4 rounded-xl border border-purple-100 mt-auto">
+                                        <input type="hidden" name="provider" value="linear" />
+                                        <span className="text-sm font-semibold text-purple-900">API Key Vaulted</span>
+                                        <button type="submit" className="text-red-600 hover:text-red-700 text-sm font-bold transition-colors">Disconnect</button>
+                                    </form>
+                                ) : (
+                                    <form action={saveIntegration} className="space-y-4 mt-auto">
+                                        <input type="hidden" name="provider" value="linear" />
+                                        
+                                        <div className="space-y-3">
+                                            <input name="token" type="password" required placeholder="lin_api_..." className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all font-mono text-sm placeholder-gray-400" />
+                                        </div>
+                                        
+                                        <button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm">
+                                            Connect Linear
                                         </button>
                                     </form>
                                 )}

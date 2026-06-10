@@ -546,7 +546,7 @@ export function activate(context: vscode.ExtensionContext) {
             const currentBranch = stdout.trim();
             console.log(`🌿 [EVENT] Current Branch: ${currentBranch}`);
 
-            const branchRegex = /^([^/]+)\/(\d+)-(.+)$/;
+            const branchRegex = /^([^/]+)\/([A-Za-z0-9]+-\d+|\d+)-(.+)$/;
             if (currentBranch === 'main' || currentBranch === 'master' || !branchRegex.test(currentBranch)) {
                 console.log(`👀 [EVENT] Non-TRON branch detected. Launching popup...`);
                 hasPromptedForTask = true; 
