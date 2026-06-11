@@ -31,12 +31,9 @@ func NewLinearAdapter(apiKey string) *LinearAdapter {
 // 1. CORE GRAPHQL ENGINE
 // ==========================================
 
-// ExecuteGraphQL is the universal method for all Linear network calls.
-// It accepts a raw GraphQL string and optional variables, fires it, and parses the response.
 func (l *LinearAdapter) ExecuteGraphQL(query string, variables map[string]interface{}) (map[string]interface{}, error) {
 	url := "https://api.linear.app/graphql"
 
-	// 1. Construct the strictly-typed GraphQL payload
 	payload := map[string]interface{}{
 		"query": query,
 	}
@@ -54,11 +51,9 @@ func (l *LinearAdapter) ExecuteGraphQL(query string, variables map[string]interf
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// 2. Linear requires the API key directly in the Authorization header (no "Bearer" or "Basic" prefix needed for Personal API Keys)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", l.APIKey)
 
-	// 3. Fire the request
 	res, err := l.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("linear network error: %w", err)
@@ -70,23 +65,21 @@ func (l *LinearAdapter) ExecuteGraphQL(query string, variables map[string]interf
 		return nil, err
 	}
 
-	// 4. Trap standard HTTP errors (e.g., 401 Unauthorized)
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("linear API rejected request (HTTP %d): %s", res.StatusCode, string(bodyBytes))
 	}
 
-	// 5. Parse the GraphQL JSON response
 	var result map[string]interface{}
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse linear response: %w", err)
 	}
 
-	// 6. Trap GraphQL-specific errors (GraphQL returns 200 OK even if the query logic fails!)
 	if errors, ok := result["errors"]; ok {
-		return nil, fmt.Errorf("graphql execution error: %v", errors)
+		// Log the full error to help with debugging
+		errorsJSON, _ := json.Marshal(errors)
+		return nil, fmt.Errorf("graphql execution error: %s", string(errorsJSON))
 	}
 
-	// 7. Extract and return just the pure "data" payload
 	if data, ok := result["data"].(map[string]interface{}); ok {
 		return data, nil
 	}
@@ -95,22 +88,21 @@ func (l *LinearAdapter) ExecuteGraphQL(query string, variables map[string]interf
 }
 
 // ==========================================
-// 2. FETCH WORKFLOW STATES (UUID Discovery)
+// 2. FETCH WORKFLOW STATES
 // ==========================================
 
-// GetAvailableStates asks Linear for all the columns/states on a specific team's board.
-// teamKey is the prefix of the tickets, e.g., "ENG" for "ENG-123"
 func (l *LinearAdapter) GetAvailableStates(teamKey string) ([]map[string]interface{}, error) {
-
-	// The precise GraphQL query to fetch the board's states
+	// 🌟 FIXED: Query 'teams' with a filter instead of 'team(key)'
 	query := `
 		query GetTeamStates($teamKey: String!) {
-			team(key: $teamKey) {
-				states {
-					nodes {
-						id
-						name
-						type
+			teams(filter: { key: { eq: $teamKey } }) {
+				nodes {
+					states {
+						nodes {
+							id
+							name
+							type
+						}
 					}
 				}
 			}
@@ -121,31 +113,38 @@ func (l *LinearAdapter) GetAvailableStates(teamKey string) ([]map[string]interfa
 		"teamKey": teamKey,
 	}
 
-	// Hand off to our core execution engine
 	data, err := l.ExecuteGraphQL(query, variables)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch states for team %s: %w", teamKey, err)
 	}
 
-	// Navigate the nested GraphQL JSON response: data -> team -> states -> nodes
-	team, ok := data["team"].(map[string]interface{})
-	if !ok || team == nil {
-		return nil, fmt.Errorf("team '%s' not found or has no states", teamKey)
+	teams, ok := data["teams"].(map[string]interface{})
+	if !ok || teams == nil {
+		return nil, fmt.Errorf("could not parse teams block")
 	}
 
-	statesMap, ok := team["states"].(map[string]interface{})
+	nodes, ok := teams["nodes"].([]interface{})
+	if !ok || len(nodes) == 0 {
+		return nil, fmt.Errorf("team '%s' not found", teamKey)
+	}
+
+	teamNode, ok := nodes[0].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid team node structure")
+	}
+
+	statesMap, ok := teamNode["states"].(map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("could not parse states block")
 	}
 
-	nodes, ok := statesMap["nodes"].([]interface{})
+	stateNodes, ok := statesMap["nodes"].([]interface{})
 	if !ok {
 		return nil, fmt.Errorf("could not parse states nodes")
 	}
 
-	// Extract the nodes into a clean Go slice
 	var states []map[string]interface{}
-	for _, n := range nodes {
+	for _, n := range stateNodes {
 		if state, isMap := n.(map[string]interface{}); isMap {
 			states = append(states, state)
 		}
@@ -158,9 +157,7 @@ func (l *LinearAdapter) GetAvailableStates(teamKey string) ([]map[string]interfa
 // 3. THE TRANSITION MUTATION
 // ==========================================
 
-// TransitionIssue moves a Linear ticket (e.g., "ENG-123") to a new state using a State UUID
 func (l *LinearAdapter) TransitionIssue(ticketID string, stateID string) error {
-	// The precise GraphQL mutation to update an issue's state
 	mutation := `
 		mutation UpdateIssueState($id: String!, $stateId: String!) {
 			issueUpdate(id: $id, input: { stateId: $stateId }) {
@@ -175,19 +172,16 @@ func (l *LinearAdapter) TransitionIssue(ticketID string, stateID string) error {
 		}
 	`
 
-	// Note: Linear allows passing the human-readable identifier (ENG-123) directly into the 'id' field!
 	variables := map[string]interface{}{
 		"id":      ticketID,
 		"stateId": stateID,
 	}
 
-	// Hand off to our core execution engine
 	data, err := l.ExecuteGraphQL(mutation, variables)
 	if err != nil {
 		return fmt.Errorf("mutation failed for ticket %s: %w", ticketID, err)
 	}
 
-	// Navigate the response to verify Linear accepted the change
 	issueUpdate, ok := data["issueUpdate"].(map[string]interface{})
 	if !ok {
 		return fmt.Errorf("unexpected response structure from issueUpdate mutation")
@@ -198,7 +192,6 @@ func (l *LinearAdapter) TransitionIssue(ticketID string, stateID string) error {
 		return fmt.Errorf("linear refused to update the issue state (success: false)")
 	}
 
-	// Extract the new state name just so we can log it beautifully
 	if issueDetails, ok := issueUpdate["issue"].(map[string]interface{}); ok {
 		if stateObj, ok := issueDetails["state"].(map[string]interface{}); ok {
 			stateName, _ := stateObj["name"].(string)
@@ -213,18 +206,19 @@ func (l *LinearAdapter) TransitionIssue(ticketID string, stateID string) error {
 // 4. VS CODE: GET ACTIVE TICKETS (LINEAR)
 // ==========================================
 
-// GetTickets fetches all active (non-completed) issues for a specific Linear Team
 func (l *LinearAdapter) GetTickets(teamKey string) []services.Ticket {
+	// 🌟 FIXED: Safely query issues by traversing through the filtered team
 	query := `
 		query GetActiveTickets($teamKey: String!) {
-			team(key: $teamKey) {
-				issues(filter: { state: { type: { neq: "completed" } } }) {
-					nodes {
-						identifier
-						title
-						url
-						state {
-							name
+			teams(filter: { key: { eq: $teamKey } }) {
+				nodes {
+					issues(filter: { state: { type: { neq: "completed" } } }) {
+						nodes {
+							identifier
+							title
+							state {
+								name
+							}
 						}
 					}
 				}
@@ -244,23 +238,35 @@ func (l *LinearAdapter) GetTickets(teamKey string) []services.Ticket {
 
 	var tickets []services.Ticket
 
-	// Safely navigate the GraphQL response tree
-	if team, ok := data["team"].(map[string]interface{}); ok && team != nil {
-		if issues, ok := team["issues"].(map[string]interface{}); ok {
-			if nodes, ok := issues["nodes"].([]interface{}); ok {
-				for _, n := range nodes {
-					if issue, isMap := n.(map[string]interface{}); isMap {
-						stateName := "Unknown"
-						if stateObj, ok := issue["state"].(map[string]interface{}); ok {
-							stateName, _ = stateObj["name"].(string)
-						}
+	teams, ok := data["teams"].(map[string]interface{})
+	if !ok || teams == nil {
+		return tickets
+	}
 
-						tickets = append(tickets, services.Ticket{
-							ID:    fmt.Sprintf("%v", issue["identifier"]),
-							Title: fmt.Sprintf("%v", issue["title"]),
-							State: stateName,
-						})
+	nodes, ok := teams["nodes"].([]interface{})
+	if !ok || len(nodes) == 0 {
+		return tickets
+	}
+
+	teamNode, ok := nodes[0].(map[string]interface{})
+	if !ok {
+		return tickets
+	}
+
+	if issues, ok := teamNode["issues"].(map[string]interface{}); ok {
+		if issueNodes, ok := issues["nodes"].([]interface{}); ok {
+			for _, n := range issueNodes {
+				if issue, isMap := n.(map[string]interface{}); isMap {
+					stateName := "Unknown"
+					if stateObj, ok := issue["state"].(map[string]interface{}); ok {
+						stateName, _ = stateObj["name"].(string)
 					}
+
+					tickets = append(tickets, services.Ticket{
+						ID:    fmt.Sprintf("%v", issue["identifier"]),
+						Title: fmt.Sprintf("%v", issue["title"]),
+						State: stateName,
+					})
 				}
 			}
 		}
@@ -273,27 +279,33 @@ func (l *LinearAdapter) GetTickets(teamKey string) []services.Ticket {
 // 5. CREATE TICKET (LINEAR) - WITH AUTO-UUID
 // ==========================================
 
-// CreateTicket generates a brand new issue on the Linear board
 func (l *LinearAdapter) CreateTicket(teamKeyOrID, title string) (string, error) {
 	teamID := teamKeyOrID
 
-	// 🌟 AUTO-TRANSLATE: If the input is short (e.g., "ENG" instead of a UUID), fetch the UUID dynamically!
 	if len(teamKeyOrID) < 10 {
 		fmt.Printf("🔍 [LINEAR] Translating Team Key '%s' to UUID...\n", teamKeyOrID)
+
+		// 🌟 FIXED: Use teams filter for UUID discovery
 		query := `
 			query GetTeamId($key: String!) {
-				team(key: $key) {
-					id
+				teams(filter: { key: { eq: $key } }) {
+					nodes {
+						id
+					}
 				}
 			}
 		`
 		vars := map[string]interface{}{"key": teamKeyOrID}
 		data, err := l.ExecuteGraphQL(query, vars)
 		if err == nil {
-			if team, ok := data["team"].(map[string]interface{}); ok && team != nil {
-				if id, ok := team["id"].(string); ok {
-					teamID = id
-					fmt.Printf("✅ [LINEAR] Found UUID: %s\n", teamID)
+			if teams, ok := data["teams"].(map[string]interface{}); ok {
+				if nodes, ok := teams["nodes"].([]interface{}); ok && len(nodes) > 0 {
+					if teamNode, ok := nodes[0].(map[string]interface{}); ok {
+						if id, ok := teamNode["id"].(string); ok {
+							teamID = id
+							fmt.Printf("✅ [LINEAR] Found UUID: %s\n", teamID)
+						}
+					}
 				}
 			}
 		}
@@ -311,7 +323,7 @@ func (l *LinearAdapter) CreateTicket(teamKeyOrID, title string) (string, error) 
 	`
 
 	variables := map[string]interface{}{
-		"teamId": teamID, // Now guaranteed to be the exact UUID!
+		"teamId": teamID,
 		"title":  title,
 	}
 
