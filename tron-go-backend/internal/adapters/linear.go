@@ -270,11 +270,35 @@ func (l *LinearAdapter) GetTickets(teamKey string) []services.Ticket {
 }
 
 // ==========================================
-// 5. CREATE TICKET (LINEAR)
+// 5. CREATE TICKET (LINEAR) - WITH AUTO-UUID
 // ==========================================
 
 // CreateTicket generates a brand new issue on the Linear board
-func (l *LinearAdapter) CreateTicket(teamID, title string) (string, error) {
+func (l *LinearAdapter) CreateTicket(teamKeyOrID, title string) (string, error) {
+	teamID := teamKeyOrID
+
+	// 🌟 AUTO-TRANSLATE: If the input is short (e.g., "ENG" instead of a UUID), fetch the UUID dynamically!
+	if len(teamKeyOrID) < 10 {
+		fmt.Printf("🔍 [LINEAR] Translating Team Key '%s' to UUID...\n", teamKeyOrID)
+		query := `
+			query GetTeamId($key: String!) {
+				team(key: $key) {
+					id
+				}
+			}
+		`
+		vars := map[string]interface{}{"key": teamKeyOrID}
+		data, err := l.ExecuteGraphQL(query, vars)
+		if err == nil {
+			if team, ok := data["team"].(map[string]interface{}); ok && team != nil {
+				if id, ok := team["id"].(string); ok {
+					teamID = id
+					fmt.Printf("✅ [LINEAR] Found UUID: %s\n", teamID)
+				}
+			}
+		}
+	}
+
 	mutation := `
 		mutation CreateIssue($teamId: String!, $title: String!) {
 			issueCreate(input: { teamId: $teamId, title: $title }) {
@@ -287,7 +311,7 @@ func (l *LinearAdapter) CreateTicket(teamID, title string) (string, error) {
 	`
 
 	variables := map[string]interface{}{
-		"teamId": teamID, // Note: Linear creation requires the UUID, not the "ENG" key!
+		"teamId": teamID, // Now guaranteed to be the exact UUID!
 		"title":  title,
 	}
 

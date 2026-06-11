@@ -74,8 +74,24 @@ export default async function RepositoriesPage() {
                                 </div>
                             ) : (
                                 repositories?.map((repo) => {
-                                    const projectName = basecampProjects?.find(p => p.id.toString() === repo.pm_project_id)?.name || repo.pm_project_id;
+                                    // 🌟 Parse mapping securely to get the clean Team Key
+                                    let parsedMapping = {};
+                                    try { 
+                                        parsedMapping = typeof repo.mapping === 'string' ? JSON.parse(repo.mapping) : (repo.mapping || {}); 
+                                    } catch(e) {}
+
+                                    // Determine the display name (Basecamp Name -> Linear Key -> Jira Key)
+                                    const projectName = basecampProjects?.find(p => p.id.toString() === repo.pm_project_id)?.name 
+                                        || parsedMapping.team_key 
+                                        || repo.pm_project_id;
+                                        
                                     const channelName = discordChannels?.find(c => c.id === repo.communication_config?.channel_id)?.name || repo.communication_config?.channel_id;
+
+                                    // 🌟 DYNAMIC UI ICONS
+                                    const isJira = repo.pm_provider === 'jira';
+                                    const isLinear = repo.pm_provider === 'linear';
+                                    const pmIcon = isJira ? '📊' : (isLinear ? '⧓' : '⛺');
+                                    const iconColor = isJira ? 'bg-sky-50 text-sky-700' : (isLinear ? 'bg-purple-50 text-purple-700' : 'bg-indigo-50 text-indigo-700');
 
                                     return (
                                         <div key={repo.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-4 hover:border-indigo-300 hover:shadow-md transition-all">
@@ -85,9 +101,11 @@ export default async function RepositoriesPage() {
                                             </div>
                                             
                                             <div className="flex flex-wrap items-center gap-2">
-                                                <span className="inline-flex items-center px-3 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-bold">
-                                                    ⛺ {projectName || 'N/A'}
+                                                {/* 🌟 UPGRADED BADGE */}
+                                                <span className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold ${iconColor} capitalize`}>
+                                                    <span className="mr-1.5">{pmIcon}</span> {repo.pm_provider}: {projectName || 'N/A'}
                                                 </span>
+                                                
                                                 {repo.communication_config?.channel_id && (
                                                     <span className="inline-flex items-center px-3 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold">
                                                         🎮 #{channelName}

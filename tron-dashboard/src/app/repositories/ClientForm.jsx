@@ -237,33 +237,26 @@ export default function ClientForm({ connectedProviders = [] }) {
             </div>
         )}
 
-        {/* ⧓ LINEAR PROJECT MAPPING */}
+        {/* ⧓ LINEAR PROJECT MAPPING (SIMPLIFIED!) */}
         {formData.pmProvider === 'linear' && (
-            <div className="space-y-5 p-5 bg-purple-50/50 border border-purple-100 rounded-xl animate-fade-in-up">
-                <div>
-                    <label className="block text-sm font-semibold text-purple-900">Linear Team UUID</label>
-                    <input 
-                        type="text" 
-                        required 
-                        placeholder="e.g. 4d2b33c1-09df-416b-ba1d-bfce451203aa" 
-                        value={formData.pmProjectId} 
-                        onChange={(e) => setFormData({ ...formData, pmProjectId: e.target.value })} 
-                        className="w-full mt-1.5 px-4 py-3 bg-white border border-purple-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all text-sm font-mono placeholder-gray-400"
-                    />
-                    <p className="text-xs text-purple-700 mt-1.5">Required for GraphQL mutations (creating new issues). Find this in your Linear team settings URL.</p>
-                </div>
-                
+            <div className="space-y-4 p-5 bg-purple-50/50 border border-purple-100 rounded-xl animate-fade-in-up">
                 <div>
                     <label className="block text-sm font-semibold text-purple-900">Linear Team Key</label>
                     <input 
                         type="text" 
                         required 
-                        placeholder="e.g. ENG" 
-                        value={formData.teamKey} 
-                        onChange={(e) => setFormData({ ...formData, teamKey: e.target.value.toUpperCase() })} 
+                        placeholder="e.g. ENG, DES, PROD" 
+                        value={formData.pmProjectId} // 🌟 We bind the short key directly to the ID!
+                        onChange={(e) => setFormData({ 
+                            ...formData, 
+                            pmProjectId: e.target.value.toUpperCase(), // Goes to Go Backend
+                            teamKey: e.target.value.toUpperCase()      // Goes to JSON Mapping
+                        })} 
                         className="w-full mt-1.5 px-4 py-3 bg-white border border-purple-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all text-sm font-mono placeholder-gray-400"
                     />
-                    <p className="text-xs text-purple-700 mt-1.5">Required for fetching active boards. This is the prefix on your issues (e.g. ENG-123).</p>
+                    <p className="text-xs text-purple-700 mt-1.5">
+                        This is the short prefix on your Linear issues (e.g. if your issues are "ENG-12", type "ENG"). TRON will automatically resolve this to your team's hidden UUID in the background.
+                    </p>
                 </div>
             </div>
         )}
