@@ -240,7 +240,7 @@ func GetTickets(c *gin.Context) {
 			var creds map[string]string
 			json.Unmarshal([]byte(decryptedJSON), &creds)
 
-			linearAPI := adapters.NewLinearAdapter(creds["apiKey"])
+			linearAPI := adapters.NewLinearAdapter(creds["token"])
 
 			teamKey := ""
 			if val, ok := mapping["team_key"].(string); ok {
@@ -354,7 +354,7 @@ func CreateTask(c *gin.Context) {
 			var creds map[string]string
 			json.Unmarshal([]byte(decryptedJSON), &creds)
 
-			linearAPI := adapters.NewLinearAdapter(creds["apiKey"])
+			linearAPI := adapters.NewLinearAdapter(creds["token"])
 
 			newID, err := linearAPI.CreateTicket(repo.PMProjectID, body.TaskInput)
 			if err == nil && newID != "" {
@@ -461,7 +461,7 @@ func StartTask(c *gin.Context) {
 				var creds map[string]string
 				json.Unmarshal([]byte(decryptedJSON), &creds)
 
-				linearAPI := adapters.NewLinearAdapter(creds["apiKey"])
+				linearAPI := adapters.NewLinearAdapter(creds["token"])
 
 				if ticketID != "" {
 					resolvedTaskID = ticketID
