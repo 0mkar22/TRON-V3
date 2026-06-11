@@ -236,11 +236,29 @@ func GetTickets(c *gin.Context) {
 		var tickets []services.Ticket
 
 		if integration.SecretID != nil {
-			decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
+			decryptedJSON, err := services.GetDecryptedSecret(*integration.SecretID)
+
+			// 🪤 VAULT TRAP: Let's see exactly what is inside!
+			fmt.Printf("🕵️ [VAULT DEBUG] Raw Decrypted JSON: %s | Error: %v\n", decryptedJSON, err)
+
 			var creds map[string]string
 			json.Unmarshal([]byte(decryptedJSON), &creds)
 
-			linearAPI := adapters.NewLinearAdapter(creds["token"])
+			// 🛡️ DYNAMIC EXTRACTION: Catch the token no matter what Next.js named it
+			token := creds["token"]
+			if token == "" {
+				token = creds["apiKey"]
+			}
+			if token == "" {
+				token = creds["apiToken"]
+			}
+			if token == "" {
+				token = creds["access_token"] // standard OAuth key
+			}
+
+			fmt.Printf("🔑 [VAULT DEBUG] Final Extracted Token Length: %d\n", len(token))
+
+			linearAPI := adapters.NewLinearAdapter(token)
 
 			teamKey := ""
 			if val, ok := mapping["team_key"].(string); ok {
