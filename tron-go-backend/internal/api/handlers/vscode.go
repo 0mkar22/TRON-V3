@@ -236,27 +236,19 @@ func GetTickets(c *gin.Context) {
 		var tickets []services.Ticket
 
 		if integration.SecretID != nil {
-			decryptedJSON, err := services.GetDecryptedSecret(*integration.SecretID)
+			decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
 
-			// 🪤 VAULT TRAP: Let's see exactly what is inside!
-			fmt.Printf("🕵️ [VAULT DEBUG] Raw Decrypted JSON: %s | Error: %v\n", decryptedJSON, err)
-
+			// 🛡️ DYNAMIC EXTRACTION: Handle both raw strings and JSON objects
+			token := decryptedJSON
 			var creds map[string]string
-			json.Unmarshal([]byte(decryptedJSON), &creds)
-
-			// 🛡️ DYNAMIC EXTRACTION: Catch the token no matter what Next.js named it
-			token := creds["token"]
-			if token == "" {
-				token = creds["apiKey"]
+			if json.Unmarshal([]byte(decryptedJSON), &creds) == nil {
+				if creds["token"] != "" {
+					token = creds["token"]
+				}
+				if creds["apiKey"] != "" {
+					token = creds["apiKey"]
+				}
 			}
-			if token == "" {
-				token = creds["apiToken"]
-			}
-			if token == "" {
-				token = creds["access_token"] // standard OAuth key
-			}
-
-			fmt.Printf("🔑 [VAULT DEBUG] Final Extracted Token Length: %d\n", len(token))
 
 			linearAPI := adapters.NewLinearAdapter(token)
 
@@ -267,8 +259,6 @@ func GetTickets(c *gin.Context) {
 
 			if teamKey != "" {
 				tickets = linearAPI.GetTickets(teamKey)
-			} else {
-				fmt.Printf("⚠️ [LINEAR] Team Key mapping is missing for repo %s\n", repoName)
 			}
 		}
 
@@ -369,10 +359,20 @@ func CreateTask(c *gin.Context) {
 
 		if integration.SecretID != nil {
 			decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
-			var creds map[string]string
-			json.Unmarshal([]byte(decryptedJSON), &creds)
 
-			linearAPI := adapters.NewLinearAdapter(creds["token"])
+			// 🛡️ DYNAMIC EXTRACTION
+			token := decryptedJSON
+			var creds map[string]string
+			if json.Unmarshal([]byte(decryptedJSON), &creds) == nil {
+				if creds["token"] != "" {
+					token = creds["token"]
+				}
+				if creds["apiKey"] != "" {
+					token = creds["apiKey"]
+				}
+			}
+
+			linearAPI := adapters.NewLinearAdapter(token)
 
 			newID, err := linearAPI.CreateTicket(repo.PMProjectID, body.TaskInput)
 			if err == nil && newID != "" {
@@ -476,10 +476,20 @@ func StartTask(c *gin.Context) {
 
 			if integration.SecretID != nil {
 				decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
-				var creds map[string]string
-				json.Unmarshal([]byte(decryptedJSON), &creds)
 
-				linearAPI := adapters.NewLinearAdapter(creds["token"])
+				// 🛡️ DYNAMIC EXTRACTION
+				token := decryptedJSON
+				var creds map[string]string
+				if json.Unmarshal([]byte(decryptedJSON), &creds) == nil {
+					if creds["token"] != "" {
+						token = creds["token"]
+					}
+					if creds["apiKey"] != "" {
+						token = creds["apiKey"]
+					}
+				}
+
+				linearAPI := adapters.NewLinearAdapter(token)
 
 				if ticketID != "" {
 					resolvedTaskID = ticketID
