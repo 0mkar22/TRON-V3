@@ -1,7 +1,8 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 
-export async function middleware(request) {
+// 🌟 FIXED: The export name must match the 'proxy' file convention
+export async function proxy(request) {
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -34,7 +35,7 @@ export async function middleware(request) {
   // 1. IF NOT LOGGED IN
   // ==========================================
 
-  // 🌟 THE ULTIMATE FIX: Let the API callback AND the set-password page bypass the login guard!
+  // Let the API callback AND the set-password page bypass the login guard!
   if (pathname.startsWith('/onboarding/set-password') || pathname.startsWith('/callback')) {
       return supabaseResponse;
   }
@@ -54,7 +55,7 @@ export async function middleware(request) {
   // 2. IF LOGGED IN: The Onboarding Check
   // ==========================================
   if (user) {
-    // 🌟 FIX 2: Admins need a company_name, but developers are considered "onboarded" by default!
+    // Admins need a company_name, but developers are considered "onboarded" by default!
     const hasCompletedOnboarding = !!user.user_metadata?.company_name || user.user_metadata?.role === 'developer';
 
     // A. If they HAVEN'T finished onboarding, force them to the /onboarding page
@@ -70,7 +71,6 @@ export async function middleware(request) {
         (
             pathname.startsWith('/login') || 
             pathname.startsWith('/signup') || 
-            // 🌟 FIX 3: Keep them away from Admin /onboarding, but let them finish setting their password!
             (pathname.startsWith('/onboarding') && !pathname.startsWith('/onboarding/set-password'))
         )
     ) {
