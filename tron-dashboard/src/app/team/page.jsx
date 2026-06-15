@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import axios from 'axios';
 import AssignmentForm from './AssignmentForm';
+import { deleteAssignmentAction } from './actions';
 
 export default function TeamManagementPage() {
     const [email, setEmail] = useState('');
@@ -12,6 +13,7 @@ export default function TeamManagementPage() {
     
     const [teamMembers, setTeamMembers] = useState([]);
     const [workflows, setWorkflows] = useState([]);
+    const [assignments, setAssignments] = useState([]); // 🌟 NEW STATE
     const [loadingData, setLoadingData] = useState(true);
     
     const supabase = createClient();
@@ -43,8 +45,16 @@ export default function TeamManagementPage() {
                     .eq('org_id', currentUserData.org_id)
                     .order('created_at', { ascending: false });
 
+                // 🌟 NEW: Fetch Active Assignments
+                const { data: assigns } = await supabase
+                    .from('project_assignments')
+                    .select('*')
+                    .eq('org_id', currentUserData.org_id)
+                    .order('created_at', { ascending: false });
+
                 setTeamMembers(members || []);
                 setWorkflows(repos || []);
+                setAssignments(assigns || []);
             }
         } catch (error) {
             console.error("Error fetching dashboard data:", error);
@@ -86,6 +96,14 @@ export default function TeamManagementPage() {
         } finally {
             setLoading(false);
         }
+    };
+
+    // 🌟 NEW: Handle Revoking Access
+    const handleRevoke = async (assignmentId) => {
+        const formData = new FormData();
+        formData.append('assignmentId', assignmentId);
+        await deleteAssignmentAction(formData);
+        fetchDashboardData(); // Refresh the list instantly
     };
 
     return (
@@ -150,9 +168,72 @@ export default function TeamManagementPage() {
             </div>
 
             {/* CARD 2: Project Assignment */}
-            <AssignmentForm developers={teamMembers} workflows={workflows} />
+            <div onClick={fetchDashboardData}>
+                {/* Wrapping in a div with onClick as a simple hack to refresh the list when AssignmentForm submits */}
+                <AssignmentForm developers={teamMembers} workflows={workflows} />
+            </div>
 
-            {/* CARD 3: Active Team Roster */}
+            {/* 🌟 CARD 3: Active Workflow Assignments (NEW) */}
+            <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden mb-8">
+                <div className="p-6 sm:p-8 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-900">Active Workflow Assignments</h2>
+                        <p className="text-sm text-gray-500 mt-1">Developers with explicit access to specific mapped repositories.</p>
+                    </div>
+                    <div className="hidden sm:flex h-12 w-12 bg-sky-50 rounded-full items-center justify-center text-sky-600">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                        </svg>
+                    </div>
+                </div>
+                
+                <div className="p-0">
+                    {loadingData ? (
+                        <div className="p-12 text-center text-gray-500">Loading assignments...</div>
+                    ) : assignments.length === 0 ? (
+                        <div className="p-12 text-center text-gray-500">No developers have been assigned to workflows yet.</div>
+                    ) : (
+                        <ul className="divide-y divide-gray-100">
+                            {assignments.map((assignment) => {
+                                const dev = teamMembers.find(m => m.id === assignment.user_id);
+                                const repo = workflows.find(r => r.id === assignment.repository_id);
+                                
+                                return (
+                                    <li key={assignment.id} className="p-6 sm:p-8 hover:bg-gray-50/50 transition-colors">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-10 w-10 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-sm shrink-0">
+                                                    {(dev?.full_name || dev?.email || '?').charAt(0).toUpperCase()}
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-bold text-gray-900">
+                                                        {dev?.full_name || dev?.email || 'Unknown Developer'}
+                                                    </p>
+                                                    <div className="flex items-center gap-2 mt-1 text-xs font-medium text-gray-500">
+                                                        <span>Assigned to:</span>
+                                                        <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
+                                                            {repo?.repo_name || 'Unknown Repository'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <button 
+                                                onClick={() => handleRevoke(assignment.id)}
+                                                className="inline-flex items-center justify-center px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 rounded-lg text-sm font-bold transition-colors"
+                                            >
+                                                Revoke Access
+                                            </button>
+                                        </div>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
+                </div>
+            </div>
+
+            {/* CARD 4: Active Team Roster */}
             <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
                 <div className="p-6 sm:p-8 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
                     <div>
