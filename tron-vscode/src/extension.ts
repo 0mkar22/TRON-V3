@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import axios from 'axios';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import * as fs from 'fs';
+import * as path from 'path';
 import { TronProvider } from './tronProvider';
 import { createSupabaseClient } from './supabaseClient';
 
@@ -11,7 +13,7 @@ const execAsync = promisify(exec);
 const getConfig = () => vscode.workspace.getConfiguration('tron');
 const getApiUrl = () => getConfig().get<string>('backendUrl') || 'https://tron-v3-1.onrender.com';
 
-// 🌟 Using Webpack environment variables (fallback to hardcoded if not bundled properly)
+// 🌟 Using Webpack environment variables
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kobhfwjnbmbtgcikeulp.supabase.co'; 
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvYmhmd2puYm1idGdjaWtldWxwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MzU3NzIsImV4cCI6MjA5MjQxMTc3Mn0.mopgJImaUiLfxCxSW-VSCcGkr4rUtEYvOrHJDMZsL4A'; 
 
@@ -24,9 +26,73 @@ interface TaskQuickPickItem extends vscode.QuickPickItem {
     rawTitle: string;
 }
 
+// ==========================================
+// 🛡️ TRON ENFORCER: GIT HOOK INSTALLER
+// ==========================================
+function installTronGitHooks(workspaceRoot: string) {
+    const gitPath = path.join(workspaceRoot, '.git');
+    
+    // If it's not a git repository, quietly exit
+    if (!fs.existsSync(gitPath)) {
+        return;
+    }
+
+    const hooksPath = path.join(gitPath, 'hooks');
+    if (!fs.existsSync(hooksPath)) {
+        fs.mkdirSync(hooksPath);
+    }
+
+    const preCommitPath = path.join(hooksPath, 'pre-commit');
+
+    // The Bash Script that intercepts `git commit`
+    const hookScript = `#!/bin/sh
+# ==========================================
+# 🛑 TRON ENFORCER: LOCAL TERMINAL SHIELD
+# ==========================================
+
+BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+
+# Allow commits directly to main/master
+if [[ "$BRANCH_NAME" == "main" || "$BRANCH_NAME" == "master" ]]; then
+    exit 0
+fi
+
+# Regex Check: Does the branch contain a Ticket ID?
+# Matches Jira/Linear (e.g. ENG-123) or Basecamp (e.g. 123456)
+if ! echo "$BRANCH_NAME" | grep -Eq '([A-Za-z0-9]+-[0-9]+|[0-9]{5,})'; then
+    echo ""
+    echo "🛑 [TRON ENFORCER] COMMIT BLOCKED!"
+    echo "Branch: '$BRANCH_NAME'"
+    echo "Reason: This branch is not mapped to a known Project Management ticket."
+    echo ""
+    echo "Fix: Please use the TRON sidebar in VS Code to 'Start Task' so we can track this work."
+    echo "=========================================="
+    echo ""
+    exit 1
+fi
+
+exit 0
+`;
+
+    // Write the file and make it executable (chmod +x) so Git can run it
+    try {
+        fs.writeFileSync(preCommitPath, hookScript, { mode: 0o755 });
+        console.log("✅ [TRON] Git Enforcer hooks installed successfully.");
+    } catch (err) {
+        console.error("❌ [TRON] Failed to install git hooks:", err);
+    }
+}
+
 export function activate(context: vscode.ExtensionContext) {
     console.log('🚀 [ACTIVATION] TRON extension is waking up...');
     console.log(`🐛 [CONFIG] Target Backend URL: ${getApiUrl()}`);
+
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (workspaceFolders) {
+        const rootPath = workspaceFolders[0].uri.fsPath;
+        // 🌟 BOOT THE ENFORCER
+        installTronGitHooks(rootPath);
+    }
 
     // 1. Initialize Secure Supabase Client
     console.log('🔌 [AUTH] Initializing Supabase client...');
@@ -125,14 +191,12 @@ export function activate(context: vscode.ExtensionContext) {
         console.log(`🕹️ [CMD] tron.startTaskFromTree triggered for Task ID: ${task?.id || task?.taskId}`);
         try {
             const taskId = task.id || task.taskId;
-            if (!taskId){
-            return;
-            }
+            if (!taskId){ return; }
 
             const taskTitle = task.title || task.rawTitle || `Task ${taskId}`;
 
             const userChoice = await vscode.window.showWarningMessage(
-                `Start working on "${taskTitle}"? \n\nThis will automatically stash your current work, create a new branch, and assign you on Basecamp.`,
+                `Start working on "${taskTitle}"? \n\nThis will automatically stash your current work, create a new branch, and assign you on your PM board.`,
                 { modal: true }, 
                 'Yes, Start Task'
             );
@@ -143,9 +207,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders){
-            return;
-            }
+            if (!workspaceFolders){ return; }
             const cwd = workspaceFolders[0].uri.fsPath;
 
             console.log(`🔍 [GIT] Inspecting local git repo at: ${cwd}`);
@@ -168,23 +230,22 @@ export function activate(context: vscode.ExtensionContext) {
             const repoName = repoMatch[1].replace('.git', '');
             console.log(`🔗 [GIT] Extracted Repo Name: ${repoName}`);
 
-            vscode.window.showInformationMessage(`T.R.O.N: Syncing with Basecamp...`);
+            vscode.window.showInformationMessage(`T.R.O.N: Syncing with Project Board...`);
 
             let resolvedId = taskId;
             try {
                 console.log(`📡 [NETWORK] Sending start-task payload to Go backend...`);
-                // 🌟 FIX: Removed getApiUrl() from path
                 const response = await axios.post(`/api/start-task`, {
                     taskInput: taskId,
                     repoName: repoName,
                     developer: gitUsername 
                 });
                 resolvedId = response.data.resolvedId; 
-                console.log(`✅ [NETWORK] Basecamp sync successful. Resolved ID: ${resolvedId}`);
-                vscode.window.showInformationMessage(`✅ T.R.O.N: Basecamp synchronized & assigned!`);
+                console.log(`✅ [NETWORK] PM sync successful. Resolved ID: ${resolvedId}`);
+                vscode.window.showInformationMessage(`✅ T.R.O.N: Project Board synchronized & assigned!`);
             } catch (apiError: any) {
-                console.error(`❌ [NETWORK] Basecamp sync failed:`, apiError?.response?.data || apiError.message);
-                vscode.window.showErrorMessage(`T.R.O.N Backend Error: Could not sync with Basecamp.`);
+                console.error(`❌ [NETWORK] PM sync failed:`, apiError?.response?.data || apiError.message);
+                vscode.window.showErrorMessage(`T.R.O.N Backend Error: Could not sync with Project Board.`);
                 return; 
             }
 
@@ -217,7 +278,7 @@ export function activate(context: vscode.ExtensionContext) {
                 await execAsync(`git checkout -b ${branchName}`, { cwd });
                 console.log(`📤 [GIT] Pushing new branch to origin...`);
                 await execAsync(`git push -u origin ${branchName}`, { cwd });
-                vscode.window.showInformationMessage(`✅ T.R.O.N: Created and pushed new branch! Basecamp will auto-assign shortly.`);
+                vscode.window.showInformationMessage(`✅ T.R.O.N: Created and pushed new branch!`);
             }
 
             if (stashed) {
@@ -238,21 +299,17 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    let createCmd = vscode.commands.registerCommand('tron.createTaskOnly', async () => {
+    let createTaskCmd = vscode.commands.registerCommand('tron.createTaskOnly', async () => {
         console.log('🕹️ [CMD] tron.createTaskOnly triggered.');
         try {
             const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders){
-            return false;
-            }
+            if (!workspaceFolders){ return false; }
             
             const cwd = workspaceFolders[0].uri.fsPath;
             const { stdout } = await execAsync('git config --get remote.origin.url', { cwd });
             const remoteUrl = stdout.trim();
             const repoMatch = remoteUrl.match(/github\.com[:\/](.+?\.git|.+)/);
-            if (!repoMatch){
-            return false;
-            }
+            if (!repoMatch){ return false; }
             
             const repoName = repoMatch[1].replace('.git', '');
             
@@ -262,10 +319,9 @@ export function activate(context: vscode.ExtensionContext) {
                 return false;
             }
 
-            vscode.window.showInformationMessage(`T.R.O.N: Adding task to Basecamp...`);
+            vscode.window.showInformationMessage(`T.R.O.N: Adding task...`);
             console.log(`📡 [NETWORK] Sending create-task payload...`);
             
-            // 🌟 FIX: Removed getApiUrl() from path
             await axios.post(`/api/create-task`, {
                 taskInput: input,
                 repoName: repoName
@@ -283,14 +339,11 @@ export function activate(context: vscode.ExtensionContext) {
     let viewReviewCmd = vscode.commands.registerCommand('tron.viewAIReview', async (task: any) => {
         console.log(`🕹️ [CMD] tron.viewAIReview triggered for Task ID: ${task?.id || task?.taskId}`);
         const taskId = task.id || task.taskId; 
-        if (taskId === 'CREATE_NEW'){
-            return false;
-            }
+        if (taskId === 'CREATE_NEW'){ return false; }
 
         try {
             vscode.window.showInformationMessage(`T.R.O.N: Fetching AI Review...`);
             console.log(`📡 [NETWORK] Fetching AI review for task ${taskId}...`);
-            // 🌟 FIX: Removed getApiUrl() from path
             const response = await axios.get(`/api/review/${taskId}`);
             const reviewText = response.data.review;
             console.log(`✅ [NETWORK] Review fetched successfully.`);
@@ -419,29 +472,22 @@ export function activate(context: vscode.ExtensionContext) {
         console.log(`🕹️ [CMD] tron.selectTaskPopup triggered. AutoTrigger: ${args?.autoTrigger}`);
         try {
             const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders){
-            return false;
-            }
+            if (!workspaceFolders){ return false; }
             
             const cwd = workspaceFolders[0].uri.fsPath;
             const { stdout: remoteOut } = await execAsync('git config --get remote.origin.url', { cwd });
             const repoMatch = remoteOut.trim().match(/github\.com[:\/](.+?\.git|.+)/);
-            if (!repoMatch){
-            return false;
-            }
+            if (!repoMatch){ return false; }
             
             const repoName = repoMatch[1].replace('.git', '');
             const encodedRepo = encodeURIComponent(repoName);
-            console.log(`🔗 [POPUP] Extracting tasks for repo: ${repoName} (encoded: ${encodedRepo})`);
+            console.log(`🔗 [POPUP] Extracting tasks for repo: ${repoName}`);
 
-            // 🌟 1. API Call (WITH QUERY PARAM FIX AND REMOVED DOMAIN)
-            console.log(`📡 [NETWORK] Checking if repo is mapped using: /api/project/tickets?repo=${encodedRepo}`);
             const ticketsRes = await axios.get(`/api/project/tickets?repo=${encodedRepo}`).catch((err) => {
                 console.error(`❌ [NETWORK] Mapped tickets check failed:`, err.message);
                 return { data: { isMapped: false, tickets: [] } };
             });
 
-            console.log(`📋 [POPUP] Backend response: isMapped = ${ticketsRes.data.isMapped}`);
             if (ticketsRes.data.isMapped === false || ticketsRes.data.isMapped === undefined) {
                 console.log(`🛑 [POPUP] Repo is unmapped. Aborting AI popup silently.`);
                 return false; 
@@ -451,12 +497,10 @@ export function activate(context: vscode.ExtensionContext) {
                 vscode.window.showInformationMessage(`T.R.O.N: Unlinked code changes detected. What are you working on?`);
             }
 
-            console.log('🤖 [POPUP] Executing git diff to feed AI...');
             let codeDiff = "";
             try {
                 const { stdout: diffOut } = await execAsync('git diff', { cwd });
                 codeDiff = diffOut.trim();
-                console.log(`🤖 [POPUP] Git diff captured (${codeDiff.length} characters)`);
             } catch (e) {
                 console.log('⚠️ [POPUP] Git diff failed.');
             }
@@ -464,11 +508,8 @@ export function activate(context: vscode.ExtensionContext) {
             let aiSuggestions: string[] = [];
             if (codeDiff) {
                 try {
-                    console.log(`📡 [NETWORK] Requesting AI task suggestions...`);
-                    // 🌟 FIX: Removed getApiUrl() from path
                     const aiRes = await axios.post(`/api/suggest-tasks`, { codeDiff });
                     aiSuggestions = aiRes.data.suggestions || [];
-                    console.log(`✅ [NETWORK] Received ${aiSuggestions.length} AI suggestions.`);
                 } catch (e: any) {
                     console.error(`❌ [NETWORK] AI suggestion request failed:`, e.message);
                 }
@@ -497,7 +538,6 @@ export function activate(context: vscode.ExtensionContext) {
             });
 
             if (quickPickItems.length === 0) {
-                console.log('🛑 [POPUP] No tasks or suggestions found. Aborting.');
                 vscode.window.showInformationMessage("T.R.O.N: No tasks or suggestions found.");
                 return false;
             }
@@ -509,11 +549,9 @@ export function activate(context: vscode.ExtensionContext) {
             });
 
             if (selection) {
-                console.log(`✅ [POPUP] User selected task: ${selection.rawTitle}`);
                 vscode.commands.executeCommand('tron.startTaskFromTree', { id: selection.taskId, title: selection.rawTitle });
                 return true; 
             } else {
-                console.log('❌ [POPUP] User dismissed quick pick.');
                 return false; 
             }
 
@@ -527,15 +565,10 @@ export function activate(context: vscode.ExtensionContext) {
     let isCheckingBranch = false; 
 
     vscode.workspace.onDidSaveTextDocument(async (document) => {
-        if (document.uri.scheme !== 'file'){
-            return;
-        }
-        if (hasPromptedForTask || isCheckingBranch){
-            return;
-        }
+        if (document.uri.scheme !== 'file'){ return; }
+        if (hasPromptedForTask || isCheckingBranch){ return; }
         
         isCheckingBranch = true; 
-        console.log(`💾 [EVENT] File saved: ${document.fileName}. Triggering branch check...`);
 
         try {
             const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -546,7 +579,9 @@ export function activate(context: vscode.ExtensionContext) {
             const currentBranch = stdout.trim();
             console.log(`🌿 [EVENT] Current Branch: ${currentBranch}`);
 
+            // 🌟 THE REGEX FIX: Now safely supports Jira and Linear formats!
             const branchRegex = /^([^/]+)\/([A-Za-z0-9]+-\d+|\d+)-(.+)$/;
+
             if (currentBranch === 'main' || currentBranch === 'master' || !branchRegex.test(currentBranch)) {
                 console.log(`👀 [EVENT] Non-TRON branch detected. Launching popup...`);
                 hasPromptedForTask = true; 
@@ -577,7 +612,7 @@ export function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(gitWatcher);
     }
 
-    context.subscriptions.push(refreshCmd, startTaskCmd, createCmd, viewReviewCmd, quickPickCmd, signInCmd, signOutCmd);
+    context.subscriptions.push(refreshCmd, startTaskCmd, createTaskCmd, viewReviewCmd, quickPickCmd, signInCmd, signOutCmd);
 }
 
 export function deactivate() {
