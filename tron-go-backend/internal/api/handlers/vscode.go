@@ -140,26 +140,72 @@ func getRepoAndOrchestrator(repoName string, orgID string) (models.Repository, m
 }
 
 // ==========================================
-// 1. VS CODE: FETCH PROJECTS (Daemon Auth)
+// 1. VS CODE: FETCH ASSIGNED PROJECTS (RBAC)
 // ==========================================
 func GetProjects(c *gin.Context) {
-	apiKey := c.GetHeader("x-api-key")
-	if apiKey != os.Getenv("DAEMON_API_KEY") {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: Invalid Daemon API Key"})
+	// 1. Extract the Supabase JWT from the Authorization header
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: Missing or invalid token"})
+		return
+	}
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+
+	// 2. Verify the token with Supabase and get the User ID
+	supabaseURL := os.Getenv("SUPABASE_URL")
+	supabaseKey := os.Getenv("SUPABASE_ANON_KEY")
+
+	req, _ := http.NewRequest("GET", supabaseURL+"/auth/v1/user", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("apikey", supabaseKey)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	res, err := client.Do(req)
+	if err != nil || res.StatusCode != http.StatusOK {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: Invalid session"})
+		return
+	}
+	defer res.Body.Close()
+
+	var authUser struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(res.Body).Decode(&authUser)
+
+	// 3. Look up the User in our Database to get their Role & OrgID
+	var dbUser models.User
+	if err := database.DB.Where("id = ?", authUser.ID).First(&dbUser).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found in database"})
 		return
 	}
 
 	var repos []models.Repository
-	if err := database.DB.Select("repo_name").Find(&repos).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch projects"})
-		return
-	}
-
 	var projectNames []string
-	for _, repo := range repos {
-		projectNames = append(projectNames, repo.RepoName)
+
+	// 4. THE RBAC MATRIX
+	if dbUser.Role == "admin" {
+		// Admins get to see everything in the organization
+		fmt.Printf("👑 [RBAC] Admin %s requested projects. Returning ALL repos.\n", dbUser.Email)
+		database.DB.Select("repo_name").Where("org_id = ?", dbUser.OrgID).Find(&repos)
+
+		for _, repo := range repos {
+			projectNames = append(projectNames, repo.RepoName)
+		}
+	} else {
+		// Developers ONLY see what is in the project_assignments table
+		fmt.Printf("👷 [RBAC] Developer %s requested projects. Filtering by assignments.\n", dbUser.Email)
+
+		var assignments []models.ProjectAssignment
+		database.DB.Preload("Repository").Where("user_id = ? AND org_id = ?", dbUser.ID, dbUser.OrgID).Find(&assignments)
+
+		for _, assignment := range assignments {
+			if assignment.Repository.RepoName != "" {
+				projectNames = append(projectNames, assignment.Repository.RepoName)
+			}
+		}
 	}
 
+	// 5. Send the strictly filtered list back to VS Code
 	c.JSON(http.StatusOK, gin.H{"projects": projectNames})
 }
 
