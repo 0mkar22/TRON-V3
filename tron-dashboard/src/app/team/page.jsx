@@ -3,56 +3,59 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import axios from 'axios';
+import AssignmentForm from './AssignmentForm';
 
 export default function TeamManagementPage() {
     const [email, setEmail] = useState('');
     const [status, setStatus] = useState({ type: '', message: '' });
     const [loading, setLoading] = useState(false);
     
-    // 🌟 State to hold our team roster
     const [teamMembers, setTeamMembers] = useState([]);
-    const [loadingTeam, setLoadingTeam] = useState(true);
+    const [workflows, setWorkflows] = useState([]);
+    const [loadingData, setLoadingData] = useState(true);
     
     const supabase = createClient();
 
-    // 🌟 1. DEFINE THE FUNCTION FIRST
-    const fetchTeamMembers = useCallback(async () => {
-        await Promise.resolve();
-        setLoadingTeam(true);
+    const fetchDashboardData = useCallback(async () => {
+        setLoadingData(true);
         try {
-            // 1. Get the currently logged-in Admin
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
-            // 2. Find out which Organization they belong to
             const { data: currentUserData } = await supabase
                 .from('users')
                 .select('org_id')
                 .eq('id', user.id)
                 .single();
 
-            // 3. Fetch EVERYONE who shares that Organization ID
             if (currentUserData?.org_id) {
-                const { data: members, error } = await supabase
+                // Fetch Team Members
+                const { data: members } = await supabase
                     .from('users')
                     .select('*')
                     .eq('org_id', currentUserData.org_id)
-                    .order('created_at', { ascending: true }); // Oldest first (Admins at top)
+                    .order('created_at', { ascending: true });
                 
-                if (error) throw error;
+                // Fetch Active Workflows (Repositories)
+                const { data: repos } = await supabase
+                    .from('repositories')
+                    .select('*')
+                    .eq('org_id', currentUserData.org_id)
+                    .order('created_at', { ascending: false });
+
                 setTeamMembers(members || []);
+                setWorkflows(repos || []);
             }
         } catch (error) {
-            console.error("Error fetching team roster:", error);
+            console.error("Error fetching dashboard data:", error);
         } finally {
-            setLoadingTeam(false);
+            setLoadingData(false);
         }
     }, [supabase]);
 
-    // 🌟 2. CALL IT SECOND in the useEffect
     useEffect(() => {
-        Promise.resolve().then(fetchTeamMembers);
-    }, [fetchTeamMembers]);
+        Promise.resolve().then(fetchDashboardData);
+    }, [fetchDashboardData]);
 
     const handleInvite = async (e) => {
         e.preventDefault();
@@ -63,8 +66,7 @@ export default function TeamManagementPage() {
             const { data: { session }, error: sessionError } = await supabase.auth.getSession();
             if (sessionError || !session) throw new Error("You must be logged in to invite developers.");
 
-            // 🌟 THE FIX: Because BACKEND_URL is hidden from the browser, we use the fallback!
-            const API_BASE_URL = process.env.BACKEND_URL; 
+            const API_BASE_URL = process.env.BACKEND_URL || 'https://tron-v3-1.onrender.com'; 
             
             const response = await axios.post(
                 `${API_BASE_URL}/api/admin/invite-developer`,
@@ -74,9 +76,7 @@ export default function TeamManagementPage() {
 
             setStatus({ type: 'success', message: response.data.message });
             setEmail('');
-            
-            // Refresh the roster to instantly show the newly invited developer!
-            fetchTeamMembers();
+            fetchDashboardData();
 
         } catch (error) {
             setStatus({ 
@@ -90,13 +90,12 @@ export default function TeamManagementPage() {
 
     return (
         <div className="max-w-5xl mx-auto p-6 lg:p-8 font-sans">
-            {/* Header Section */}
             <div className="mb-10">
                 <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Team Management</h1>
                 <p className="text-gray-500 mt-2 text-lg">Build your engineering team and configure their access.</p>
             </div>
 
-            {/* 🌟 CARD 1: Invite Form */}
+            {/* CARD 1: Invite Form */}
             <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden mb-8">
                 <div className="p-6 sm:p-8 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
                     <div>
@@ -113,9 +112,7 @@ export default function TeamManagementPage() {
                 <div className="p-6 sm:p-8">
                     <form onSubmit={handleInvite} className="max-w-2xl">
                         <div className="mb-6">
-                            <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                Email Address
-                            </label>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
                             <div className="relative">
                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                     <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -152,7 +149,10 @@ export default function TeamManagementPage() {
                 </div>
             </div>
 
-            {/* 🌟 CARD 2: Active Team Roster */}
+            {/* CARD 2: Project Assignment */}
+            <AssignmentForm developers={teamMembers} workflows={workflows} />
+
+            {/* CARD 3: Active Team Roster */}
             <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
                 <div className="p-6 sm:p-8 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
                     <div>
@@ -167,7 +167,7 @@ export default function TeamManagementPage() {
                 </div>
                 
                 <div className="p-0">
-                    {loadingTeam ? (
+                    {loadingData ? (
                         <div className="p-12 text-center text-gray-500 flex flex-col items-center">
                             <svg className="animate-spin h-8 w-8 text-indigo-500 mb-4" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -182,8 +182,6 @@ export default function TeamManagementPage() {
                             {teamMembers.map((member) => (
                                 <li key={member.id} className="p-6 sm:p-8 hover:bg-gray-50/50 transition-colors">
                                     <div className="flex items-center justify-between">
-                                        
-                                        {/* Avatar and Name */}
                                         <div className="flex items-center">
                                             <div className="h-12 w-12 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-lg shrink-0">
                                                 {member.full_name ? member.full_name.charAt(0).toUpperCase() : member.email.charAt(0).toUpperCase()}
@@ -196,7 +194,6 @@ export default function TeamManagementPage() {
                                             </div>
                                         </div>
 
-                                        {/* Status Badges */}
                                         <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-4">
                                             <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
                                                 member.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
@@ -207,11 +204,9 @@ export default function TeamManagementPage() {
                                             <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
                                                 member.full_name ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
                                             }`}>
-                                                {/* If they have a name, they've finished onboarding! */}
                                                 {member.full_name ? 'Active' : 'Pending'}
                                             </span>
                                         </div>
-
                                     </div>
                                 </li>
                             ))}
