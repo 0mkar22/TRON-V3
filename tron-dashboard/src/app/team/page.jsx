@@ -170,7 +170,11 @@ export default function TeamManagementPage() {
             {/* CARD 2: Project Assignment */}
             <div onClick={fetchDashboardData}>
                 {/* Wrapping in a div with onClick as a simple hack to refresh the list when AssignmentForm submits */}
-                <AssignmentForm developers={teamMembers} workflows={workflows} />
+                <AssignmentForm 
+                developers={teamMembers} 
+                workflows={workflows} 
+                onSuccess={fetchDashboardData} 
+            />
             </div>
 
             {/* 🌟 CARD 3: Active Workflow Assignments (NEW) */}

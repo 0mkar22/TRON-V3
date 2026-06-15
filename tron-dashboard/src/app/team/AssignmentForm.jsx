@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { assignDeveloperAction } from './actions';
 
-export default function AssignmentForm({ developers = [], workflows = [] }) {
+export default function AssignmentForm({ developers = [], workflows = [], onSuccess }) {
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState({ type: '', message: '' });
 
@@ -25,6 +25,7 @@ export default function AssignmentForm({ developers = [], workflows = [] }) {
             });
             if (result.success) {
                 e.target.reset(); 
+                if (onSuccess) onSuccess(); 
             }
         } catch (err) {
             setStatus({ type: 'error', message: "Failed to assign developer." });
