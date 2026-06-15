@@ -45,6 +45,7 @@ func ConnectDB() {
 		&models.User{},
 		&models.Repository{},
 		&models.Workflow{},
+		&models.ProjectAssignment{},
 	)
 	if err != nil {
 		log.Fatalf("Failed to migrate database structures: %v\n", err)
