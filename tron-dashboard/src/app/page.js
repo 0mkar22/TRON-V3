@@ -132,7 +132,8 @@ export default async function Home() {
                                 {workflows.map((workflow) => {
                                     // 🌟 DYNAMIC UI CHECK
                                     const isJira = workflow.pm_provider === 'jira';
-                                    const pmIcon = isJira ? '📊' : '⛺';
+                                    const isLinear = workflow.pm_provider === 'linear';
+                                    const pmIcon = isJira ? '📊' : (isLinear ? '⧓' : '⛺');
 
                                     return (
                                         <tr key={workflow.id} className="hover:bg-gray-50/50 transition-colors">
@@ -248,7 +249,8 @@ export default async function Home() {
                      {workflows.map((workflow) => {
                          // 🌟 DYNAMIC UI CHECK FOR DEV VIEW
                          const isJira = workflow.pm_provider === 'jira';
-                         const pmIcon = isJira ? '📊' : '⛺';
+                         const isLinear = workflow.pm_provider === 'linear';
+                         const pmIcon = isJira ? '📊' : (isLinear ? '⧓' : '⛺');
 
                          return (
                              <li key={workflow.id} className="p-6 flex items-center justify-between hover:bg-gray-50/50 transition-colors">
