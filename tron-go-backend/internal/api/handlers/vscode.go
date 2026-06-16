@@ -155,7 +155,7 @@ func getRepoAndOrchestrator(repoName string, dbUser models.User) (models.Reposit
 
 		if err != nil {
 			fmt.Printf("❌ [DB FATAL] Developer is not assigned to this repository! Error: %v\n", err)
-			return repo, nil, nil, err
+			return repo, nil, nil, fmt.Errorf("RBAC_BLOCKED") // 🌟 ADDED SPECIFIC ERROR FLAG
 		}
 		repo = assignment.Repository
 	}
@@ -236,6 +236,12 @@ func GetTickets(c *gin.Context) {
 
 	repo, mapping, orch, err := getRepoAndOrchestrator(repoName, dbUser)
 	if err != nil {
+		// 🌟 ADDED 403 FORBIDDEN CATCH
+		if err.Error() == "RBAC_BLOCKED" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access Denied: Not assigned to workflow"})
+			return
+		}
+
 		fmt.Printf("🛑 [ABORT] Returning isMapped: false due to DB error.\n")
 		c.JSON(http.StatusOK, gin.H{"isMapped": false, "tickets": []interface{}{}})
 		return
