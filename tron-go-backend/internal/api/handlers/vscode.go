@@ -139,25 +139,20 @@ func getRepoAndOrchestrator(repoName string, dbUser models.User) (models.Reposit
 
 	fmt.Printf("🔍 [DB TRAP] Searching for Repo: '%s' | OrgID: '%s'\n", repoName, dbUser.OrgID)
 
-	if dbUser.Role == "admin" {
-		// Admins default to the first setup found
-		if err := database.DB.Where("repo_name = ? AND org_id = ?", repoName, dbUser.OrgID).First(&repo).Error; err != nil {
-			fmt.Printf("❌ [DB FATAL] Could not find mapping in database! Error: %v\n", err)
-			return repo, nil, nil, err
-		}
-	} else {
-		// Developers explicitly pull the provider they were assigned to!
-		var assignment models.ProjectAssignment
-		err := database.DB.Preload("Repository").
-			Joins("JOIN repositories ON repositories.id = project_assignments.repository_id").
-			Where("project_assignments.user_id = ? AND repositories.repo_name = ?", dbUser.ID, repoName).
-			First(&assignment).Error
+	// 1. FIRST Check: Is this repository mapped in TRON at all?
+	if err := database.DB.Where("repo_name = ? AND org_id = ?", repoName, dbUser.OrgID).First(&repo).Error; err != nil {
+		fmt.Printf("⚠️ [DB] Repository '%s' is not mapped in the database.\n", repoName)
+		return repo, nil, nil, fmt.Errorf("REPO_NOT_MAPPED")
+	}
 
+	// 2. SECOND Check: If mapped, does this specific Developer have access?
+	if dbUser.Role != "admin" {
+		var assignment models.ProjectAssignment
+		err := database.DB.Where("user_id = ? AND repository_id = ?", dbUser.ID, repo.ID).First(&assignment).Error
 		if err != nil {
-			fmt.Printf("❌ [DB FATAL] Developer is not assigned to this repository! Error: %v\n", err)
-			return repo, nil, nil, fmt.Errorf("RBAC_BLOCKED") // 🌟 ADDED SPECIFIC ERROR FLAG
+			fmt.Printf("❌ [DB FATAL] Developer is not assigned to this repository!\n")
+			return repo, nil, nil, fmt.Errorf("RBAC_BLOCKED")
 		}
-		repo = assignment.Repository
 	}
 
 	fmt.Printf("✅ [DB SUCCESS] Found mapping! Provider: %s | Project Key: %s\n", repo.PMProvider, repo.PMProjectID)
