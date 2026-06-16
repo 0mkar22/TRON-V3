@@ -5,7 +5,6 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-// 🌟 Dynamically fetch from config just like in extension.ts
 const getApiUrl = () => vscode.workspace.getConfiguration('tron').get<string>('backendUrl') || 'https://tron-v3-1.onrender.com';
 
 export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
@@ -15,6 +14,9 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 
     constructor(supabaseClient: any) {
         this.supabase = supabaseClient;
+
+        // 🌟 SAFE REFRESH: Listen to text editor changes (this covers 99% of file switching)
+        vscode.window.onDidChangeActiveTextEditor(() => this.refresh());
     }
 
     refresh(): void {
@@ -27,30 +29,45 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 
     async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
         if (element) {
-            return []; // We are keeping this a flat list for now
+            return []; 
         }
 
-        // 🌟 1. Check if the developer is authenticated!
         const { data: { session } } = await this.supabase.auth.getSession();
 
         if (!session) {
-            // If they aren't logged in, show a Sign In button right in the sidebar!
             const signInItem = new vscode.TreeItem("🔒 Please Sign In", vscode.TreeItemCollapsibleState.None);
             signInItem.description = "Click here to authenticate";
-            signInItem.command = {
-                command: 'tron.signIn',
-                title: 'Sign In'
-            };
+            signInItem.command = { command: 'tron.signIn', title: 'Sign In' };
             return [signInItem];
         }
 
-        // 🌟 2. If logged in, fetch the Git Repo Name
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders) {
             return [new vscode.TreeItem("Open a workspace to see tasks")];
         }
 
-        const cwd = workspaceFolders[0].uri.fsPath;
+        // 🌟 DETECTOR: Resolve exact workspace folder safely
+        let cwd = '';
+
+        if (vscode.window.activeTextEditor) {
+            const activeWorkspace = vscode.workspace.getWorkspaceFolder(vscode.window.activeTextEditor.document.uri);
+            if (activeWorkspace) {
+                cwd = activeWorkspace.uri.fsPath;
+            }
+        }
+
+        // If single root, it's safe to default to the workspace root when no files are open
+        if (!cwd && workspaceFolders.length === 1) {
+            cwd = workspaceFolders[0].uri.fsPath;
+        }
+
+        // If it's multi-root and no folder context can be safely extracted, ask user to explicitly focus a file
+        if (!cwd) {
+            const multiRootItem = new vscode.TreeItem("📂 Click any code file to sync tasks", vscode.TreeItemCollapsibleState.None);
+            multiRootItem.description = "Multi-root workspace detected";
+            return [multiRootItem];
+        }
+
         let repoName = '';
 
         try {
@@ -67,19 +84,10 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
             return [new vscode.TreeItem("Could not detect GitHub repository")];
         }
 
-        // ==========================================
-        // 🚨 VISUAL DEBUG TRAP 🚨
-        // ==========================================
-        console.log(`🐛 [DEBUG] Extracted Repo Name: "${repoName}"`);
-        // ==========================================
-
-        // 🌟 3. Fetch Tickets securely
         try {
             const encodedRepo = encodeURIComponent(repoName);
-            
             const response = await axios.get(`/api/project/tickets?repo=${encodedRepo}`);
             
-            // 🌟 REVERTED: If isMapped is false, it means the repo isn't in the database at all.
             if (response.data.isMapped === false) {
                 const unmappedItem = new vscode.TreeItem("⚠️ This repository is not mapped in TRON", vscode.TreeItemCollapsibleState.None);
                 unmappedItem.description = "Link it in the TRON dashboard";
@@ -97,7 +105,6 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
                 const item = new vscode.TreeItem(`[${t.state}] ${t.title}`, vscode.TreeItemCollapsibleState.None);
                 item.description = `ID: ${t.id}`;
                 item.tooltip = t.description;
-                
                 item.contextValue = 'tronTask'; 
                 
                 (item as any).taskId = t.id;
@@ -121,7 +128,6 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
                  return [authErrorItem];
             }
             
-            // Catch strict forbidden access from backend RBAC
             if (error.response?.status === 403) {
                 const forbiddenItem = new vscode.TreeItem("⛔ Access Denied", vscode.TreeItemCollapsibleState.None);
                 forbiddenItem.description = "You are not assigned to this workflow";
