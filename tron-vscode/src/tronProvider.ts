@@ -79,11 +79,11 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
             
             const response = await axios.get(`/api/project/tickets?repo=${encodedRepo}`);
             
-            // 🌟 THE RBAC FIX: Tell the user exactly why no tickets are loading!
+            // 🌟 REVERTED: If isMapped is false, it means the repo isn't in the database at all.
             if (response.data.isMapped === false) {
-                const unassignedItem = new vscode.TreeItem("⛔ Workflow Not Assigned", vscode.TreeItemCollapsibleState.None);
-                unassignedItem.description = "Ask your Admin to grant you access";
-                return [unassignedItem];
+                const unmappedItem = new vscode.TreeItem("⚠️ This repository is not mapped in TRON", vscode.TreeItemCollapsibleState.None);
+                unmappedItem.description = "Link it in the TRON dashboard";
+                return [unmappedItem];
             }
 
             const tickets = response.data.tickets || [];
