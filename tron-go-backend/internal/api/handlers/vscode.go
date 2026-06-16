@@ -41,7 +41,6 @@ func BroadcastLog(source, message, color string) {
 	clientMutex.Lock()
 	defer clientMutex.Unlock()
 	for _, ch := range clientChans {
-		// Non-blocking send to prevent a stuck client from freezing the broadcaster
 		select {
 		case ch <- string(logBytes):
 		default:
@@ -49,13 +48,12 @@ func BroadcastLog(source, message, color string) {
 	}
 }
 
-// StreamLogs handles the SSE connection from VS Code
 func StreamLogs(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
 
-	clientChan := make(chan string, 10) // Buffer of 10 messages
+	clientChan := make(chan string, 10)
 	clientMutex.Lock()
 	clientChans = append(clientChans, clientChan)
 	clientMutex.Unlock()
@@ -72,7 +70,6 @@ func StreamLogs(c *gin.Context) {
 		close(clientChan)
 	}()
 
-	// Initial Connection Message
 	initMsg := `{"id": "connected", "time": "` + time.Now().Format("15:04:05") + `", "source": "System", "message": "Connected to TRON Live Stream...", "color": "text-emerald-500"}`
 	fmt.Fprintf(c.Writer, "data: %s\n\n", initMsg)
 	c.Writer.Flush()
@@ -81,7 +78,6 @@ func StreamLogs(c *gin.Context) {
 	for {
 		select {
 		case <-notify:
-			// Client disconnected
 			return
 		case msg := <-clientChan:
 			fmt.Fprintf(c.Writer, "data: %s\n\n", msg)
@@ -90,8 +86,6 @@ func StreamLogs(c *gin.Context) {
 	}
 }
 
-// basecampAdapterWrapper bridges the old BasecampAdapter implementation
-// with the updated services.PMAdapter interface signature.
 type basecampAdapterWrapper struct {
 	*adapters.BasecampAdapter
 }
@@ -101,16 +95,69 @@ func (w *basecampAdapterWrapper) AssignDeveloper(taskID, projectID, developer, o
 }
 
 // ==========================================
-// 2. HELPER: LOAD REPO & ORCHESTRATOR (WITH TRAPS)
+// 🛡️ AUTH HELPER: Extract User from JWT
 // ==========================================
-func getRepoAndOrchestrator(repoName string, orgID string) (models.Repository, map[string]interface{}, *services.PMOrchestrator, error) {
+func getUserFromToken(c *gin.Context) (models.User, error) {
+	var dbUser models.User
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+		return dbUser, fmt.Errorf("missing or invalid token")
+	}
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+
+	supabaseURL := os.Getenv("SUPABASE_URL")
+	supabaseKey := os.Getenv("SUPABASE_ANON_KEY")
+
+	req, _ := http.NewRequest("GET", supabaseURL+"/auth/v1/user", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("apikey", supabaseKey)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	res, err := client.Do(req)
+	if err != nil || res.StatusCode != http.StatusOK {
+		return dbUser, fmt.Errorf("invalid session")
+	}
+	defer res.Body.Close()
+
+	var authUser struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(res.Body).Decode(&authUser)
+
+	if err := database.DB.Where("id = ?", authUser.ID).First(&dbUser).Error; err != nil {
+		return dbUser, fmt.Errorf("user not found in database")
+	}
+
+	return dbUser, nil
+}
+
+// ==========================================
+// 2. HELPER: LOAD REPO & ORCHESTRATOR (RBAC AWARE)
+// ==========================================
+func getRepoAndOrchestrator(repoName string, dbUser models.User) (models.Repository, map[string]interface{}, *services.PMOrchestrator, error) {
 	var repo models.Repository
 
-	fmt.Printf("🔍 [DB TRAP] Searching for Repo: '%s' | OrgID: '%s'\n", repoName, orgID)
+	fmt.Printf("🔍 [DB TRAP] Searching for Repo: '%s' | OrgID: '%s'\n", repoName, dbUser.OrgID)
 
-	if err := database.DB.Where("repo_name = ? AND org_id = ?", repoName, orgID).First(&repo).Error; err != nil {
-		fmt.Printf("❌ [DB FATAL] Could not find mapping in database! Error: %v\n", err)
-		return repo, nil, nil, err
+	if dbUser.Role == "admin" {
+		// Admins default to the first setup found
+		if err := database.DB.Where("repo_name = ? AND org_id = ?", repoName, dbUser.OrgID).First(&repo).Error; err != nil {
+			fmt.Printf("❌ [DB FATAL] Could not find mapping in database! Error: %v\n", err)
+			return repo, nil, nil, err
+		}
+	} else {
+		// Developers explicitly pull the provider they were assigned to!
+		var assignment models.ProjectAssignment
+		err := database.DB.Preload("Repository").
+			Joins("JOIN repositories ON repositories.id = project_assignments.repository_id").
+			Where("project_assignments.user_id = ? AND repositories.repo_name = ?", dbUser.ID, repoName).
+			First(&assignment).Error
+
+		if err != nil {
+			fmt.Printf("❌ [DB FATAL] Developer is not assigned to this repository! Error: %v\n", err)
+			return repo, nil, nil, err
+		}
+		repo = assignment.Repository
 	}
 
 	fmt.Printf("✅ [DB SUCCESS] Found mapping! Provider: %s | Project Key: %s\n", repo.PMProvider, repo.PMProjectID)
@@ -125,9 +172,8 @@ func getRepoAndOrchestrator(repoName string, orgID string) (models.Repository, m
 		orch = services.NewPMOrchestrator(adapters.NewBasecampAdapter())
 	} else if repo.PMProvider == "jira" {
 		fmt.Println("📊 [ADAPTER TRAP] Booting Jira Logic...")
-
 		var integration models.Integration
-		if err := database.DB.Where("org_id = ? AND provider = 'jira'", orgID).First(&integration).Error; err != nil {
+		if err := database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.OrgID).First(&integration).Error; err != nil {
 			fmt.Printf("❌ [VAULT FATAL] Could not find Jira keys in integrations table! Error: %v\n", err)
 		} else {
 			fmt.Println("✅ [VAULT SUCCESS] Retrieved Jira Integration Keys.")
@@ -140,64 +186,28 @@ func getRepoAndOrchestrator(repoName string, orgID string) (models.Repository, m
 }
 
 // ==========================================
-// 1. VS CODE: FETCH ASSIGNED PROJECTS (RBAC)
+// 1. VS CODE: FETCH ASSIGNED PROJECTS
 // ==========================================
 func GetProjects(c *gin.Context) {
-	// 1. Extract the Supabase JWT from the Authorization header
-	authHeader := c.GetHeader("Authorization")
-	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: Missing or invalid token"})
-		return
-	}
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	// 2. Verify the token with Supabase and get the User ID
-	supabaseURL := os.Getenv("SUPABASE_URL")
-	supabaseKey := os.Getenv("SUPABASE_ANON_KEY")
-
-	req, _ := http.NewRequest("GET", supabaseURL+"/auth/v1/user", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("apikey", supabaseKey)
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	res, err := client.Do(req)
-	if err != nil || res.StatusCode != http.StatusOK {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: Invalid session"})
-		return
-	}
-	defer res.Body.Close()
-
-	var authUser struct {
-		ID string `json:"id"`
-	}
-	json.NewDecoder(res.Body).Decode(&authUser)
-
-	// 3. Look up the User in our Database to get their Role & OrgID
-	var dbUser models.User
-	if err := database.DB.Where("id = ?", authUser.ID).First(&dbUser).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found in database"})
+	dbUser, err := getUserFromToken(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
 	var repos []models.Repository
 	var projectNames []string
 
-	// 4. THE RBAC MATRIX
 	if dbUser.Role == "admin" {
-		// Admins get to see everything in the organization
 		fmt.Printf("👑 [RBAC] Admin %s requested projects. Returning ALL repos.\n", dbUser.Email)
 		database.DB.Select("repo_name").Where("org_id = ?", dbUser.OrgID).Find(&repos)
-
 		for _, repo := range repos {
 			projectNames = append(projectNames, repo.RepoName)
 		}
 	} else {
-		// Developers ONLY see what is in the project_assignments table
 		fmt.Printf("👷 [RBAC] Developer %s requested projects. Filtering by assignments.\n", dbUser.Email)
-
 		var assignments []models.ProjectAssignment
 		database.DB.Preload("Repository").Where("user_id = ? AND org_id = ?", dbUser.ID, dbUser.OrgID).Find(&assignments)
-
 		for _, assignment := range assignments {
 			if assignment.Repository.RepoName != "" {
 				projectNames = append(projectNames, assignment.Repository.RepoName)
@@ -205,25 +215,26 @@ func GetProjects(c *gin.Context) {
 		}
 	}
 
-	// 5. Send the strictly filtered list back to VS Code
 	c.JSON(http.StatusOK, gin.H{"projects": projectNames})
 }
 
 // ==========================================
-// 2. VS CODE: FETCH TICKETS (WITH TRAPS)
+// 2. VS CODE: FETCH TICKETS
 // ==========================================
 func GetTickets(c *gin.Context) {
 	repoName := c.Query("repo")
-	orgID := c.GetString("orgId")
 
 	fmt.Println("\n================================================")
 	fmt.Printf("📥 [VS CODE INCOMING] Requesting tickets for: %s\n", repoName)
 
-	if orgID == "" {
-		fmt.Println("🚨 [AUTH FATAL] orgId is EMPTY! The VS Code extension might not be sending the Bearer token!")
+	dbUser, err := getUserFromToken(c)
+	if err != nil {
+		fmt.Printf("🚨 [AUTH FATAL] %v\n", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
 	}
 
-	repo, mapping, orch, err := getRepoAndOrchestrator(repoName, orgID)
+	repo, mapping, orch, err := getRepoAndOrchestrator(repoName, dbUser)
 	if err != nil {
 		fmt.Printf("🛑 [ABORT] Returning isMapped: false due to DB error.\n")
 		c.JSON(http.StatusOK, gin.H{"isMapped": false, "tickets": []interface{}{}})
@@ -236,22 +247,16 @@ func GetTickets(c *gin.Context) {
 		return
 	}
 
-	// ---------------------------------------------------------
-	// JIRA ROUTE
-	// ---------------------------------------------------------
 	if repo.PMProvider == "jira" {
 		fmt.Println("🚀 [API TRAP] Fetching REAL tickets from Jira API...")
-
 		var integration models.Integration
-		database.DB.Where("org_id = ? AND provider = 'jira'", orgID).First(&integration)
-
+		database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.OrgID).First(&integration)
 		var tickets []services.Ticket
 
 		if integration.SecretID != nil {
 			decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
 			var creds map[string]string
 			json.Unmarshal([]byte(decryptedJSON), &creds)
-
 			jiraAPI := adapters.NewJiraAdapter(creds["baseUrl"], creds["email"], creds["apiToken"])
 			tickets = jiraAPI.GetTickets(repo.PMProjectID)
 		}
@@ -260,31 +265,20 @@ func GetTickets(c *gin.Context) {
 			tickets = make([]services.Ticket, 0)
 		}
 
-		fmt.Printf("✅ [JIRA SUCCESS] Returning %d real Atlassian tickets to VS Code.\n", len(tickets))
-		c.JSON(http.StatusOK, gin.H{
-			"isMapped": true,
-			"tickets":  tickets,
-		})
-
+		fmt.Printf("✅ [JIRA SUCCESS] Returning %d tickets.\n", len(tickets))
+		c.JSON(http.StatusOK, gin.H{"isMapped": true, "tickets": tickets})
 		fmt.Println("================================================")
 		return
 	}
 
-	// ---------------------------------------------------------
-	// LINEAR ROUTE
-	// ---------------------------------------------------------
 	if repo.PMProvider == "linear" {
 		fmt.Println("🚀 [API TRAP] Fetching REAL tickets from Linear API...")
-
 		var integration models.Integration
-		database.DB.Where("org_id = ? AND provider = 'linear'", orgID).First(&integration)
-
+		database.DB.Where("org_id = ? AND provider = 'linear'", dbUser.OrgID).First(&integration)
 		var tickets []services.Ticket
 
 		if integration.SecretID != nil {
 			decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
-
-			// 🛡️ DYNAMIC EXTRACTION: Handle both raw strings and JSON objects
 			token := decryptedJSON
 			var creds map[string]string
 			if json.Unmarshal([]byte(decryptedJSON), &creds) == nil {
@@ -297,7 +291,6 @@ func GetTickets(c *gin.Context) {
 			}
 
 			linearAPI := adapters.NewLinearAdapter(token)
-
 			teamKey := ""
 			if val, ok := mapping["team_key"].(string); ok {
 				teamKey = val
@@ -312,29 +305,20 @@ func GetTickets(c *gin.Context) {
 			tickets = make([]services.Ticket, 0)
 		}
 
-		fmt.Printf("✅ [LINEAR SUCCESS] Returning %d real Linear tickets to VS Code.\n", len(tickets))
-		c.JSON(http.StatusOK, gin.H{
-			"isMapped": true,
-			"tickets":  tickets,
-		})
-
+		fmt.Printf("✅ [LINEAR SUCCESS] Returning %d tickets.\n", len(tickets))
+		c.JSON(http.StatusOK, gin.H{"isMapped": true, "tickets": tickets})
 		fmt.Println("================================================")
 		return
 	}
 
-	// ---------------------------------------------------------
-	// BASECAMP ROUTE (FALLBACK)
-	// ---------------------------------------------------------
 	fmt.Println("🚀 [API TRAP] Fetching tickets from Basecamp API...")
-	tickets := orch.GetTickets(repo.PMProvider, repo.PMProjectID, orgID, mapping)
-
+	tickets := orch.GetTickets(repo.PMProvider, repo.PMProjectID, dbUser.OrgID, mapping)
 	if tickets == nil {
 		tickets = make([]services.Ticket, 0)
 	}
 
-	fmt.Printf("✅ [API SUCCESS] Returning %d tickets to VS Code.\n", len(tickets))
+	fmt.Printf("✅ [API SUCCESS] Returning %d tickets.\n", len(tickets))
 	fmt.Println("================================================")
-
 	c.JSON(http.StatusOK, gin.H{"isMapped": true, "tickets": tickets})
 }
 
@@ -352,12 +336,11 @@ func SuggestTasks(c *gin.Context) {
 
 	aiAPI := adapters.NewAIAdapter()
 	suggestions := aiAPI.GenerateTaskSuggestions(body.CodeDiff)
-
 	c.JSON(http.StatusOK, gin.H{"suggestions": suggestions})
 }
 
 // ==========================================
-// 4. VS CODE: CREATE TASK (SILENT)
+// 4. VS CODE: CREATE TASK
 // ==========================================
 func CreateTask(c *gin.Context) {
 	var body struct {
@@ -365,48 +348,47 @@ func CreateTask(c *gin.Context) {
 		RepoName  string `json:"repoName"`
 	}
 	c.ShouldBindJSON(&body)
-	orgID := c.GetString("orgId")
 
-	repo, mapping, orch, err := getRepoAndOrchestrator(body.RepoName, orgID)
+	dbUser, err := getUserFromToken(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	repo, mapping, orch, err := getRepoAndOrchestrator(body.RepoName, dbUser)
 	if err != nil || repo.PMProvider == "none" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No PM tool configured in database."})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No PM tool configured or assigned."})
 		return
 	}
 
 	var resolvedTaskID string
 
 	if repo.PMProvider == "jira" {
-		fmt.Printf("🏗️ [JIRA] VS Code requested a new ticket creation for: %s\n", body.TaskInput)
-
+		fmt.Printf("🏗️ [JIRA] Creating ticket for: %s\n", body.TaskInput)
 		var integration models.Integration
-		database.DB.Where("org_id = ? AND provider = 'jira'", orgID).First(&integration)
+		database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.OrgID).First(&integration)
 
 		if integration.SecretID != nil {
 			decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
 			var creds map[string]string
 			json.Unmarshal([]byte(decryptedJSON), &creds)
-
 			jiraAPI := adapters.NewJiraAdapter(creds["baseUrl"], creds["email"], creds["apiToken"])
 
 			newID, err := jiraAPI.CreateTicket(repo.PMProjectID, body.TaskInput)
 			if err == nil && newID != "" {
 				resolvedTaskID = newID
 			} else {
-				fmt.Printf("❌ [JIRA] Failed to create ticket: %v\n", err)
 				re := regexp.MustCompile(`[^a-zA-Z0-9]`)
 				resolvedTaskID = strings.ToLower(re.ReplaceAllString(body.TaskInput, "-"))
 			}
 		}
 	} else if repo.PMProvider == "linear" {
-		fmt.Printf("🏗️ [LINEAR] VS Code requested a new ticket creation for: %s\n", body.TaskInput)
-
+		fmt.Printf("🏗️ [LINEAR] Creating ticket for: %s\n", body.TaskInput)
 		var integration models.Integration
-		database.DB.Where("org_id = ? AND provider = 'linear'", orgID).First(&integration)
+		database.DB.Where("org_id = ? AND provider = 'linear'", dbUser.OrgID).First(&integration)
 
 		if integration.SecretID != nil {
 			decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
-
-			// 🛡️ DYNAMIC EXTRACTION
 			token := decryptedJSON
 			var creds map[string]string
 			if json.Unmarshal([]byte(decryptedJSON), &creds) == nil {
@@ -419,25 +401,23 @@ func CreateTask(c *gin.Context) {
 			}
 
 			linearAPI := adapters.NewLinearAdapter(token)
-
 			newID, err := linearAPI.CreateTicket(repo.PMProjectID, body.TaskInput)
 			if err == nil && newID != "" {
 				resolvedTaskID = newID
 			} else {
-				fmt.Printf("❌ [LINEAR] Failed to create ticket: %v\n", err)
 				re := regexp.MustCompile(`[^a-zA-Z0-9]`)
 				resolvedTaskID = strings.ToLower(re.ReplaceAllString(body.TaskInput, "-"))
 			}
 		}
 	} else {
-		resolvedTaskID, _ = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping)
+		resolvedTaskID, _ = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, dbUser.OrgID, mapping)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"resolvedId": resolvedTaskID})
 }
 
 // ==========================================
-// 5. VS CODE: START TASK (MOVE & ASSIGN)
+// 5. VS CODE: START TASK
 // ==========================================
 func StartTask(c *gin.Context) {
 	var body struct {
@@ -446,24 +426,25 @@ func StartTask(c *gin.Context) {
 		Developer string `json:"developer"`
 	}
 	c.ShouldBindJSON(&body)
-	orgID := c.GetString("orgId")
 
-	repo, mapping, orch, err := getRepoAndOrchestrator(body.RepoName, orgID)
+	dbUser, err := getUserFromToken(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	repo, mapping, orch, err := getRepoAndOrchestrator(body.RepoName, dbUser)
 
 	re := regexp.MustCompile(`[^a-zA-Z0-9]`)
 	resolvedTaskID := strings.ToLower(re.ReplaceAllString(body.TaskInput, "-"))
 
 	if err == nil && repo.PMProvider != "none" {
-
 		if repo.PMProvider == "jira" {
 			ticketID := adapters.ExtractTicketID(body.TaskInput)
-
 			if ticketID != "" {
 				resolvedTaskID = ticketID
-				fmt.Printf("🚚 [JIRA] Starting task %s. Searching for 'In Progress' transition...\n", ticketID)
-
 				var integration models.Integration
-				database.DB.Where("org_id = ? AND provider = 'jira'", orgID).First(&integration)
+				database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.OrgID).First(&integration)
 
 				if integration.SecretID != nil {
 					decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
@@ -483,10 +464,8 @@ func StartTask(c *gin.Context) {
 					}
 				}
 			} else {
-				fmt.Printf("🏗️ [JIRA] No ID found. Creating a brand new ticket for: %s\n", body.TaskInput)
-
 				var integration models.Integration
-				database.DB.Where("org_id = ? AND provider = 'jira'", orgID).First(&integration)
+				database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.OrgID).First(&integration)
 
 				if integration.SecretID != nil {
 					decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
@@ -494,11 +473,9 @@ func StartTask(c *gin.Context) {
 					json.Unmarshal([]byte(decryptedJSON), &creds)
 
 					jiraAPI := adapters.NewJiraAdapter(creds["baseUrl"], creds["email"], creds["apiToken"])
-
 					newID, err := jiraAPI.CreateTicket(repo.PMProjectID, body.TaskInput)
 					if err == nil && newID != "" {
 						resolvedTaskID = newID
-
 						transitions, _ := jiraAPI.GetAvailableTransitions(newID)
 						for _, t := range transitions {
 							name, _ := t["name"].(string)
@@ -508,22 +485,17 @@ func StartTask(c *gin.Context) {
 								break
 							}
 						}
-					} else {
-						fmt.Printf("❌ [JIRA] Creation failed! Falling back to raw text. Error: %v\n", err)
 					}
 				}
 			}
 
 		} else if repo.PMProvider == "linear" {
 			ticketID := adapters.ExtractTicketID(body.TaskInput)
-
 			var integration models.Integration
-			database.DB.Where("org_id = ? AND provider = 'linear'", orgID).First(&integration)
+			database.DB.Where("org_id = ? AND provider = 'linear'", dbUser.OrgID).First(&integration)
 
 			if integration.SecretID != nil {
 				decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
-
-				// 🛡️ DYNAMIC EXTRACTION
 				token := decryptedJSON
 				var creds map[string]string
 				if json.Unmarshal([]byte(decryptedJSON), &creds) == nil {
@@ -539,8 +511,6 @@ func StartTask(c *gin.Context) {
 
 				if ticketID != "" {
 					resolvedTaskID = ticketID
-					fmt.Printf("🚚 [LINEAR] Starting task %s. Searching for 'In Progress' state...\n", ticketID)
-
 					parts := strings.Split(ticketID, "-")
 					if len(parts) == 2 {
 						states, _ := linearAPI.GetAvailableStates(parts[0])
@@ -553,12 +523,9 @@ func StartTask(c *gin.Context) {
 						}
 					}
 				} else {
-					fmt.Printf("🏗️ [LINEAR] No ID found. Creating a brand new ticket for: %s\n", body.TaskInput)
 					newID, err := linearAPI.CreateTicket(repo.PMProjectID, body.TaskInput)
-
 					if err == nil && newID != "" {
 						resolvedTaskID = newID
-
 						parts := strings.Split(newID, "-")
 						if len(parts) == 2 {
 							states, _ := linearAPI.GetAvailableStates(parts[0])
@@ -570,15 +537,13 @@ func StartTask(c *gin.Context) {
 								}
 							}
 						}
-					} else {
-						fmt.Printf("❌ [LINEAR] Creation failed! Error: %v\n", err)
 					}
 				}
 			}
 
 		} else {
 			var exactCardUrl string
-			resolvedTaskID, exactCardUrl = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, orgID, mapping)
+			resolvedTaskID, exactCardUrl = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, body.TaskInput, dbUser.OrgID, mapping)
 
 			extractID := func(key string) string {
 				if val, ok := mapping[key].(string); ok {
@@ -595,19 +560,13 @@ func StartTask(c *gin.Context) {
 			}
 
 			if inProgressID != "" && exactCardUrl != "" {
-				fmt.Printf("🚚 [API] Moving task using exact URL to In Progress column (%s)...\n", inProgressID)
-				orch.UpdateTicketStatus(repo.PMProvider, repo.PMProjectID, exactCardUrl, inProgressID, orgID)
-			} else {
-				fmt.Printf("⚠️ [API] Could not find 'in_progress' mapping or exact URL!\n")
+				orch.UpdateTicketStatus(repo.PMProvider, repo.PMProjectID, exactCardUrl, inProgressID, dbUser.OrgID)
 			}
-
 			if body.Developer != "" && exactCardUrl != "" {
-				fmt.Printf("👤 [API] Attempting to assign developer: %s\n", body.Developer)
-				orch.AssignTicket(repo.PMProvider, repo.PMProjectID, exactCardUrl, body.Developer, orgID)
+				orch.AssignTicket(repo.PMProvider, repo.PMProjectID, exactCardUrl, body.Developer, dbUser.OrgID)
 			}
 		}
 
-		// Push to Worker Queue (Common to Jira, Linear, and Basecamp)
 		queuePayload := map[string]interface{}{
 			"eventType": "local_start",
 			"payload": map[string]interface{}{
@@ -651,7 +610,6 @@ func FetchDiscordChannels(c *gin.Context) {
 
 	client := &http.Client{Timeout: 10 * time.Second}
 
-	// 1. Fetch Guilds
 	req, _ := http.NewRequest("GET", "https://discord.com/api/v10/users/@me/guilds", nil)
 	req.Header.Set("Authorization", "Bot "+body.BotToken)
 	guildsRes, err := client.Do(req)
@@ -672,7 +630,6 @@ func FetchDiscordChannels(c *gin.Context) {
 
 	guildID := fmt.Sprintf("%v", guilds[0]["id"])
 
-	// 2. Fetch Channels
 	req, _ = http.NewRequest("GET", fmt.Sprintf("https://discord.com/api/v10/guilds/%s/channels", guildID), nil)
 	req.Header.Set("Authorization", "Bot "+body.BotToken)
 	channelsRes, err := client.Do(req)
@@ -687,7 +644,7 @@ func FetchDiscordChannels(c *gin.Context) {
 
 	var textChannels []map[string]interface{}
 	for _, ch := range allChannels {
-		if fmt.Sprintf("%v", ch["type"]) == "0" { // Type 0 is Text Channel
+		if fmt.Sprintf("%v", ch["type"]) == "0" {
 			textChannels = append(textChannels, map[string]interface{}{
 				"id":   ch["id"],
 				"name": ch["name"],
