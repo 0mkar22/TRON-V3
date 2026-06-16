@@ -9,7 +9,6 @@ const execAsync = promisify(exec);
 const getApiUrl = () => vscode.workspace.getConfiguration('tron').get<string>('backendUrl') || 'https://tron-v3-1.onrender.com';
 
 export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
-    // 🌟 FIX: Replaced 'void' with 'null' to fix the TS2416 type error
     private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | null> = new vscode.EventEmitter<vscode.TreeItem | undefined | null>();
     readonly onDidChangeTreeData: vscode.Event<vscode.TreeItem | undefined | null> = this._onDidChangeTreeData.event;
     private supabase: any;
@@ -19,7 +18,7 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     }
 
     refresh(): void {
-        this._onDidChangeTreeData.fire(undefined); // 🌟 Pass undefined to trigger a full refresh
+        this._onDidChangeTreeData.fire(undefined); 
     }
 
     getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
@@ -72,22 +71,19 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
         // 🚨 VISUAL DEBUG TRAP 🚨
         // ==========================================
         console.log(`🐛 [DEBUG] Extracted Repo Name: "${repoName}"`);
-        vscode.window.showInformationMessage(`🐛 [DEBUG] Asking Go Backend for: "${repoName}"`);
         // ==========================================
 
-        // 🌟 3. Fetch Tickets securely (Axios interceptor will attach the token)
+        // 🌟 3. Fetch Tickets securely
         try {
             const encodedRepo = encodeURIComponent(repoName);
             
-            // 🌟 THE FIX: Just use the path! Axios interceptor handles the domain automatically.
-            // AND we switched it to use the ?repo= query parameter!
             const response = await axios.get(`/api/project/tickets?repo=${encodedRepo}`);
             
-            // 🌟 THE FIX: Tell the user exactly why no tickets are loading
+            // 🌟 THE RBAC FIX: Tell the user exactly why no tickets are loading!
             if (response.data.isMapped === false) {
-                const unmappedItem = new vscode.TreeItem("⚠️ This repository is not mapped in TRON", vscode.TreeItemCollapsibleState.None);
-                unmappedItem.description = "Link it in the TRON dashboard";
-                return [unmappedItem];
+                const unassignedItem = new vscode.TreeItem("⛔ Workflow Not Assigned", vscode.TreeItemCollapsibleState.None);
+                unassignedItem.description = "Ask your Admin to grant you access";
+                return [unassignedItem];
             }
 
             const tickets = response.data.tickets || [];
@@ -102,18 +98,14 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
                 item.description = `ID: ${t.id}`;
                 item.tooltip = t.description;
                 
-                // Add the play button context value for the "Start Task" command
                 item.contextValue = 'tronTask'; 
                 
-                // Store raw data for the command execution
                 (item as any).taskId = t.id;
                 (item as any).rawTitle = t.title;
                 
-                // Make the entire ticket clickable!
                 item.command = {
                     command: 'tron.startTaskFromTree',
                     title: 'Start Task',
-                    // Pass the exact data the command needs
                     arguments: [{ taskId: t.id, rawTitle: t.title }] 
                 };
                 
@@ -122,12 +114,20 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 
         } catch (error: any) {
             console.error("Fetch error:", error);
+            
             if (error.response?.status === 401) {
-                 // Double-check fallback: if the backend rejects the token, prompt sign-in
                  const authErrorItem = new vscode.TreeItem("⚠️ Session Expired", vscode.TreeItemCollapsibleState.None);
                  authErrorItem.command = { command: 'tron.signIn', title: 'Sign In' };
                  return [authErrorItem];
             }
+            
+            // Catch strict forbidden access from backend RBAC
+            if (error.response?.status === 403) {
+                const forbiddenItem = new vscode.TreeItem("⛔ Access Denied", vscode.TreeItemCollapsibleState.None);
+                forbiddenItem.description = "You are not assigned to this workflow";
+                return [forbiddenItem];
+            }
+            
             return [new vscode.TreeItem("Failed to load tasks. Is the backend mapped?")];
         }
     }
