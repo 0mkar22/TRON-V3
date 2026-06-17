@@ -293,7 +293,43 @@ func InviteDeveloper(c *gin.Context) {
 }
 
 // ==========================================
-// 8. LINK REPOSITORY CONFIG
+// 8. TEAM MANAGEMENT: REMOVE DEVELOPER
+// ==========================================
+func RemoveDeveloper(c *gin.Context) {
+	adminOrgID := c.GetString("orgId")
+	targetUserID := c.Param("id")
+
+	// 1. Prevent admins from accidentally removing themselves
+	adminUser, _ := getUserFromToken(c)
+	if adminUser.ID == targetUserID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "You cannot remove yourself from the team."})
+		return
+	}
+
+	// 2. Verify the target user actually belongs to this admin's organization
+	var targetUser models.User
+	if err := database.DB.Where("id = ? AND org_id = ?", targetUserID, adminOrgID).First(&targetUser).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Developer not found in your team."})
+		return
+	}
+
+	// 3. Security Wipe: Delete all explicit repository assignments for this user
+	if err := database.DB.Where("user_id = ?", targetUserID).Delete(&models.ProjectAssignment{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to revoke workflow assignments."})
+		return
+	}
+
+	// 4. Detach from Organization (Sets org_id to blank, returning them to a solo state)
+	if err := database.DB.Model(&targetUser).Update("org_id", "").Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove developer from team."})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Developer successfully removed from the team."})
+}
+
+// ==========================================
+// 9. LINK REPOSITORY CONFIG
 // ==========================================
 func LinkRepository(c *gin.Context) {
 	var body struct {
@@ -330,7 +366,7 @@ func LinkRepository(c *gin.Context) {
 }
 
 // ==========================================
-// 9. BASECAMP PROJECTS
+// 10. BASECAMP PROJECTS
 // ==========================================
 func GetBasecampProjects(c *gin.Context) {
 	orgID := c.GetString("orgId")
@@ -380,7 +416,7 @@ func GetBasecampProjects(c *gin.Context) {
 }
 
 // ==========================================
-// 10. DISCORD STATUS
+// 11. DISCORD STATUS
 // ==========================================
 func GetDiscordStatus(c *gin.Context) {
 	orgID := c.GetString("orgId")
@@ -449,7 +485,7 @@ func GetDiscordStatus(c *gin.Context) {
 }
 
 // ==========================================
-// 11. BASECAMP COLUMNS (ULTRA-ROBUST)
+// 12. BASECAMP COLUMNS (ULTRA-ROBUST)
 // ==========================================
 func GetBasecampColumns(c *gin.Context) {
 	var body struct {
@@ -620,7 +656,7 @@ func GetBasecampColumns(c *gin.Context) {
 }
 
 // ==========================================
-// 12. UNINSTALL GITHUB APP
+// 13. UNINSTALL GITHUB APP
 // ==========================================
 func UninstallGitHubApp(c *gin.Context) {
 	orgID := c.Query("orgId")

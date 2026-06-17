@@ -78,6 +78,7 @@ func main() {
 		api.GET("/admin/dashboard-workflows", handlers.GetDashboardWorkflows)
 		api.GET("/admin/system-status", handlers.GetSystemStatus)
 		api.POST("/admin/invite-developer", handlers.InviteDeveloper)
+		api.DELETE("/admin/team/:id", handlers.RemoveDeveloper)
 
 		// 🔌 Integrations
 		api.POST("/integrations/setup", handlers.SetupIntegration)

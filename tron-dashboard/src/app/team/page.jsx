@@ -13,7 +13,7 @@ export default function TeamManagementPage() {
     
     const [teamMembers, setTeamMembers] = useState([]);
     const [workflows, setWorkflows] = useState([]);
-    const [assignments, setAssignments] = useState([]); // 🌟 NEW STATE
+    const [assignments, setAssignments] = useState([]); 
     const [loadingData, setLoadingData] = useState(true);
     
     const supabase = createClient();
@@ -45,7 +45,7 @@ export default function TeamManagementPage() {
                     .eq('org_id', currentUserData.org_id)
                     .order('created_at', { ascending: false });
 
-                // 🌟 NEW: Fetch Active Assignments
+                // Fetch Active Assignments
                 const { data: assigns } = await supabase
                     .from('project_assignments')
                     .select('*')
@@ -98,12 +98,37 @@ export default function TeamManagementPage() {
         }
     };
 
-    // 🌟 NEW: Handle Revoking Access
+    // Handle Revoking Access
     const handleRevoke = async (assignmentId) => {
         const formData = new FormData();
         formData.append('assignmentId', assignmentId);
         await deleteAssignmentAction(formData);
-        fetchDashboardData(); // Refresh the list instantly
+        fetchDashboardData(); 
+    };
+
+    // 🌟 NEW: Handle Offboarding/Removing Developer
+    const handleRemoveDeveloper = async (userId, userEmail) => {
+        if (!window.confirm(`Are you sure you want to remove ${userEmail} from your team? This will instantly revoke all their repository workflows and clear their workspace configuration.`)) {
+            return;
+        }
+
+        try {
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+            if (sessionError || !session) throw new Error("Authentication session expired. Please sign in again.");
+
+            const API_BASE_URL = process.env.BACKEND_URL || 'https://tron-v3-1.onrender.com';
+
+            const response = await axios.delete(
+                `${API_BASE_URL}/api/admin/team/${userId}`,
+                { headers: { Authorization: `Bearer ${session.access_token}` } }
+            );
+
+            alert(response.data.message);
+            fetchDashboardData(); // Instantly update the roster and clear out matching UI elements
+
+        } catch (error) {
+            alert(error.response?.data?.error || error.message || "Failed to remove user from team.");
+        }
     };
 
     return (
@@ -169,15 +194,14 @@ export default function TeamManagementPage() {
 
             {/* CARD 2: Project Assignment */}
             <div onClick={fetchDashboardData}>
-                {/* Wrapping in a div with onClick as a simple hack to refresh the list when AssignmentForm submits */}
                 <AssignmentForm 
-                developers={teamMembers} 
-                workflows={workflows} 
-                onSuccess={fetchDashboardData} 
-            />
+                    developers={teamMembers} 
+                    workflows={workflows} 
+                    onSuccess={fetchDashboardData} 
+                />
             </div>
 
-            {/* 🌟 CARD 3: Active Workflow Assignments (NEW) */}
+            {/* CARD 3: Active Workflow Assignments */}
             <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden mb-8">
                 <div className="p-6 sm:p-8 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
                     <div>
@@ -186,7 +210,7 @@ export default function TeamManagementPage() {
                     </div>
                     <div className="hidden sm:flex h-12 w-12 bg-sky-50 rounded-full items-center justify-center text-sky-600">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 00Dec-5.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                         </svg>
                     </div>
                 </div>
@@ -279,7 +303,7 @@ export default function TeamManagementPage() {
                                             </div>
                                         </div>
 
-                                        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-4">
+                                        <div className="flex items-center gap-2 sm:gap-4">
                                             <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
                                                 member.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
                                             }`}>
@@ -291,6 +315,16 @@ export default function TeamManagementPage() {
                                             }`}>
                                                 {member.full_name ? 'Active' : 'Pending'}
                                             </span>
+
+                                            {/* 🌟 THE REMOVE DEVELOPER BUTTON */}
+                                            {member.role !== 'admin' && (
+                                                <button
+                                                    onClick={() => handleRemoveDeveloper(member.id, member.email)}
+                                                    className="ml-2 inline-flex items-center justify-center px-3 py-1 border border-red-200 bg-white text-red-600 hover:bg-red-50 rounded-lg text-xs font-bold transition-all duration-150 shadow-sm"
+                                                >
+                                                    Remove
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 </li>
