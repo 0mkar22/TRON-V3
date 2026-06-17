@@ -179,9 +179,34 @@ func InviteDeveloper(c *gin.Context) {
 		return
 	}
 
-	log.Printf("✉️ [ADMIN] Attempting to invite %s to Org: %s\n", body.Email, orgID)
+	targetEmail := strings.ToLower(strings.TrimSpace(body.Email))
+	log.Printf("✉️ [ADMIN] Attempting to invite %s to Org: %s\n", targetEmail, orgID)
 
-	// 2. Dynamic Environment Variables
+	// 🌟 2. SMART MERGE: Check if user already exists in the local database
+	var existingUser models.User
+	if err := database.DB.Where("email = ?", targetEmail).First(&existingUser).Error; err == nil {
+		log.Printf("🔄 [ADMIN] User %s already exists. Performing Smart Merge into Org: %s\n", targetEmail, orgID)
+
+		// PATH A: They already have an account!
+		// Securely move them into the Admin's organization.
+		if updateErr := database.DB.Model(&existingUser).Updates(map[string]interface{}{
+			"org_id": orgID,
+			"role":   "developer", // Lock them to standard developer permissions
+		}).Error; updateErr != nil {
+			log.Printf("❌ [ADMIN] Failed to merge existing user: %v\n", updateErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update existing user's organization."})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "This developer already had an account and was instantly added to your team roster!",
+		})
+		return
+	}
+
+	// PATH B: Brand new user. Proceed with Supabase invite API.
+
+	// 3. Dynamic Environment Variables
 	frontendURL := os.Getenv("FRONTEND_URL")
 	if frontendURL == "" {
 		frontendURL = "https://tron-v3.vercel.app" // Fallback safety
@@ -197,7 +222,7 @@ func InviteDeveloper(c *gin.Context) {
 	}
 
 	params := map[string]interface{}{
-		"email": body.Email,
+		"email": targetEmail,
 		"data": map[string]interface{}{
 			"org_id": orgID,
 			"role":   "developer",
@@ -207,7 +232,7 @@ func InviteDeveloper(c *gin.Context) {
 
 	inviteEndpoint := fmt.Sprintf("%s/auth/v1/invite?redirect_to=%s", baseURL, redirectURL)
 
-	// 3. Explicit Error Handling for Data Parsing
+	// 4. Explicit Error Handling for Data Parsing
 	payloadBytes, err := json.Marshal(params)
 	if err != nil {
 		log.Printf("❌ [ADMIN] JSON Marshal Error: %v\n", err)
@@ -215,7 +240,7 @@ func InviteDeveloper(c *gin.Context) {
 		return
 	}
 
-	// 4. Request Context Binding
+	// 5. Request Context Binding
 	req, err := http.NewRequestWithContext(c.Request.Context(), "POST", inviteEndpoint, bytes.NewReader(payloadBytes))
 	if err != nil {
 		log.Printf("❌ [ADMIN] Request Creation Error: %v\n", err)
@@ -227,7 +252,7 @@ func InviteDeveloper(c *gin.Context) {
 	req.Header.Set("Authorization", "Bearer "+serviceKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	// 5. Strict HTTP Client Timeout
+	// 6. Strict HTTP Client Timeout
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
@@ -256,15 +281,15 @@ func InviteDeveloper(c *gin.Context) {
 		return
 	}
 
-	// 6. Database Error Capture
-	dbResult := database.DB.Exec("INSERT INTO users (id, email, org_id, role) VALUES (?, ?, ?, 'developer') ON CONFLICT (id) DO NOTHING", result.ID, body.Email, orgID)
+	// 7. Database Error Capture
+	dbResult := database.DB.Exec("INSERT INTO users (id, email, org_id, role) VALUES (?, ?, ?, 'developer') ON CONFLICT (id) DO NOTHING", result.ID, targetEmail, orgID)
 	if dbResult.Error != nil {
 		log.Printf("❌ [ADMIN] Database Insertion Error: %v\n", dbResult.Error)
 		// We still return 200/207 here because the email actually sent via Supabase,
 		// but we log the error heavily so you can investigate the DB state.
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Invite sent to %s successfully!", body.Email)})
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Invite sent to %s successfully!", targetEmail)})
 }
 
 // ==========================================
