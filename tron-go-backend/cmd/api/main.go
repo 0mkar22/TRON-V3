@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,25 +12,29 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/tron-v3.1/tron-go-backend/internal/api/handlers"
 	"github.com/tron-v3.1/tron-go-backend/internal/middleware"
-
 	"github.com/tron-v3.1/tron-go-backend/internal/worker"
-
 	"github.com/tron-v3.1/tron-go-backend/pkg/database"
+	"github.com/tron-v3.1/tron-go-backend/pkg/logger"
 	"github.com/tron-v3.1/tron-go-backend/pkg/redis"
 	"github.com/tron-v3.1/tron-go-backend/pkg/supabase"
 )
 
 func main() {
+	// 0. Initialize structured logger FIRST
+	logger.InitLogger()
+	defer logger.Sync() // Flushes buffer before shutting down
+
 	// 1. Environment & Infrastructure Init
 	if err := godotenv.Load(); err != nil {
-		log.Println("ℹ️ No .env file found (relying on system environment variables)")
+		logger.Log.Info("ℹ️ No .env file found (relying on system environment variables)")
 	}
 
 	if os.Getenv("GIN_MODE") == "release" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	log.Println("🚀 Booting T.R.O.N. V3 API Gateway...")
+	logger.Log.Info("🚀 Booting T.R.O.N. V3 API Gateway...")
+
 	database.ConnectDB()
 	redis.ConnectRedis()
 	supabase.ConnectSupabase()
@@ -83,7 +86,7 @@ func main() {
 		// 🔌 Integrations
 		api.POST("/integrations/setup", handlers.SetupIntegration)
 		api.POST("/auth/basecamp/init", handlers.InitBasecampAuth)
-		api.POST("/integrations/jira", handlers.SaveJiraIntegration) // 🌟 ADDED: Jira setup endpoint
+		api.POST("/integrations/jira", handlers.SaveJiraIntegration)
 
 		api.POST("/repositories", handlers.LinkRepository)
 		api.GET("/admin/basecamp-projects", handlers.GetBasecampProjects)
@@ -117,16 +120,16 @@ func main() {
 	// Spin up server in a background goroutine
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("❌ Server failed: %s\n", err)
+			logger.Log.Fatalf("❌ Server failed: %v", err)
 		}
 	}()
-	log.Printf("🌐 API Gateway listening at http://localhost:%s\n", port)
+	logger.Log.Infof("🌐 API Gateway listening at http://localhost:%s", port)
 
 	// Wait for interrupt signal to gracefully shutdown the server
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("🛑 Shutting down API Gateway...")
+	logger.Log.Info("🛑 Shutting down API Gateway...")
 
 	// 🌟 Safely tell the worker to stop pulling from Redis
 	cancelWorker()
@@ -134,8 +137,8 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("❌ Server forced to shutdown: ", err)
+		logger.Log.Fatalf("❌ Server forced to shutdown: %v", err)
 	}
 
-	log.Println("✅ API Gateway exiting cleanly.")
+	logger.Log.Info("✅ API Gateway exiting cleanly.")
 }

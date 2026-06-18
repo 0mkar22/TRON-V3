@@ -7,6 +7,24 @@ const execAsync = promisify(exec);
 
 const getApiUrl = () => vscode.workspace.getConfiguration('tron').get<string>('backendUrl') || 'https://tron-v3-1.onrender.com';
 
+// 1. Define the exact shape of a Ticket coming from the Go backend
+export interface TronTicket {
+    id: string;
+    title: string;
+    state: string;
+    description?: string;
+}
+
+// 2. Extend the base TreeItem so we don't have to use (item as any)
+export class TaskTreeItem extends vscode.TreeItem {
+    taskId?: string;
+    rawTitle?: string;
+
+    constructor(label: string, collapsibleState: vscode.TreeItemCollapsibleState) {
+        super(label, collapsibleState);
+    }
+}
+
 export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | null> = new vscode.EventEmitter<vscode.TreeItem | undefined | null>();
     readonly onDidChangeTreeData: vscode.Event<vscode.TreeItem | undefined | null> = this._onDidChangeTreeData.event;
@@ -94,21 +112,22 @@ export class TronProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
                 return [unmappedItem];
             }
 
-            const tickets = response.data.tickets || [];
+            const tickets: TronTicket[] = response.data.tickets || [];
 
             if (tickets.length === 0) {
                 const emptyItem = new vscode.TreeItem("✅ No active tasks right now!", vscode.TreeItemCollapsibleState.None);
                 return [emptyItem];
             }
-
-            return tickets.map((t: any) => {
-                const item = new vscode.TreeItem(`[${t.state}] ${t.title}`, vscode.TreeItemCollapsibleState.None);
+            return tickets.map((t: TronTicket) => {
+                // Use our custom TaskTreeItem class
+                const item = new TaskTreeItem(`[${t.state}] ${t.title}`, vscode.TreeItemCollapsibleState.None);
                 item.description = `ID: ${t.id}`;
                 item.tooltip = t.description;
                 item.contextValue = 'tronTask'; 
                 
-                (item as any).taskId = t.id;
-                (item as any).rawTitle = t.title;
+                // Strictly typed assignment (no more `as any`)
+                item.taskId = t.id;
+                item.rawTitle = t.title;
                 
                 item.command = {
                     command: 'tron.startTaskFromTree',
