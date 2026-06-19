@@ -38,7 +38,7 @@ func NewAIAdapter() *AIAdapter {
 		HTTPClient: &http.Client{Timeout: 45 * time.Second}, // 45s timeout for AI generation
 		APIKey:     apiKey,
 		BaseURL:    "https://openrouter.ai/api/v1/chat/completions",
-		Model:      "openrouter/free", // 🌟 Using your specified model
+		Model:      "deepseek/deepseek-v4-flash", // 🌟 DeepSeek Model Swapped
 	}
 }
 
@@ -50,10 +50,15 @@ func (api *AIAdapter) executeChat(messages []map[string]string, temperature floa
 		return "", fmt.Errorf("OPENROUTER_API_KEY is missing")
 	}
 
+	// 🌟 INJECTED PROVIDER ROUTING RULES
 	payload := map[string]interface{}{
 		"model":       api.Model,
 		"messages":    messages,
 		"temperature": temperature,
+		"provider": map[string]interface{}{
+			"order":           []string{"cloudflare", "alibaba", "baidu/fp8"},
+			"allow_fallbacks": true,
+		},
 	}
 	payloadBytes, _ := json.Marshal(payload)
 
