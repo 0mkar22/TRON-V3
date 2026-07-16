@@ -87,6 +87,7 @@ func main() {
 		api.POST("/integrations/setup", handlers.SetupIntegration)
 		api.POST("/auth/basecamp/init", handlers.InitBasecampAuth)
 		api.POST("/integrations/jira", handlers.SaveJiraIntegration)
+		api.POST("/integrations/slack", handlers.SaveSlackIntegration)
 
 		api.POST("/repositories", handlers.LinkRepository)
 		api.GET("/admin/basecamp-projects", handlers.GetBasecampProjects)

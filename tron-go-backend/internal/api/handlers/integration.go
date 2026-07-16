@@ -244,3 +244,64 @@ func SaveJiraIntegration(c *gin.Context) {
 	fmt.Printf("✅ [JIRA] Successfully connected Jira for Org: %s\n", orgID)
 	c.JSON(http.StatusOK, gin.H{"message": "Jira integration connected successfully!"})
 }
+
+// ==========================================
+// 5. SLACK INTEGRATION SETUP
+// ==========================================
+func SaveSlackIntegration(c *gin.Context) {
+	// Require orgId from middleware context
+	orgID := c.GetString("orgId")
+	if orgID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: Missing organization context"})
+		return
+	}
+
+	var body struct {
+		WebhookURL string `json:"webhookUrl" binding:"required,url"`
+		Channel    string `json:"channel" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or missing Slack configurations."})
+		return
+	}
+
+	fmt.Printf("👉 Securing Slack credentials for Org: %s\n", orgID)
+
+	// 1. Bundle configuration to store securely in the Vault
+	slackCredentials, _ := json.Marshal(map[string]string{
+		"webhookUrl": body.WebhookURL,
+		"channel":    body.Channel,
+	})
+
+	// 2. Insert into Supabase Vault securely
+	secretName := fmt.Sprintf("slack_active_%s_%d", orgID, time.Now().Unix())
+	secretID, err := services.InsertSecret(secretName, "Active webhook keys for Slack", string(slackCredentials))
+	if err != nil {
+		fmt.Printf("❌ [SLACK] Vault Error for Org %s: %v\n", orgID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Vault Error: Failed to secure Slack keys"})
+		return
+	}
+
+	// 3. Clean up existing secret record if replacing an old integration
+	var existingInt models.Integration
+	if err := database.DB.Where("provider = ? AND org_id = ?", "slack", orgID).First(&existingInt).Error; err == nil && existingInt.SecretID != nil {
+		services.DeleteSecret(*existingInt.SecretID) // Clean vault footprint
+	}
+
+	// 4. Upsert the Integration record in GORM database
+	integration := models.Integration{
+		OrgID:    orgID,
+		Provider: "slack",
+		SecretID: &secretID,
+	}
+
+	if err := database.DB.Save(&integration).Error; err != nil {
+		fmt.Printf("❌ [SLACK] DB Error for Org %s: %v\n", orgID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database Error: Failed to link integration"})
+		return
+	}
+
+	fmt.Printf("✅ [SLACK] Successfully connected Slack for Org: %s\n", orgID)
+	c.JSON(http.StatusOK, gin.H{"message": "Slack integration connected successfully!"})
+}

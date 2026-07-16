@@ -105,6 +105,13 @@ export default async function RepositoriesPage() {
                                                 <span className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold ${iconColor} capitalize`}>
                                                     <span className="mr-1.5">{pmIcon}</span> {repo.pm_provider}: {projectName || 'N/A'}
                                                 </span>
+
+                                                {/* NEW SLACK BADGE */}
+                                                {repo.communication_config?.provider === 'slack' && (
+                                                <span className="inline-flex items-center px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-100">
+                                                        💬 Slack Enabled
+                                                </span>
+                                                )}
                                                 
                                                 {repo.communication_config?.channel_id && (
                                                     <span className="inline-flex items-center px-3 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold">

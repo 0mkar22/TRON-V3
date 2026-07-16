@@ -29,9 +29,11 @@ export default function ClientForm({ connectedProviders = [] }) {
   const isLinearConnected = connectedProviders.includes('linear');
   const isGithubConnected = connectedProviders.includes('github');
   const isDiscordConnected = connectedProviders.includes('discord');
+  const isSlackConnected = connectedProviders.includes('slack');
   
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState('');
+  const [enableSlack, setEnableSlack] = useState(false);
   const [checkingDiscord, setCheckingDiscord] = useState(true);
 
   const [status, setStatus] = useState({ type: '', message: '' });
@@ -93,12 +95,20 @@ export default function ClientForm({ connectedProviders = [] }) {
         finalMapping = { team_key: formData.teamKey.toUpperCase().trim() };
     }
 
+    // Configure communication payload to support Slack or Discord
+    let commConfig = null;
+    if (enableSlack) {
+        commConfig = { provider: 'slack' };
+    } else if (isDiscordConnected && selectedChannel) {
+        commConfig = { provider: 'discord_bot', channel_id: selectedChannel };
+    }
+
     const payload = {
         repoName: formData.repoName,
         pmProvider: formData.pmProvider,
         pmProjectId: formData.pmProjectId.trim(),
         mapping: finalMapping,
-        communication_config: isDiscordConnected && selectedChannel ? { provider: 'discord_bot', channel_id: selectedChannel } : null
+        communication_config: commConfig
     };
 
     try {
@@ -109,6 +119,7 @@ export default function ClientForm({ connectedProviders = [] }) {
             setFormData({ repoName: '', pmProvider: isBcConnected ? 'basecamp' : (isJiraConnected ? 'jira' : (isLinearConnected ? 'linear' : '')), pmProjectId: '', teamKey: '', todoCol: '', branchCol: '', prCol: '', doneCol: '' });
             setBoardColumns([]);
             setSelectedChannel('');
+            setEnableSlack(false); // Reset Slack toggle on success
         } else {
             setStatus({ type: 'error', message: `Database Error: ${result.message}` });
         }
@@ -117,7 +128,7 @@ export default function ClientForm({ connectedProviders = [] }) {
     } finally {
         setLoading(false);
     }
-  };
+};
 
   // Determine if the save button should be disabled
   const isSubmitDisabled = 
@@ -255,7 +266,7 @@ export default function ClientForm({ connectedProviders = [] }) {
                         className="w-full mt-1.5 px-4 py-3 bg-white border border-purple-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all text-sm font-mono placeholder-gray-400"
                     />
                     <p className="text-xs text-purple-700 mt-1.5">
-                        This is the short prefix on your Linear issues (e.g. if your issues are "ENG-12", type "ENG"). TRON will automatically resolve this to your team's hidden UUID in the background.
+                        This is the short prefix on your Linear issues (e.g. if your issues are &quot;ENG-12&quot;, type &quot;ENG&quot;). TRON will automatically resolve this to your team's hidden UUID in the background.
                     </p>
                 </div>
             </div>
@@ -298,6 +309,13 @@ export default function ClientForm({ connectedProviders = [] }) {
         {/* Broadcast Section */}
         <div className="space-y-4">
             <label className="block text-sm font-semibold text-gray-900">Broadcast Channel</label>
+            {/* NEW SLACK TOGGLE */}
+            {isSlackConnected && (
+                <div className="flex items-center mb-4 p-3 border border-emerald-200 bg-emerald-50 rounded-xl cursor-pointer" onClick={() => { setEnableSlack(!enableSlack); setSelectedChannel(''); }}>
+                    <input type="checkbox" checked={enableSlack} readOnly className="w-4 h-4 text-emerald-600 bg-white border-gray-300 rounded focus:ring-emerald-500 mr-3" />
+                    <span className="text-sm font-bold text-emerald-900">Enable Slack Notifications</span>
+                </div>
+            )}
             {checkingDiscord ? (
                  <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-400 text-sm animate-pulse">Checking status...</div>
             ) : isDiscordConnected ? (
