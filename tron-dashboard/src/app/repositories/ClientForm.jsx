@@ -33,7 +33,7 @@ export default function ClientForm({ connectedProviders = [] }) {
   
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState('');
-  const [enableSlack, setEnableSlack] = useState(false);
+  const [broadcastProvider, setBroadcastProvider] = useState('');
   const [checkingDiscord, setCheckingDiscord] = useState(true);
 
   const [status, setStatus] = useState({ type: '', message: '' });
@@ -97,7 +97,7 @@ export default function ClientForm({ connectedProviders = [] }) {
 
     // Configure communication payload to support Slack or Discord
     let commConfig = null;
-    if (enableSlack) {
+    if (broadcastProvider === 'slack') {
         commConfig = { provider: 'slack' };
     } else if (isDiscordConnected && selectedChannel) {
         commConfig = { provider: 'discord_bot', channel_id: selectedChannel };
@@ -266,7 +266,7 @@ export default function ClientForm({ connectedProviders = [] }) {
                         className="w-full mt-1.5 px-4 py-3 bg-white border border-purple-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all text-sm font-mono placeholder-gray-400"
                     />
                     <p className="text-xs text-purple-700 mt-1.5">
-                        This is the short prefix on your Linear issues (e.g. if your issues are &quot;ENG-12&quot;, type &quot;ENG&quot;). TRON will automatically resolve this to your team's hidden UUID in the background.
+                        This is the short prefix on your Linear issues (e.g. if your issues are &quot;ENG-12&quot;, type &quot;ENG&quot;). TRON will automatically resolve this to your team&apos;s hidden UUID in the background.
                     </p>
                 </div>
             </div>
@@ -309,23 +309,53 @@ export default function ClientForm({ connectedProviders = [] }) {
         {/* Broadcast Section */}
         <div className="space-y-4">
             <label className="block text-sm font-semibold text-gray-900">Broadcast Channel</label>
-            {/* NEW SLACK TOGGLE */}
-            {isSlackConnected && (
-                <div className="flex items-center mb-4 p-3 border border-emerald-200 bg-emerald-50 rounded-xl cursor-pointer" onClick={() => { setEnableSlack(!enableSlack); setSelectedChannel(''); }}>
-                    <input type="checkbox" checked={enableSlack} readOnly className="w-4 h-4 text-emerald-600 bg-white border-gray-300 rounded focus:ring-emerald-500 mr-3" />
-                    <span className="text-sm font-bold text-emerald-900">Enable Slack Notifications</span>
+            
+            {/* 1. Explicit Provider Dropdown Selector */}
+            <select 
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm"
+                value={broadcastProvider}
+                onChange={(e) => {
+                    setBroadcastProvider(e.target.value);
+                    setSelectedChannel(''); // Wipe channel selection if swapping options
+                }}
+            >
+                <option value="">No Notifications (Muted)</option>
+                {isSlackConnected && <option value="slack">💬 Slack Workspace</option>}
+                {isDiscordConnected && <option value="discord">🎮 Discord Server</option>}
+            </select>
+
+            {/* 2. Conditional Form View: Slack Confirmation */}
+            {broadcastProvider === 'slack' && (
+                <div className="p-4 border border-emerald-200 bg-emerald-50/50 rounded-xl animate-fade-in-up">
+                    <h4 className="text-sm font-bold text-emerald-900 flex items-center">
+                        <span className="mr-2">✅</span> Slack Broadcast Active
+                    </h4>
+                    <p className="text-xs text-emerald-700 mt-1 leading-relaxed">
+                        TRON will route automated updates directly to your configured incoming webhook channel workspace.
+                    </p>
                 </div>
             )}
-            {checkingDiscord ? (
-                 <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-400 text-sm animate-pulse">Checking status...</div>
-            ) : isDiscordConnected ? (
-                <select className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm" value={selectedChannel} onChange={(e) => setSelectedChannel(e.target.value)}>
-                    <option value="">-- Select Discord Channel (Optional) --</option>
-                    {channels.length > 0 ? channels.map(channel => <option key={channel.id} value={channel.id}># {channel.name}</option>) : <option disabled>Failed to load channels</option>}
-                </select>
-            ) : (
-                <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-500 text-sm flex justify-between items-center">
-                    <span>Discord not connected.</span>
+
+            {/* 3. Conditional Form View: Discord Channel Downstream Picker */}
+            {broadcastProvider === 'discord' && (
+                <div className="animate-fade-in-up space-y-2">
+                    {checkingDiscord ? (
+                         <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-400 text-sm animate-pulse">Loading Discord channels...</div>
+                    ) : channels.length > 0 ? (
+                        <select 
+                            required
+                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm" 
+                            value={selectedChannel} 
+                            onChange={(e) => setSelectedChannel(e.target.value)}
+                        >
+                            <option value="" disabled>Select a Discord Channel...</option>
+                            {channels.map(channel => <option key={channel.id} value={channel.id}># {channel.name}</option>)}
+                        </select>
+                    ) : (
+                        <div className="w-full px-4 py-3 border border-red-200 rounded-xl bg-red-50 text-red-700 text-sm font-medium">
+                            Failed to resolve active channels. Verify bot server deployment permissions.
+                        </div>
+                    )}
                 </div>
             )}
         </div>
