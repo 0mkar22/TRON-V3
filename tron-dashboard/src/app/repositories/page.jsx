@@ -2,6 +2,7 @@ import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
 import ClientForm from './ClientForm';
 import { deleteWorkflowAction, fetchBasecampProjects, fetchDiscordChannels } from './actions';
+import DeleteButton from './DeleteButton';
 
 export default async function RepositoriesPage() {
     const supabase = await createClient();
@@ -120,19 +121,7 @@ export default async function RepositoriesPage() {
                                                 )}
                                             </div>
                                             
-                                            <form action={deleteWorkflowAction} 
-                                                className="mt-1"
-                                                onSubmit={(e) => {
-                                                    if (!window.confirm('Are you sure you want to delete this mapping? This will stop automated updates.')) {
-                                                        e.preventDefault();
-                                                    }
-                                                }}
-                                            >
-                                                <input type="hidden" name="workflowId" value={repo.id} />
-                                                <button type="submit" className="w-full text-center text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 py-2 rounded-lg text-sm font-bold transition-colors">
-                                                    Delete Mapping
-                                                </button>
-                                            </form>
+                                            <DeleteButton workflowId={repo.id} />
                                         </div>
                                     );
                                 })
