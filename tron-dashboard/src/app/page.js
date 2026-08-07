@@ -148,9 +148,20 @@ export default async function Home() {
                                                 </div>
                                             </td>
                                             <td className="px-6 py-5 whitespace-nowrap">
-                                                 {workflow.communication_config?.channel_id ? (
-                                                    <div className="flex items-center"><span className="text-xl mr-3">🎮</span><span className="text-sm font-semibold text-indigo-700 capitalize bg-indigo-50 px-2 py-1 rounded-md">Discord</span></div>
-                                                  ) : <span className="text-sm font-medium text-gray-400 italic bg-gray-50 px-2 py-1 rounded-md border border-gray-100">Muted</span>}
+                                                {/* 🌟 SLACK & DISCORD DYNAMIC BADGES */}
+                                                {workflow.communication_config?.provider === 'slack' ? (
+                                                    <div className="flex items-center">
+                                                        <span className="text-xl mr-3">💬</span>
+                                                        <span className="text-sm font-semibold text-emerald-700 capitalize bg-emerald-50 px-2 py-1 rounded-md">Slack</span>
+                                                    </div>
+                                                ) : workflow.communication_config?.channel_id ? (
+                                                    <div className="flex items-center">
+                                                        <span className="text-xl mr-3">🎮</span>
+                                                        <span className="text-sm font-semibold text-indigo-700 capitalize bg-indigo-50 px-2 py-1 rounded-md">Discord</span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-sm font-medium text-gray-400 italic bg-gray-50 px-2 py-1 rounded-md border border-gray-100">Muted</span>
+                                                )}
                                             </td>
                                             <td className="px-6 py-5 whitespace-nowrap text-right">
                                                 <span className="px-3 py-1 inline-flex text-xs font-bold rounded-full bg-emerald-100 text-emerald-800 uppercase tracking-wider mr-4">Active</span>
