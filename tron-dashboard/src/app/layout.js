@@ -3,7 +3,7 @@ import ConditionalHeader from '@/components/ConditionalHeader';
 import { createClient } from '@/utils/supabase/server'; 
 import { Toaster } from 'sonner';
 import { ThemeProvider } from '@/components/ThemeProvider';
-import Sidebar from '@/components/layout/Sidebar';
+import Sidebar from '@/components/chrome/Sidebar';
 
 export const metadata = {
   title: 'TRON V3 Dashboard',
@@ -15,18 +15,28 @@ export default async function RootLayout({ children }) {
   const { data: { user } } = await supabase.auth.getUser();
   
   let isAdmin = false;
+  let currentOrg = null;
+
   if (user) {
-      const { data: orgMembers } = await supabase.from('organization_members').select('role').eq('user_id', user.id).limit(1);
+      const { data: orgMembers } = await supabase.from('organization_members')
+        .select(`
+          role,
+          organizations (id, name)
+        `)
+        .eq('user_id', user.id)
+        .limit(1);
+        
       isAdmin = orgMembers?.[0]?.role === 'admin';
+      currentOrg = orgMembers?.[0]?.organizations;
   }
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen">
+      <body className="bg-chrome-bg text-gray-900 min-h-screen">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <div className="flex min-h-screen">
             <ConditionalHeader>
-              <Sidebar isAdmin={isAdmin} />
+              <Sidebar currentOrg={currentOrg} />
             </ConditionalHeader>
 
             <main className="flex-grow w-full overflow-y-auto bg-gray-50 dark:bg-gray-800">

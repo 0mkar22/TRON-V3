@@ -1,5 +1,23 @@
 @import "tailwindcss";
 
+@theme {
+  --color-chrome-bg: #f8fafc;
+  --color-chrome-border: #e2e8f0;
+  --color-terminal-bg: #020617;
+  --color-terminal-text: #34d399;
+  --color-brand-slack: #4A154B;
+  --color-brand-discord: #5865F2;
+  --color-brand-github: #24292e;
+  --color-brand-jira: #0052CC;
+  
+  --animate-data-flow: flow 2s linear infinite;
+
+  @keyframes flow {
+    0% { stroke-dashoffset: 24; }
+    100% { stroke-dashoffset: 0; }
+  }
+}
+
 :root {
   --background: #f9fafb; /* Tailwind gray-50 */
   --foreground: #111827; /* Tailwind gray-900 */
