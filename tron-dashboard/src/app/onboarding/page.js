@@ -28,7 +28,7 @@ export default function OnboardingPage() {
             Welcome to TRON
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
-            Let's get started by creating your first workspace.
+            Let&apos;s get started by creating your first workspace.
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleCreateWorkspace}>

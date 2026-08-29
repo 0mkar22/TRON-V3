@@ -60,7 +60,7 @@ export default function DevView({ fullName, companyName, workflows, handleLogout
                         <span className="mr-2">⬇️</span> Download .vsix
                     </a>
                     <div className="flex items-center px-4 py-3 bg-slate-800/80 border border-slate-700 rounded-xl text-slate-300 text-xs font-mono">
-                        Press F1 → 'T.R.O.N: Sign In'
+                        Press F1 → &apos;T.R.O.N: Sign In&apos;
                     </div>
                 </div>
             </div>
