@@ -96,3 +96,39 @@ CREATE POLICY "users_update" ON users
 CREATE POLICY "users_delete" ON users
     FOR DELETE
     USING (id = auth.uid());
+
+-- 6. Policies for workflows
+ALTER TABLE workflows ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "workflows_select" ON workflows
+    FOR SELECT
+    USING (org_id IN (SELECT org_id FROM organization_members WHERE user_id = auth.uid()));
+
+CREATE POLICY "workflows_insert" ON workflows
+    FOR INSERT
+    WITH CHECK (org_id IN (SELECT org_id FROM organization_members WHERE user_id = auth.uid()));
+
+CREATE POLICY "workflows_update" ON workflows
+    FOR UPDATE
+    USING (org_id IN (SELECT org_id FROM organization_members WHERE user_id = auth.uid()));
+
+CREATE POLICY "workflows_delete" ON workflows
+    FOR DELETE
+    USING (org_id IN (SELECT org_id FROM organization_members WHERE user_id = auth.uid()));
+
+-- 7. Policies for repositories
+ALTER TABLE repositories ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "repositories_select" ON repositories
+    FOR SELECT
+    USING (org_id IN (SELECT org_id FROM organization_members WHERE user_id = auth.uid()));
+
+CREATE POLICY "repositories_insert" ON repositories
+    FOR INSERT
+    WITH CHECK (org_id IN (SELECT org_id FROM organization_members WHERE user_id = auth.uid()));
+
+CREATE POLICY "repositories_update" ON repositories
+    FOR UPDATE
+    USING (org_id IN (SELECT org_id FROM organization_members WHERE user_id = auth.uid()));
+
+CREATE POLICY "repositories_delete" ON repositories
+    FOR DELETE
+    USING (org_id IN (SELECT org_id FROM organization_members WHERE user_id = auth.uid()));

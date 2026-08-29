@@ -14,6 +14,11 @@ FROM public.users
 WHERE org_id IS NOT NULL 
 ON CONFLICT (org_id, user_id) DO NOTHING;
 
+-- Drop old RLS policies that depend on users.org_id
+DROP POLICY IF EXISTS "Users can manage their org workflows" ON public.workflows;
+DROP POLICY IF EXISTS "Users can manage their org integrations" ON public.integrations;
+DROP POLICY IF EXISTS "Users can manage their org repositories" ON public.repositories;
+
 -- Drop existing foreign key constraints on the old org_id column
 ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_org_id_fkey;
 ALTER TABLE public.users DROP CONSTRAINT IF EXISTS fk_users_organization;
