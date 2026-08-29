@@ -16,8 +16,8 @@ export default async function RootLayout({ children }) {
   
   let isAdmin = false;
   if (user) {
-      const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();
-      isAdmin = userData?.role === 'admin';
+      const { data: orgMembers } = await supabase.from('organization_members').select('role').eq('user_id', user.id).limit(1);
+      isAdmin = orgMembers?.[0]?.role === 'admin';
   }
 
   return (

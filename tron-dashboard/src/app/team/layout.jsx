@@ -11,10 +11,11 @@ export default async function TeamLayout({ children }) {
 
     // 1. Check their role
     const { data: userData } = await supabase
-        .from('users')
+        .from('organization_members')
         .select('role')
-        .eq('id', user.id)
-        .single();
+        .eq('user_id', user.id)
+        .limit(1)
+        .then(({data, error}) => ({ data: data?.[0], error }));
 
     // 🌟 2. THE BOUNCER: Kick out developers instantly
     if (userData?.role !== 'admin') {

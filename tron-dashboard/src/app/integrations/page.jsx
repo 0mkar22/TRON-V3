@@ -19,7 +19,7 @@ export default async function IntegrationsPage({ searchParams }) {
 
     if (!user) return redirect('/login');
 
-    const { data: userData } = await supabase.from('users').select('org_id, role').eq('id', user.id).single();
+    const { data: userData } = await .from('organization_members').select('org_id, role').eq('user_id', user.id).limit(1).then(({data, error}) => ({ data: data?.[0], error }));
     
     // THE BOUNCER: Kick out developers
     if (userData?.role !== 'admin') {
@@ -48,7 +48,7 @@ export default async function IntegrationsPage({ searchParams }) {
         const installationId = formData.get('installationId');
 
         const { data: { user } } = await supabaseServer.auth.getUser();
-        const { data: userData } = await supabaseServer.from('users').select('org_id, role').eq('id', user.id).single();
+        const { data: userData } = await .from('organization_members').select('org_id, role').eq('user_id', user.id).limit(1).then(({data, error}) => ({ data: data?.[0], error }));
         if (userData?.role !== 'admin') throw new Error("Unauthorized");
 
         const actionOrgId = userData.org_id;
@@ -101,7 +101,7 @@ export default async function IntegrationsPage({ searchParams }) {
         const token = session?.access_token;
 
         const { data: { user } } = await supabaseServer.auth.getUser();
-        const { data: userData } = await supabaseServer.from('users').select('org_id, role').eq('id', user.id).single();
+        const { data: userData } = await .from('organization_members').select('org_id, role').eq('user_id', user.id).limit(1).then(({data, error}) => ({ data: data?.[0], error }));
         
         if (userData?.role !== 'admin') throw new Error("Unauthorized");
         const actionOrgId = userData?.org_id;
@@ -213,7 +213,7 @@ export default async function IntegrationsPage({ searchParams }) {
         const token = session?.access_token;
         
         const { data: { user } } = await supabaseServer.auth.getUser();
-        const { data: userData } = await supabaseServer.from('users').select('org_id, role').eq('id', user.id).single();
+        const { data: userData } = await .from('organization_members').select('org_id, role').eq('user_id', user.id).limit(1).then(({data, error}) => ({ data: data?.[0], error }));
         if (userData?.role !== 'admin') throw new Error("Unauthorized");
         
         const actionOrgId = userData?.org_id;

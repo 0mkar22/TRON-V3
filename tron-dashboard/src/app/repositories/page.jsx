@@ -11,7 +11,7 @@ export default async function RepositoriesPage() {
     if (!user) return redirect('/login');
 
     // 🌟 UPDATED: Fetch 'role' alongside 'org_id'
-    const { data: userData } = await supabase.from('users').select('org_id, role').eq('id', user.id).single();
+    const { data: userData } = await .from('organization_members').select('org_id, role').eq('user_id', user.id).limit(1).then(({data, error}) => ({ data: data?.[0], error }));
     
     // 🌟 THE BOUNCER: Kick out developers
     if (userData?.role !== 'admin') {

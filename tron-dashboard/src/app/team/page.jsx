@@ -25,18 +25,26 @@ export default function TeamManagementPage() {
             if (!user) return;
 
             const { data: currentUserData } = await supabase
-                .from('users')
+                .from('organization_members')
                 .select('org_id')
-                .eq('id', user.id)
-                .single();
+                .eq('user_id', user.id)
+                .limit(1)
+                .then(({data, error}) => ({ data: data?.[0], error }));
 
             if (currentUserData?.org_id) {
-                // Fetch Team Members
-                const { data: members } = await supabase
-                    .from('users')
-                    .select('*')
-                    .eq('org_id', currentUserData.org_id)
-                    .order('created_at', { ascending: true });
+                // Fetch Team Members via junction table
+                const { data: orgMembers } = await supabase
+                    .from('organization_members')
+                    .select(`
+                        role,
+                        users (id, full_name, email, avatar_url, created_at)
+                    `)
+                    .eq('org_id', currentUserData.org_id);
+                
+                const members = orgMembers?.map(om => ({
+                    ...om.users,
+                    role: om.role
+                })) || [];
                 
                 // Fetch Active Workflows (Repositories)
                 const { data: repos } = await supabase
