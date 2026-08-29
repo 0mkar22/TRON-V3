@@ -9,6 +9,8 @@ import (
 	"github.com/tron-v3.1/tron-go-backend/internal/adapters"
 	"github.com/tron-v3.1/tron-go-backend/internal/models"
 	"github.com/tron-v3.1/tron-go-backend/internal/services"
+	"github.com/tron-v3.1/tron-go-backend/pkg/vault"
+
 	"github.com/tron-v3.1/tron-go-backend/pkg/database"
 	"github.com/tron-v3.1/tron-go-backend/pkg/logger"
 	"github.com/tron-v3.1/tron-go-backend/pkg/redis"
@@ -185,7 +187,7 @@ func handleNewPullRequest(payload map[string]interface{}, githubAPI *adapters.Gi
 		if err := database.DB.Where("org_id = ? AND provider = ?", orgID, "github").First(&githubInt).Error; err == nil {
 			installID = githubInt.Token
 			if installID == "" && githubInt.SecretID != nil {
-				installID, _ = services.GetDecryptedSecret(*githubInt.SecretID)
+				installID, _ = vault.GetDecryptedSecret(*githubInt.SecretID)
 			}
 		}
 	}

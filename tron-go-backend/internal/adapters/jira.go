@@ -12,7 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tron-v3.1/tron-go-backend/internal/services" // 🌟 ADDED: Required for the Ticket struct
+	"github.com/tron-v3.1/tron-go-backend/internal/models"
+	// 🌟 ADDED: Required for the Ticket struct
 )
 
 type JiraAdapter struct {
@@ -51,7 +52,7 @@ func (j *JiraAdapter) setAuthHeaders(req *http.Request) {
 // ==========================================
 
 // GetTickets fetches all active (non-Done) issues for a specific Jira Project Key
-func (j *JiraAdapter) GetTickets(projectKey string) []services.Ticket {
+func (j *JiraAdapter) GetTickets(projectKey string) []models.Ticket {
 	baseURL := strings.TrimSuffix(j.BaseURL, "/")
 
 	jql := fmt.Sprintf("project='%s' AND statusCategory != Done", projectKey)
@@ -63,7 +64,7 @@ func (j *JiraAdapter) GetTickets(projectKey string) []services.Ticket {
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		fmt.Printf("❌ [JIRA API] Failed to create request: %v\n", err)
-		return []services.Ticket{}
+		return []models.Ticket{}
 	}
 
 	j.setAuthHeaders(req)
@@ -71,19 +72,19 @@ func (j *JiraAdapter) GetTickets(projectKey string) []services.Ticket {
 	res, err := j.Client.Do(req)
 	if err != nil {
 		fmt.Printf("❌ [JIRA API] Failed to fetch tickets: %v\n", err)
-		return []services.Ticket{}
+		return []models.Ticket{}
 	}
 	defer res.Body.Close()
 
 	// 🌟 FIX 2: Capture the raw body payload before we attempt to decode it
 	bodyBytes, err := io.ReadAll(res.Body)
 	if err != nil {
-		return []services.Ticket{}
+		return []models.Ticket{}
 	}
 
 	if res.StatusCode != http.StatusOK {
 		fmt.Printf("❌ [JIRA API] HTTP %d: Jira rejected the request: %s\n", res.StatusCode, string(bodyBytes))
-		return []services.Ticket{}
+		return []models.Ticket{}
 	}
 
 	// 🪤 THE ULTIMATE TRAP: Print exactly what JSON Jira sent us to the Render logs!
@@ -105,13 +106,13 @@ func (j *JiraAdapter) GetTickets(projectKey string) []services.Ticket {
 	// Use json.Unmarshal since we already read the bytes
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
 		fmt.Printf("❌ [JIRA API] Failed to parse response: %v\n", err)
-		return []services.Ticket{}
+		return []models.Ticket{}
 	}
 
 	// Map Jira issues to your standard TRON Ticket struct
-	var tickets []services.Ticket
+	var tickets []models.Ticket
 	for _, issue := range result.Issues {
-		tickets = append(tickets, services.Ticket{
+		tickets = append(tickets, models.Ticket{
 			ID:    issue.Key,
 			Title: issue.Fields.Summary,
 			State: issue.Fields.Status.Name,

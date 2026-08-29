@@ -1,4 +1,4 @@
-package services
+package githubauth
 
 import (
 	"encoding/json"

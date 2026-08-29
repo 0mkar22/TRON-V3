@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/tron-v3.1/tron-go-backend/internal/models"
 )
 
 // PMAdapter is the interface that breaks the import cycle.
@@ -48,9 +50,9 @@ func extractMappingValue(mapping map[string]interface{}, key string) string {
 	return ""
 }
 
-func (orch *PMOrchestrator) GetTickets(provider, projectID, orgID string, mapping map[string]interface{}) []Ticket {
+func (orch *PMOrchestrator) GetTickets(provider, projectID, orgID string, mapping map[string]interface{}) []models.Ticket {
 	provider = strings.ToLower(provider)
-	var allTickets []Ticket
+	var allTickets []models.Ticket
 
 	fmt.Printf("🔍 [ORCHESTRATOR DEBUG] Routing GetTickets to provider: %s\n", provider)
 
@@ -76,7 +78,7 @@ func (orch *PMOrchestrator) GetTickets(provider, projectID, orgID string, mappin
 					idStr = fmt.Sprintf("%.0f", fVal)
 				}
 
-				allTickets = append(allTickets, Ticket{
+				allTickets = append(allTickets, models.Ticket{
 					ID:          idStr,
 					Title:       fmt.Sprintf("%v", t["title"]),
 					Description: fmt.Sprintf("%v", t["description"]),
@@ -95,7 +97,7 @@ func (orch *PMOrchestrator) GetTickets(provider, projectID, orgID string, mappin
 					idStr = fmt.Sprintf("%.0f", fVal)
 				}
 
-				allTickets = append(allTickets, Ticket{
+				allTickets = append(allTickets, models.Ticket{
 					ID:          idStr,
 					Title:       fmt.Sprintf("%v", t["title"]),
 					Description: fmt.Sprintf("%v", t["description"]),

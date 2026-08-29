@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/tron-v3.1/tron-go-backend/internal/services"
+	"github.com/tron-v3.1/tron-go-backend/internal/models"
 )
 
 // LinearAdapter handles all GraphQL communication with the Linear API
@@ -206,7 +206,7 @@ func (l *LinearAdapter) TransitionIssue(ticketID string, stateID string) error {
 // 4. VS CODE: GET ACTIVE TICKETS (LINEAR)
 // ==========================================
 
-func (l *LinearAdapter) GetTickets(teamKey string) []services.Ticket {
+func (l *LinearAdapter) GetTickets(teamKey string) []models.Ticket {
 	// 🌟 FIXED: Safely query issues by traversing through the filtered team
 	query := `
 		query GetActiveTickets($teamKey: String!) {
@@ -233,10 +233,10 @@ func (l *LinearAdapter) GetTickets(teamKey string) []services.Ticket {
 	data, err := l.ExecuteGraphQL(query, variables)
 	if err != nil {
 		fmt.Printf("❌ [LINEAR API] Failed to fetch tickets: %v\n", err)
-		return []services.Ticket{}
+		return []models.Ticket{}
 	}
 
-	var tickets []services.Ticket
+	var tickets []models.Ticket
 
 	teams, ok := data["teams"].(map[string]interface{})
 	if !ok || teams == nil {
@@ -262,7 +262,7 @@ func (l *LinearAdapter) GetTickets(teamKey string) []services.Ticket {
 						stateName, _ = stateObj["name"].(string)
 					}
 
-					tickets = append(tickets, services.Ticket{
+					tickets = append(tickets, models.Ticket{
 						ID:    fmt.Sprintf("%v", issue["identifier"]),
 						Title: fmt.Sprintf("%v", issue["title"]),
 						State: stateName,
