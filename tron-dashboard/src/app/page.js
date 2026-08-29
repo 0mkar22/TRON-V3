@@ -23,13 +23,19 @@ export default async function Home() {
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token;
 
+  const { cookies } = await import('next/headers');
+  const cookieStore = cookies();
+  const orgCookie = cookieStore.get('X-Org-ID')?.value;
+  const activeOrgId = orgCookie || orgId;
+
   let workflows = [];
   try {
       // 🌟 FIX 2: Ensure we have the token, and use process.env.BACKEND_URL
-      if (orgId && token) {
-          const res = await fetch(`${process.env.BACKEND_URL}/api/admin/dashboard-workflows?orgId=${orgId}`, { 
+      if (activeOrgId && token) {
+          const res = await fetch(`${process.env.BACKEND_URL}/api/admin/dashboard-workflows?orgId=${activeOrgId}`, { 
               headers: {
-                  'Authorization': `Bearer ${token}` // Pass the VIP security badge to Go
+                  'Authorization': `Bearer ${token}`, // Pass the VIP security badge to Go
+                  'X-Org-ID': activeOrgId
               },
               cache: 'no-store' 
           });
