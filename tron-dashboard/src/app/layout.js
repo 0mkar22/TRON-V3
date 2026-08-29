@@ -3,6 +3,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import ConditionalHeader from '@/components/ConditionalHeader';
 import { createClient } from '@/utils/supabase/server'; // 🌟 NEW: Added server client
+import { Toaster } from 'sonner';
 
 export const metadata = {
   title: 'TRON V3 Dashboard',
@@ -63,7 +64,7 @@ export default async function RootLayout({ children }) {
         <main className="flex-grow w-full">
           {children}
         </main>
-
+        <Toaster />
       </body>
     </html>
   );
