@@ -14,11 +14,13 @@ async function getSecureAdminOrgId() {
         throw new Error("Unauthorized: No active session.");
     }
 
-    const { data: userData, error: dbError } = await supabase
-        .from('users')
+    const { data: orgMembers, error: dbError } = await supabase
+        .from('organization_members')
         .select('org_id, role')
-        .eq('id', user.id)
-        .single();
+        .eq('user_id', user.id)
+        .limit(1);
+    
+    const userData = orgMembers?.[0];
 
     if (dbError || userData?.role !== 'admin') {
         throw new Error("Unauthorized: Only administrators can perform this action.");
@@ -29,7 +31,7 @@ async function getSecureAdminOrgId() {
     }
 
     const { cookies } = await import('next/headers');
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const orgCookie = cookieStore.get('X-Org-ID')?.value;
 
     return orgCookie || userData.org_id;

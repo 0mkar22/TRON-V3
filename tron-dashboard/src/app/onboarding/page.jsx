@@ -29,15 +29,20 @@ export default async function OnboardingPage() {
       .select()
       .single()
 
-    // 3. Update the public user profile to link them to the organization
+    // 3. Update the public user profile and link them to the organization
     if (org && !orgError) {
       await supabase
         .from('users')
-        .update({ 
-          full_name: fullName, 
-          org_id: org.id 
-        })
-        .eq('id', user.id)
+        .update({ full_name: fullName })
+        .eq('id', user.id);
+
+      await supabase
+        .from('organization_members')
+        .insert({
+          org_id: org.id,
+          user_id: user.id,
+          role: 'admin' // Creator gets admin role
+        });
     }
 
     // 4. Release them into the Dashboard!

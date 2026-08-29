@@ -19,10 +19,11 @@ export async function assignDeveloperAction(formData) {
 
     // 1. Verify the current user is an Admin and get their Organization ID
     const { data: adminData } = await supabase
-        .from('users')
+        .from('organization_members')
         .select('org_id, role')
-        .eq('id', session.user.id)
-        .single();
+        .eq('user_id', session.user.id)
+        .limit(1)
+        .then(({data, error}) => ({ data: data?.[0], error }));
 
     if (!adminData?.org_id || adminData.role !== 'admin') {
         return { success: false, message: "Unauthorized: Only administrators can assign projects." };
@@ -66,10 +67,11 @@ export async function deleteAssignmentAction(formData) {
 
     // 1. Verify Admin
     const { data: adminData } = await supabase
-        .from('users')
+        .from('organization_members')
         .select('org_id, role')
-        .eq('id', session.user.id)
-        .single();
+        .eq('user_id', session.user.id)
+        .limit(1)
+        .then(({data, error}) => ({ data: data?.[0], error }));
 
     if (!adminData?.org_id || adminData.role !== 'admin') {
         return { success: false, message: "Unauthorized." };

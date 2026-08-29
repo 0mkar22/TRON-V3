@@ -12,9 +12,9 @@ export default async function Home() {
 
   if (!user) return redirect('/login');
 
-  const { data: userData } = await supabase.from('users').select('role, org_id').eq('id', user.id).single();
-  const isAdmin = userData?.role === 'admin';
-  const orgId = userData?.org_id;
+  const { data: orgMembers } = await supabase.from('organization_members').select('role, org_id').eq('user_id', user.id).limit(1);
+  const isAdmin = orgMembers?.[0]?.role === 'admin';
+  const orgId = orgMembers?.[0]?.org_id;
 
   const fullName = user?.user_metadata?.full_name || 'User';
   const companyName = user?.user_metadata?.company_name || 'Developers Workspace';
@@ -24,7 +24,7 @@ export default async function Home() {
   const token = session?.access_token;
 
   const { cookies } = await import('next/headers');
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const orgCookie = cookieStore.get('X-Org-ID')?.value;
   const activeOrgId = orgCookie || orgId;
 

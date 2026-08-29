@@ -19,7 +19,7 @@ export default function ActivityDashboard() {
                 // 1. Fetch the user's orgId securely on mount
                 const { data: { user } } = await supabase.auth.getUser();
                 if (user) {
-                    const { data: userData } = await supabase.from('users').select('org_id').eq('id', user.id).single();
+                    const { data: userData } = await .from('organization_members').select('org_id, role').eq('user_id', user.id).limit(1).then(({data, error}) => ({ data: data?.[0], error }));
                     orgIdRef.current = userData?.org_id;
                 }
 
