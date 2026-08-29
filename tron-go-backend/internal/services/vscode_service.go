@@ -48,7 +48,7 @@ func (s *VSCodeService) GetUserFromToken(token string) (models.User, error) {
 	}
 	json.NewDecoder(res.Body).Decode(&authUser)
 
-	if err := database.DB.Where("id = ?", authUser.ID).First(&dbUser).Error; err != nil {
+	if err := database.DB.Preload("OrganizationMembers").Where("id = ?", authUser.ID).First(&dbUser).Error; err != nil {
 		return dbUser, fmt.Errorf("user not found in database")
 	}
 
@@ -58,14 +58,14 @@ func (s *VSCodeService) GetUserFromToken(token string) (models.User, error) {
 func (s *VSCodeService) getRepoAndOrchestrator(repoName string, dbUser models.User) (models.Repository, map[string]interface{}, *PMOrchestrator, error) {
 	var repo models.Repository
 
-	fmt.Printf("🔍 [DB TRAP] Searching for Repo: '%s' | OrgID: '%s'\n", repoName, dbUser.OrgID)
+	fmt.Printf("🔍 [DB TRAP] Searching for Repo: '%s' | OrgID: '%s'\n", repoName, dbUser.GetPrimaryOrgID())
 
-	if err := database.DB.Where("repo_name = ? AND org_id = ?", repoName, dbUser.OrgID).First(&repo).Error; err != nil {
+	if err := database.DB.Where("repo_name = ? AND org_id = ?", repoName, dbUser.GetPrimaryOrgID()).First(&repo).Error; err != nil {
 		fmt.Printf("⚠️ [DB] Repository '%s' is not mapped in the database.\n", repoName)
 		return repo, nil, nil, fmt.Errorf("REPO_NOT_MAPPED")
 	}
 
-	if dbUser.Role != "admin" {
+	if dbUser.GetPrimaryRole() != "admin" {
 		var assignment models.ProjectAssignment
 		err := database.DB.Where("user_id = ? AND repository_id = ?", dbUser.ID, repo.ID).First(&assignment).Error
 		if err != nil {
@@ -87,7 +87,7 @@ func (s *VSCodeService) getRepoAndOrchestrator(repoName string, dbUser models.Us
 	} else if repo.PMProvider == "jira" {
 		fmt.Println("📊 [ADAPTER TRAP] Booting Jira Logic...")
 		var integration models.Integration
-		if err := database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.OrgID).First(&integration).Error; err != nil {
+		if err := database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.GetPrimaryOrgID()).First(&integration).Error; err != nil {
 			fmt.Printf("❌ [VAULT FATAL] Could not find Jira keys in integrations table! Error: %v\n", err)
 		} else {
 			fmt.Println("✅ [VAULT SUCCESS] Retrieved Jira Integration Keys.")
@@ -103,16 +103,16 @@ func (s *VSCodeService) GetProjects(dbUser models.User) ([]string, error) {
 	var repos []models.Repository
 	var projectNames []string
 
-	if dbUser.Role == "admin" {
+	if dbUser.GetPrimaryRole() == "admin" {
 		fmt.Printf("👑 [RBAC] Admin %s requested projects. Returning ALL repos.\n", dbUser.Email)
-		database.DB.Select("repo_name").Where("org_id = ?", dbUser.OrgID).Find(&repos)
+		database.DB.Select("repo_name").Where("org_id = ?", dbUser.GetPrimaryOrgID()).Find(&repos)
 		for _, repo := range repos {
 			projectNames = append(projectNames, repo.RepoName)
 		}
 	} else {
 		fmt.Printf("👷 [RBAC] Developer %s requested projects. Filtering by assignments.\n", dbUser.Email)
 		var assignments []models.ProjectAssignment
-		database.DB.Preload("Repository").Where("user_id = ? AND org_id = ?", dbUser.ID, dbUser.OrgID).Find(&assignments)
+		database.DB.Preload("Repository").Where("user_id = ? AND org_id = ?", dbUser.ID, dbUser.GetPrimaryOrgID()).Find(&assignments)
 		for _, assignment := range assignments {
 			if assignment.Repository.RepoName != "" {
 				projectNames = append(projectNames, assignment.Repository.RepoName)
@@ -139,7 +139,7 @@ func (s *VSCodeService) GetTickets(repoName string, dbUser models.User) (bool, [
 	if repo.PMProvider == "jira" {
 		fmt.Println("🚀 [API TRAP] Fetching REAL tickets from Jira API...")
 		var integration models.Integration
-		database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.OrgID).First(&integration)
+		database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.GetPrimaryOrgID()).First(&integration)
 		var tickets []models.Ticket
 
 		if integration.SecretID != nil {
@@ -162,7 +162,7 @@ func (s *VSCodeService) GetTickets(repoName string, dbUser models.User) (bool, [
 	if repo.PMProvider == "linear" {
 		fmt.Println("🚀 [API TRAP] Fetching REAL tickets from Linear API...")
 		var integration models.Integration
-		database.DB.Where("org_id = ? AND provider = 'linear'", dbUser.OrgID).First(&integration)
+		database.DB.Where("org_id = ? AND provider = 'linear'", dbUser.GetPrimaryOrgID()).First(&integration)
 		var tickets []models.Ticket
 
 		if integration.SecretID != nil {
@@ -199,7 +199,7 @@ func (s *VSCodeService) GetTickets(repoName string, dbUser models.User) (bool, [
 	}
 
 	fmt.Println("🚀 [API TRAP] Fetching tickets from Basecamp API...")
-	tickets := orch.GetTickets(repo.PMProvider, repo.PMProjectID, dbUser.OrgID, mapping)
+	tickets := orch.GetTickets(repo.PMProvider, repo.PMProjectID, dbUser.GetPrimaryOrgID(), mapping)
 	if tickets == nil {
 		tickets = make([]models.Ticket, 0)
 	}
@@ -225,7 +225,7 @@ func (s *VSCodeService) CreateTask(taskInput, repoName string, dbUser models.Use
 	if repo.PMProvider == "jira" {
 		fmt.Printf("🏗️ [JIRA] Creating ticket for: %s\n", taskInput)
 		var integration models.Integration
-		database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.OrgID).First(&integration)
+		database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.GetPrimaryOrgID()).First(&integration)
 
 		if integration.SecretID != nil {
 			decryptedJSON, _ := vault.GetDecryptedSecret(*integration.SecretID)
@@ -244,7 +244,7 @@ func (s *VSCodeService) CreateTask(taskInput, repoName string, dbUser models.Use
 	} else if repo.PMProvider == "linear" {
 		fmt.Printf("🏗️ [LINEAR] Creating ticket for: %s\n", taskInput)
 		var integration models.Integration
-		database.DB.Where("org_id = ? AND provider = 'linear'", dbUser.OrgID).First(&integration)
+		database.DB.Where("org_id = ? AND provider = 'linear'", dbUser.GetPrimaryOrgID()).First(&integration)
 
 		if integration.SecretID != nil {
 			decryptedJSON, _ := vault.GetDecryptedSecret(*integration.SecretID)
@@ -269,7 +269,7 @@ func (s *VSCodeService) CreateTask(taskInput, repoName string, dbUser models.Use
 			}
 		}
 	} else {
-		resolvedTaskID, _ = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, taskInput, dbUser.OrgID, mapping)
+		resolvedTaskID, _ = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, taskInput, dbUser.GetPrimaryOrgID(), mapping)
 	}
 
 	return resolvedTaskID, nil
@@ -287,7 +287,7 @@ func (s *VSCodeService) StartTask(taskInput, repoName, developer string, dbUser 
 			if ticketID != "" {
 				resolvedTaskID = ticketID
 				var integration models.Integration
-				database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.OrgID).First(&integration)
+				database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.GetPrimaryOrgID()).First(&integration)
 
 				if integration.SecretID != nil {
 					decryptedJSON, _ := vault.GetDecryptedSecret(*integration.SecretID)
@@ -308,7 +308,7 @@ func (s *VSCodeService) StartTask(taskInput, repoName, developer string, dbUser 
 				}
 			} else {
 				var integration models.Integration
-				database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.OrgID).First(&integration)
+				database.DB.Where("org_id = ? AND provider = 'jira'", dbUser.GetPrimaryOrgID()).First(&integration)
 
 				if integration.SecretID != nil {
 					decryptedJSON, _ := vault.GetDecryptedSecret(*integration.SecretID)
@@ -335,7 +335,7 @@ func (s *VSCodeService) StartTask(taskInput, repoName, developer string, dbUser 
 		} else if repo.PMProvider == "linear" {
 			ticketID := adapters.ExtractTicketID(taskInput)
 			var integration models.Integration
-			database.DB.Where("org_id = ? AND provider = 'linear'", dbUser.OrgID).First(&integration)
+			database.DB.Where("org_id = ? AND provider = 'linear'", dbUser.GetPrimaryOrgID()).First(&integration)
 
 			if integration.SecretID != nil {
 				decryptedJSON, _ := vault.GetDecryptedSecret(*integration.SecretID)
@@ -386,7 +386,7 @@ func (s *VSCodeService) StartTask(taskInput, repoName, developer string, dbUser 
 
 		} else {
 			var exactCardUrl string
-			resolvedTaskID, exactCardUrl = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, taskInput, dbUser.OrgID, mapping)
+			resolvedTaskID, exactCardUrl = orch.ResolveTask(repo.PMProvider, repo.PMProjectID, taskInput, dbUser.GetPrimaryOrgID(), mapping)
 
 			extractID := func(key string) string {
 				if val, ok := mapping[key].(string); ok {
@@ -403,10 +403,10 @@ func (s *VSCodeService) StartTask(taskInput, repoName, developer string, dbUser 
 			}
 
 			if inProgressID != "" && exactCardUrl != "" {
-				orch.UpdateTicketStatus(repo.PMProvider, repo.PMProjectID, exactCardUrl, inProgressID, dbUser.OrgID)
+				orch.UpdateTicketStatus(repo.PMProvider, repo.PMProjectID, exactCardUrl, inProgressID, dbUser.GetPrimaryOrgID())
 			}
 			if developer != "" && exactCardUrl != "" {
-				orch.AssignTicket(repo.PMProvider, repo.PMProjectID, exactCardUrl, developer, dbUser.OrgID)
+				orch.AssignTicket(repo.PMProvider, repo.PMProjectID, exactCardUrl, developer, dbUser.GetPrimaryOrgID())
 			}
 		}
 

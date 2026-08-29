@@ -28,7 +28,11 @@ async function getSecureAdminOrgId() {
         throw new Error("Configuration Error: No Organization ID found for this account.");
     }
 
-    return userData.org_id;
+    const { cookies } = await import('next/headers');
+    const cookieStore = cookies();
+    const orgCookie = cookieStore.get('X-Org-ID')?.value;
+
+    return orgCookie || userData.org_id;
 }
 
 // ==========================================
@@ -48,7 +52,8 @@ export async function saveWorkflowAction(payload) {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}` 
+                'Authorization': `Bearer ${token}`,
+                'X-Org-ID': orgId
             },
             body: JSON.stringify({ ...payload, orgId })
         });
@@ -100,7 +105,10 @@ export async function fetchGithubRepos() {
         const { data: { session } } = await supabase.auth.getSession();
 
         const res = await fetch(`${process.env.BACKEND_URL}/api/admin/github-repos?orgId=${orgId}`, { 
-            headers: { 'Authorization': `Bearer ${session?.access_token}` },
+            headers: { 
+                'Authorization': `Bearer ${session?.access_token}`,
+                'X-Org-ID': orgId
+            },
             cache: 'no-store' 
         });
         const data = await res.json();
@@ -118,7 +126,10 @@ export async function fetchBasecampProjects() {
         const { data: { session } } = await supabase.auth.getSession();
 
         const res = await fetch(`${process.env.BACKEND_URL}/api/admin/basecamp-projects?orgId=${orgId}`, { 
-            headers: { 'Authorization': `Bearer ${session?.access_token}` },
+            headers: { 
+                'Authorization': `Bearer ${session?.access_token}`,
+                'X-Org-ID': orgId
+            },
             cache: 'no-store' 
         });
         const data = await res.json();
@@ -136,7 +147,10 @@ export async function fetchDiscordChannels() {
         const { data: { session } } = await supabase.auth.getSession();
 
         const res = await fetch(`${process.env.BACKEND_URL}/api/admin/discord-status?orgId=${orgId}`, { 
-            headers: { 'Authorization': `Bearer ${session?.access_token}` },
+            headers: { 
+                'Authorization': `Bearer ${session?.access_token}`,
+                'X-Org-ID': orgId
+            },
             cache: 'no-store' 
         });
         const data = await res.json();
@@ -162,7 +176,8 @@ export async function fetchBasecampColumns(projectId) {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session?.access_token}`
+                'Authorization': `Bearer ${session?.access_token}`,
+                'X-Org-ID': orgId
             },
             body: JSON.stringify({ projectId, orgId }),
             cache: 'no-store',

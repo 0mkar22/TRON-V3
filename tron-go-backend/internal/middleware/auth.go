@@ -30,12 +30,16 @@ func RequireAuth() gin.HandlerFunc {
 
 		// 2. Look up which Organization this Developer belongs to using GORM
 		var dbUser models.User
-		result := database.DB.Where("id = ?", user.ID).First(&dbUser)
+		database.DB.Preload("OrganizationMembers").Where("id = ?", user.ID).First(&dbUser)
 
 		// 🌟 FALLBACK (Ported from your Node.js code)
-		orgId := dbUser.OrgID
-		if result.Error != nil || orgId == "" {
-			orgId = "fbf6021e-e84d-433c-a41e-31e302be78e6"
+		orgId := c.GetHeader("X-Org-ID")
+		if orgId == "" {
+			if len(dbUser.OrganizationMembers) > 0 {
+				orgId = dbUser.OrganizationMembers[0].OrgID
+			} else {
+				orgId = "fbf6021e-e84d-433c-a41e-31e302be78e6"
+			}
 		}
 
 		// 3. Attach the orgId safely to the Gin Context for the downstream handlers

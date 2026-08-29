@@ -144,10 +144,12 @@ func InviteDeveloperService(orgID, targetEmail string) (string, error, int) {
 	if err := database.DB.Where("email = ?", targetEmail).First(&existingUser).Error; err == nil {
 		log.Printf("🔄 [ADMIN] User %s already exists. Performing Smart Merge into Org: %s\n", targetEmail, orgID)
 
-		if updateErr := database.DB.Model(&existingUser).Updates(map[string]interface{}{
-			"org_id": orgID,
-			"role":   "developer",
-		}).Error; updateErr != nil {
+		orgMember := models.OrganizationMember{
+			OrgID:  orgID,
+			UserID: existingUser.ID,
+			Role:   "developer",
+		}
+		if updateErr := database.DB.Where("org_id = ? AND user_id = ?", orgID, existingUser.ID).FirstOrCreate(&orgMember).Error; updateErr != nil {
 			log.Printf("❌ [ADMIN] Failed to merge existing user: %v\n", updateErr)
 			return "", errors.New("failed to update existing user's organization"), http.StatusInternalServerError
 		}
@@ -220,9 +222,14 @@ func InviteDeveloperService(orgID, targetEmail string) (string, error, int) {
 		return "", errors.New("invite sent, but failed to parse provider response"), http.StatusInternalServerError
 	}
 
-	dbResult := database.DB.Exec("INSERT INTO users (id, email, org_id, role) VALUES (?, ?, ?, 'developer') ON CONFLICT (id) DO NOTHING", result.ID, targetEmail, orgID)
+	dbResult := database.DB.Exec("INSERT INTO users (id, email) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", result.ID, targetEmail)
 	if dbResult.Error != nil {
-		log.Printf("❌ [ADMIN] Database Insertion Error: %v\n", dbResult.Error)
+		log.Printf("❌ [ADMIN] Database Insertion Error (users): %v\n", dbResult.Error)
+	}
+
+	dbResult = database.DB.Exec("INSERT INTO organization_members (org_id, user_id, role) VALUES (?, ?, 'developer') ON CONFLICT (org_id, user_id) DO NOTHING", orgID, result.ID)
+	if dbResult.Error != nil {
+		log.Printf("❌ [ADMIN] Database Insertion Error (organization_members): %v\n", dbResult.Error)
 	}
 
 	return fmt.Sprintf("Invite sent to %s successfully!", targetEmail), nil, http.StatusOK
@@ -234,7 +241,10 @@ func RemoveDeveloperService(adminID, adminOrgID, targetUserID string) (string, e
 	}
 
 	var targetUser models.User
-	if err := database.DB.Where("id = ? AND org_id = ?", targetUserID, adminOrgID).First(&targetUser).Error; err != nil {
+	// Join with organization_members to check if the target user belongs to the admin's organization
+	if err := database.DB.Joins("JOIN organization_members ON organization_members.user_id = users.id").
+		Where("users.id = ? AND organization_members.org_id = ?", targetUserID, adminOrgID).
+		First(&targetUser).Error; err != nil {
 		return "", errors.New("developer not found in your team"), http.StatusNotFound
 	}
 
@@ -242,7 +252,7 @@ func RemoveDeveloperService(adminID, adminOrgID, targetUserID string) (string, e
 		return "", errors.New("failed to revoke workflow assignments"), http.StatusInternalServerError
 	}
 
-	if err := database.DB.Model(&targetUser).Update("org_id", "").Error; err != nil {
+	if err := database.DB.Where("user_id = ? AND org_id = ?", targetUserID, adminOrgID).Delete(&models.OrganizationMember{}).Error; err != nil {
 		return "", errors.New("failed to remove developer from team"), http.StatusInternalServerError
 	}
 
