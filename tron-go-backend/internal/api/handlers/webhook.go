@@ -14,7 +14,8 @@ import (
 	// Make sure this path matches your actual module structure
 	"github.com/tron-v3.1/tron-go-backend/internal/adapters"
 	"github.com/tron-v3.1/tron-go-backend/internal/models"
-	"github.com/tron-v3.1/tron-go-backend/internal/services"
+	"github.com/tron-v3.1/tron-go-backend/pkg/vault"
+
 	"github.com/tron-v3.1/tron-go-backend/pkg/database"
 	"github.com/tron-v3.1/tron-go-backend/pkg/redis"
 )
@@ -120,7 +121,7 @@ func processTicketTransition(ticketID string, targetStateNames []string, repoNam
 			return
 		}
 
-		decryptedJSON, err := services.GetDecryptedSecret(*integration.SecretID)
+		decryptedJSON, err := vault.GetDecryptedSecret(*integration.SecretID)
 		if err != nil {
 			return
 		}
@@ -166,7 +167,7 @@ func processTicketTransition(ticketID string, targetStateNames []string, repoNam
 			return
 		}
 
-		decryptedJSON, err := services.GetDecryptedSecret(*integration.SecretID)
+		decryptedJSON, err := vault.GetDecryptedSecret(*integration.SecretID)
 		if err != nil {
 			return
 		}

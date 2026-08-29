@@ -6,6 +6,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { TronProvider } from './tronProvider';
 import { createSupabaseClient } from './supabaseClient';
+import { showAIReviewPanel } from './webviews/AIReviewWebview';
+import { createStatusBarItem, updateStatusBarItem } from './statusBar';
 
 const execAsync = promisify(exec);
 
@@ -93,6 +95,10 @@ export function activate(context: vscode.ExtensionContext) {
         // 🌟 BOOT THE ENFORCER
         installTronGitHooks(rootPath);
     }
+
+    // 🌟 Initialize TRON Status Bar
+    const tronStatusBar = createStatusBarItem();
+    context.subscriptions.push(tronStatusBar);
 
     // 1. Initialize Secure Supabase Client
     console.log('🔌 [AUTH] Initializing Supabase client...');
@@ -292,6 +298,7 @@ export function activate(context: vscode.ExtensionContext) {
                 }
             }
 
+            updateStatusBarItem(tronStatusBar, resolvedId);
             tronProvider.refresh();
         } catch (error: any) {
             console.error(`❌ [WORKFLOW] startTaskFromTree encountered a fatal error:`, error);
@@ -348,115 +355,7 @@ export function activate(context: vscode.ExtensionContext) {
             const reviewText = response.data.review;
             console.log(`✅ [NETWORK] Review fetched successfully.`);
 
-            const panel = vscode.window.createWebviewPanel(
-                'tronAIReview', 
-                `AI Review: TASK-${taskId}`, 
-                vscode.ViewColumn.Beside,
-                { enableScripts: true }
-            );
-
-            panel.webview.html = `
-                <!DOCTYPE html>
-                <html lang="en">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>T.R.O.N. AI Code Review</title>
-                    <style>
-                        :root {
-                            --card-bg: var(--vscode-editorWidget-background);
-                            --card-border: var(--vscode-widget-border);
-                            --text-muted: var(--vscode-descriptionForeground);
-                        }
-                        body { 
-                            font-family: var(--vscode-font-family), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-                            padding: 32px 24px; 
-                            line-height: 1.6; 
-                            color: var(--vscode-editor-foreground); 
-                            background-color: var(--vscode-editor-background);
-                            max-width: 900px;
-                            margin: 0 auto;
-                        }
-                        .header {
-                            display: flex;
-                            align-items: center;
-                            justify-content: space-between;
-                            margin-bottom: 24px;
-                            padding-bottom: 16px;
-                            border-bottom: 1px solid var(--vscode-panel-border);
-                        }
-                        .header-title {
-                            display: flex;
-                            align-items: center;
-                            gap: 12px;
-                        }
-                        .header h2 { 
-                            margin: 0;
-                            font-size: 1.5rem;
-                            font-weight: 600;
-                            color: var(--vscode-editor-foreground);
-                        }
-                        .badge {
-                            background-color: var(--vscode-badge-background);
-                            color: var(--vscode-badge-foreground);
-                            padding: 6px 12px;
-                            border-radius: 4px;
-                            font-size: 0.8rem;
-                            font-weight: 600;
-                            letter-spacing: 0.5px;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                        }
-                        .review-card {
-                            background: var(--card-bg);
-                            border: 1px solid var(--card-border);
-                            border-radius: 8px;
-                            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-                            overflow: hidden;
-                        }
-                        .review-card-header {
-                            background: var(--vscode-editorGroupHeader-tabsBackground);
-                            padding: 12px 20px;
-                            border-bottom: 1px solid var(--card-border);
-                            font-size: 0.85rem;
-                            color: var(--text-muted);
-                            text-transform: uppercase;
-                            letter-spacing: 1px;
-                            display: flex;
-                            align-items: center;
-                            gap: 8px;
-                        }
-                        pre { 
-                            margin: 0;
-                            padding: 24px; 
-                            white-space: pre-wrap; 
-                            word-wrap: break-word;
-                            font-family: var(--vscode-editor-font-family), "Fira Code", monospace;
-                            font-size: 0.95rem;
-                            color: var(--vscode-editor-foreground);
-                        }
-                        .logo-icon {
-                            font-size: 1.8rem;
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <div class="header-title">
-                            <span class="logo-icon">💠</span>
-                            <h2>T.R.O.N. Engine AI</h2>
-                        </div>
-                        <span class="badge">TASK-${taskId}</span>
-                    </div>
-
-                    <div class="review-card">
-                        <div class="review-card-header">
-                            <span>✨</span> Automated Code Analysis
-                        </div>
-                        <pre>${reviewText}</pre>
-                    </div>
-                </body>
-                </html>
-            `;
+            showAIReviewPanel(taskId, reviewText);
         } catch (error: any) {
             console.error(`❌ [NETWORK] AI Review Fetch failed:`, error?.response?.data || error.message);
             if (error.response && error.response.status === 404) {
@@ -585,10 +484,15 @@ export function activate(context: vscode.ExtensionContext) {
             if (currentBranch === 'main' || currentBranch === 'master' || !branchRegex.test(currentBranch)) {
                 console.log(`👀 [EVENT] Non-TRON branch detected. Launching popup...`);
                 hasPromptedForTask = true; 
+                updateStatusBarItem(tronStatusBar, undefined);
                 await vscode.commands.executeCommand('tron.selectTaskPopup', { autoTrigger: true });
             } else {
                 console.log(`✅ [EVENT] User is on a valid TRON branch. Staying silent.`);
                 hasPromptedForTask = true;
+                const match = currentBranch.match(branchRegex);
+                if (match && match[2]) {
+                    updateStatusBarItem(tronStatusBar, match[2]);
+                }
             }
         } catch (error: any) {
             console.error(`❌ [EVENT] Git branch check failed:`, error.message);

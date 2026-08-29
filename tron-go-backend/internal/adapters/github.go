@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tron-v3.1/tron-go-backend/internal/services"
+	"github.com/tron-v3.1/tron-go-backend/pkg/githubauth"
 )
 
 type GitHubAdapter struct {
@@ -27,7 +27,7 @@ func NewGitHubAdapter() *GitHubAdapter {
 func (api *GitHubAdapter) FetchAndSanitizeDiff(repoFullName string, prNumber int, installationID string) (string, error) {
 	fmt.Printf("\n📥 [GITHUB ADAPTER] Fetching raw code diff for PR #%d\n", prNumber)
 
-	token, err := services.GetInstallationToken(installationID)
+	token, err := githubauth.GetInstallationToken(installationID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get github token: %w", err)
 	}
@@ -108,7 +108,7 @@ func (api *GitHubAdapter) FetchAndSanitizeDiff(repoFullName string, prNumber int
 
 // PostPullRequestComment adds the AI review to the PR
 func (api *GitHubAdapter) PostPullRequestComment(repoFullName string, prNumber int, commentBody, installationID string) error {
-	token, err := services.GetInstallationToken(installationID)
+	token, err := githubauth.GetInstallationToken(installationID)
 	if err != nil {
 		return err
 	}

@@ -10,3 +10,24 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    depends_on:
+      - redis
+      - db
+
+  # Local Redis for Background Worker Queue
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  # Local Postgres (Supabase substitute for local dev)
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: tron_local
+    ports:
+      - "5432:5432"
+    restart: unless-stopped

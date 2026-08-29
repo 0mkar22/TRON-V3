@@ -13,7 +13,8 @@ import (
 	"time"
 
 	"github.com/tron-v3.1/tron-go-backend/internal/models"
-	"github.com/tron-v3.1/tron-go-backend/internal/services"
+	"github.com/tron-v3.1/tron-go-backend/pkg/vault"
+
 	"github.com/tron-v3.1/tron-go-backend/pkg/database"
 )
 
@@ -48,7 +49,7 @@ func (api *BasecampAdapter) getCredentials(orgID string) (BasecampCredentials, e
 		return BasecampCredentials{}, fmt.Errorf("Basecamp is not connected for Org: %s", orgID)
 	}
 
-	decryptedJson, err := services.GetDecryptedSecret(*integration.SecretID)
+	decryptedJson, err := vault.GetDecryptedSecret(*integration.SecretID)
 	if err != nil {
 		return BasecampCredentials{}, err
 	}
@@ -94,7 +95,7 @@ func (api *BasecampAdapter) refreshBasecampToken(orgID string, currentCreds Base
 	})
 
 	secretName := fmt.Sprintf("basecamp_active_%s_%d", orgID, time.Now().Unix())
-	newSecretID, err := services.InsertSecret(secretName, "Refreshed OAuth keys for Basecamp", string(finalPayload))
+	newSecretID, err := vault.InsertSecret(secretName, "Refreshed OAuth keys for Basecamp", string(finalPayload))
 	if err != nil {
 		return "", err
 	}
@@ -103,7 +104,7 @@ func (api *BasecampAdapter) refreshBasecampToken(orgID string, currentCreds Base
 		Where("provider = ? AND org_id = ?", "basecamp", orgID).
 		Update("secret_id", newSecretID)
 
-	services.DeleteSecret(currentCreds.SecretID)
+	vault.DeleteSecret(currentCreds.SecretID)
 
 	fmt.Printf("✅ [BASECAMP] Token refresh complete! Vault updated for Org [%s].\n", orgID)
 	return tokens.AccessToken, nil

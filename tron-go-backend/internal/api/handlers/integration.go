@@ -11,9 +11,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/tron-v3.1/tron-go-backend/internal/models"
-	"github.com/tron-v3.1/tron-go-backend/internal/services"
+
 	"github.com/tron-v3.1/tron-go-backend/pkg/database"
 	"github.com/tron-v3.1/tron-go-backend/pkg/supabase"
+	"github.com/tron-v3.1/tron-go-backend/pkg/vault"
 )
 
 // ==========================================
@@ -78,7 +79,7 @@ func InitBasecampAuth(c *gin.Context) {
 
 	// 1. Store the pending credentials in the Vault
 	secretName := fmt.Sprintf("basecamp_pending_%s_%d", body.OrgID, time.Now().Unix())
-	secretID, err := services.InsertSecret(secretName, "Pending OAuth keys for Basecamp", string(pendingData))
+	secretID, err := vault.InsertSecret(secretName, "Pending OAuth keys for Basecamp", string(pendingData))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Vault Error: Failed to secure pending keys"})
 		return
@@ -123,7 +124,7 @@ func BasecampCallback(c *gin.Context) {
 	}
 
 	// 2. Decrypt the pending Client ID & Secret
-	decryptedJSON, err := services.GetDecryptedSecret(*pendingInt.SecretID)
+	decryptedJSON, err := vault.GetDecryptedSecret(*pendingInt.SecretID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decrypt pending credentials"})
 		return
@@ -161,7 +162,7 @@ func BasecampCallback(c *gin.Context) {
 	})
 
 	finalSecretName := fmt.Sprintf("basecamp_active_%s_%d", returnedOrgID, time.Now().Unix())
-	finalSecretID, _ := services.InsertSecret(finalSecretName, "Active OAuth keys for Basecamp", string(finalCredentials))
+	finalSecretID, _ := vault.InsertSecret(finalSecretName, "Active OAuth keys for Basecamp", string(finalCredentials))
 
 	// 5. Upsert the Active Integration and Clean Up
 	activeInt := models.Integration{
@@ -172,7 +173,7 @@ func BasecampCallback(c *gin.Context) {
 	database.DB.Save(&activeInt)
 
 	database.DB.Where("provider = ? AND org_id = ?", "basecamp_pending", returnedOrgID).Delete(&models.Integration{})
-	services.DeleteSecret(*pendingInt.SecretID) // Clean up Vault bloat
+	vault.DeleteSecret(*pendingInt.SecretID) // Clean up Vault bloat
 
 	fmt.Println("🎉 All done! Sending success redirect.")
 	frontendURL := os.Getenv("FRONTEND_URL")
@@ -215,7 +216,7 @@ func SaveJiraIntegration(c *gin.Context) {
 
 	// 2. Insert into Supabase Vault
 	secretName := fmt.Sprintf("jira_active_%s_%d", orgID, time.Now().Unix())
-	secretID, err := services.InsertSecret(secretName, "Active API keys for Jira", string(jiraCredentials))
+	secretID, err := vault.InsertSecret(secretName, "Active API keys for Jira", string(jiraCredentials))
 	if err != nil {
 		fmt.Printf("❌ [JIRA] Vault Error for Org %s: %v\n", orgID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Vault Error: Failed to secure Jira keys"})
@@ -225,7 +226,7 @@ func SaveJiraIntegration(c *gin.Context) {
 	// 3. Clean up existing secret if replacing
 	var existingInt models.Integration
 	if err := database.DB.Where("provider = ? AND org_id = ?", "jira", orgID).First(&existingInt).Error; err == nil && existingInt.SecretID != nil {
-		services.DeleteSecret(*existingInt.SecretID) // Delete old vault record
+		vault.DeleteSecret(*existingInt.SecretID) // Delete old vault record
 	}
 
 	// 4. Upsert the Integration record in GORM
@@ -276,7 +277,7 @@ func SaveSlackIntegration(c *gin.Context) {
 
 	// 2. Insert into Supabase Vault securely
 	secretName := fmt.Sprintf("slack_active_%s_%d", orgID, time.Now().Unix())
-	secretID, err := services.InsertSecret(secretName, "Active webhook keys for Slack", string(slackCredentials))
+	secretID, err := vault.InsertSecret(secretName, "Active webhook keys for Slack", string(slackCredentials))
 	if err != nil {
 		fmt.Printf("❌ [SLACK] Vault Error for Org %s: %v\n", orgID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Vault Error: Failed to secure Slack keys"})
@@ -286,7 +287,7 @@ func SaveSlackIntegration(c *gin.Context) {
 	// 3. Clean up existing secret record if replacing an old integration
 	var existingInt models.Integration
 	if err := database.DB.Where("provider = ? AND org_id = ?", "slack", orgID).First(&existingInt).Error; err == nil && existingInt.SecretID != nil {
-		services.DeleteSecret(*existingInt.SecretID) // Clean vault footprint
+		vault.DeleteSecret(*existingInt.SecretID) // Clean vault footprint
 	}
 
 	// 4. Upsert the Integration record in GORM database

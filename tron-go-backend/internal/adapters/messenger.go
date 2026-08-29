@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"github.com/tron-v3.1/tron-go-backend/internal/models"
-	"github.com/tron-v3.1/tron-go-backend/internal/services"
+	"github.com/tron-v3.1/tron-go-backend/pkg/vault"
+
 	"github.com/tron-v3.1/tron-go-backend/pkg/database"
 )
 
@@ -84,7 +85,7 @@ func (api *MessengerAdapter) sendDiscordBot(config CommunicationConfig, prTitle,
 
 	// 2. 🌟 THE FIX: Smart Vault Fallback in Go
 	if err == nil && integration.SecretID != nil && actualBotToken == "" {
-		decryptedSecret, decErr := services.GetDecryptedSecret(*integration.SecretID)
+		decryptedSecret, decErr := vault.GetDecryptedSecret(*integration.SecretID)
 
 		if decErr == nil && decryptedSecret != "" {
 			// Try to parse it as JSON first

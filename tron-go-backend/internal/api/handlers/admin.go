@@ -1,23 +1,10 @@
 package handlers
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"log"
 	"net/http"
-	"os"
-	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/tron-v3.1/tron-go-backend/internal/models"
 	"github.com/tron-v3.1/tron-go-backend/internal/services"
-	"github.com/tron-v3.1/tron-go-backend/pkg/database"
-	"github.com/tron-v3.1/tron-go-backend/pkg/redis"
-	"gorm.io/datatypes"
 )
 
 // ==========================================
@@ -26,72 +13,12 @@ import (
 func GetGitHubRepos(c *gin.Context) {
 	orgID := c.GetString("orgId")
 
-	fmt.Printf("🔍 [GITHUB] Fetching repos for Org: %s\n", orgID)
-
-	var integration models.Integration
-	if err := database.DB.Where("org_id = ? AND provider = ?", orgID, "github").First(&integration).Error; err != nil {
-		fmt.Printf("❌ [GITHUB] No github integration found in DB for Org: %s\n", orgID)
-		c.JSON(http.StatusOK, gin.H{"repos": []interface{}{}})
-		return
-	}
-
-	// 🌟 FIX: Check both Token (Plaintext) and SecretID (Vault) exactly like Node.js did
-	installationID := integration.Token
-	if installationID == "" && integration.SecretID != nil {
-		fmt.Printf("🔍 [GITHUB] Token column empty, checking Vault (SecretID: %s)\n", *integration.SecretID)
-		installationID, _ = services.GetDecryptedSecret(*integration.SecretID)
-	}
-
-	if installationID == "" {
-		fmt.Printf("❌ [GITHUB] Installation ID is completely empty!\n")
-		c.JSON(http.StatusOK, gin.H{"repos": []interface{}{}})
-		return
-	}
-
-	fmt.Printf("✅ [GITHUB] Found Installation ID: %s. Generating App JWT...\n", installationID)
-
-	token, err := services.GetInstallationToken(installationID)
+	repos, err := services.FetchGitHubRepos(orgID)
 	if err != nil {
-		fmt.Printf("❌ [GITHUB] Failed to generate Installation Token: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate GitHub token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	fmt.Printf("✅ [GITHUB] Token Generated. Fetching Repositories from GitHub API...\n")
-
-	req, _ := http.NewRequest("GET", "https://api.github.com/installation/repositories?per_page=100", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode >= 400 {
-		if resp != nil {
-			bodyBytes, _ := io.ReadAll(resp.Body)
-			fmt.Printf("❌ [GITHUB] API Error (%d): %s\n", resp.StatusCode, string(bodyBytes))
-		}
-		c.JSON(http.StatusOK, gin.H{"repos": []interface{}{}})
-		return
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Repositories []map[string]interface{} `json:"repositories"`
-	}
-	json.NewDecoder(resp.Body).Decode(&result)
-
-	var repos []map[string]interface{}
-	for _, repo := range result.Repositories {
-		repos = append(repos, map[string]interface{}{
-			"id":        repo["id"],
-			"name":      repo["name"],
-			"full_name": repo["full_name"],
-			"private":   repo["private"],
-			"url":       repo["html_url"],
-		})
-	}
-
-	fmt.Printf("🎉 [GITHUB] Successfully returning %d repositories!\n", len(repos))
 	c.JSON(http.StatusOK, gin.H{"repos": repos})
 }
 
@@ -101,9 +28,8 @@ func GetGitHubRepos(c *gin.Context) {
 func GetDashboardWorkflows(c *gin.Context) {
 	orgID := c.GetString("orgId")
 
-	var workflows []models.Repository
-	// 🔒 THE LOCK: Ensure it only fetches this tenant's workflows
-	if err := database.DB.Where("org_id = ?", orgID).Find(&workflows).Error; err != nil {
+	workflows, err := services.FetchDashboardWorkflows(orgID)
+	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"workflows": []interface{}{}})
 		return
 	}
@@ -115,45 +41,10 @@ func GetDashboardWorkflows(c *gin.Context) {
 // 6. SECURE SYSTEM STATUS (Mission Control)
 // ==========================================
 func GetSystemStatus(c *gin.Context) {
-	ctx := context.Background()
-
-	// 1. Fetch the Active Queue directly from Redis memory
-	rawQueue, err := redis.Client.LRange(ctx, "tron:v3_secret_queue", 0, -1).Result()
+	parsedQueue, activeReviews, err := services.FetchSystemStatus()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch queue from Redis"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-
-	var parsedQueue []map[string]interface{}
-	for _, item := range rawQueue {
-		var job map[string]interface{}
-		if err := json.Unmarshal([]byte(item), &job); err == nil {
-			parsedQueue = append(parsedQueue, job)
-		}
-	}
-
-	// 2. Fetch the Cached AI Reviews from Redis memory
-	reviewKeys, _ := redis.Client.Keys(ctx, "ai:review:*").Result()
-	var activeReviews []map[string]interface{}
-
-	for _, key := range reviewKeys {
-		rawReview, _ := redis.Client.Get(ctx, key).Result()
-		var parsedReview map[string]interface{}
-		if err := json.Unmarshal([]byte(rawReview), &parsedReview); err == nil {
-			parts := strings.Split(key, ":")
-			taskID := parts[len(parts)-1]
-			activeReviews = append(activeReviews, map[string]interface{}{
-				"taskId":  taskID,
-				"details": parsedReview,
-			})
-		}
-	}
-
-	if parsedQueue == nil {
-		parsedQueue = make([]map[string]interface{}, 0)
-	}
-	if activeReviews == nil {
-		activeReviews = make([]map[string]interface{}, 0)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -170,7 +61,6 @@ func GetSystemStatus(c *gin.Context) {
 func InviteDeveloper(c *gin.Context) {
 	orgID := c.GetString("orgId")
 
-	// 1. Strict validation binding
 	var body struct {
 		Email string `json:"email" binding:"required,email"`
 	}
@@ -179,117 +69,13 @@ func InviteDeveloper(c *gin.Context) {
 		return
 	}
 
-	targetEmail := strings.ToLower(strings.TrimSpace(body.Email))
-	log.Printf("✉️ [ADMIN] Attempting to invite %s to Org: %s\n", targetEmail, orgID)
-
-	// 🌟 2. SMART MERGE: Check if user already exists in the local database
-	var existingUser models.User
-	if err := database.DB.Where("email = ?", targetEmail).First(&existingUser).Error; err == nil {
-		log.Printf("🔄 [ADMIN] User %s already exists. Performing Smart Merge into Org: %s\n", targetEmail, orgID)
-
-		// PATH A: They already have an account!
-		// Securely move them into the Admin's organization.
-		if updateErr := database.DB.Model(&existingUser).Updates(map[string]interface{}{
-			"org_id": orgID,
-			"role":   "developer", // Lock them to standard developer permissions
-		}).Error; updateErr != nil {
-			log.Printf("❌ [ADMIN] Failed to merge existing user: %v\n", updateErr)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update existing user's organization."})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"message": "This developer already had an account and was instantly added to your team roster!",
-		})
-		return
-	}
-
-	// PATH B: Brand new user. Proceed with Supabase invite API.
-
-	// 3. Dynamic Environment Variables
-	frontendURL := os.Getenv("FRONTEND_URL")
-	if frontendURL == "" {
-		frontendURL = "https://tron-v3.vercel.app" // Fallback safety
-	}
-	redirectURL := fmt.Sprintf("%s/onboarding/set-password", frontendURL)
-
-	baseURL := os.Getenv("SUPABASE_URL")
-	serviceKey := os.Getenv("SUPABASE_SERVICE_ROLE_KEY")
-	if baseURL == "" || serviceKey == "" {
-		log.Println("❌ [ADMIN] Server Configuration Error: Missing Supabase keys.")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server configuration error."})
-		return
-	}
-
-	params := map[string]interface{}{
-		"email": targetEmail,
-		"data": map[string]interface{}{
-			"org_id": orgID,
-			"role":   "developer",
-		},
-		"redirect_to": redirectURL,
-	}
-
-	inviteEndpoint := fmt.Sprintf("%s/auth/v1/invite?redirect_to=%s", baseURL, redirectURL)
-
-	// 4. Explicit Error Handling for Data Parsing
-	payloadBytes, err := json.Marshal(params)
+	msg, err, status := services.InviteDeveloperService(orgID, body.Email)
 	if err != nil {
-		log.Printf("❌ [ADMIN] JSON Marshal Error: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to format invite data."})
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 5. Request Context Binding
-	req, err := http.NewRequestWithContext(c.Request.Context(), "POST", inviteEndpoint, bytes.NewReader(payloadBytes))
-	if err != nil {
-		log.Printf("❌ [ADMIN] Request Creation Error: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create authentication request."})
-		return
-	}
-
-	req.Header.Set("apikey", serviceKey)
-	req.Header.Set("Authorization", "Bearer "+serviceKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	// 6. Strict HTTP Client Timeout
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Printf("❌ [ADMIN] Supabase Network Error: %v\n", err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to communicate with authentication provider."})
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
-		log.Printf("❌ [ADMIN] Supabase Rejection (Status %d): %s\n", resp.StatusCode, string(respBody))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Authentication provider rejected the invite."})
-		return
-	}
-
-	var result struct {
-		ID string `json:"id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		log.Printf("❌ [ADMIN] Decode Error: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invite sent, but failed to parse provider response."})
-		return
-	}
-
-	// 7. Database Error Capture
-	dbResult := database.DB.Exec("INSERT INTO users (id, email, org_id, role) VALUES (?, ?, ?, 'developer') ON CONFLICT (id) DO NOTHING", result.ID, targetEmail, orgID)
-	if dbResult.Error != nil {
-		log.Printf("❌ [ADMIN] Database Insertion Error: %v\n", dbResult.Error)
-		// We still return 200/207 here because the email actually sent via Supabase,
-		// but we log the error heavily so you can investigate the DB state.
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Invite sent to %s successfully!", targetEmail)})
+	c.JSON(status, gin.H{"message": msg})
 }
 
 // ==========================================
@@ -299,33 +85,15 @@ func RemoveDeveloper(c *gin.Context) {
 	adminOrgID := c.GetString("orgId")
 	targetUserID := c.Param("id")
 
-	// 1. Prevent admins from accidentally removing themselves
 	adminUser, _ := getUserFromToken(c)
-	if adminUser.ID == targetUserID {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "You cannot remove yourself from the team."})
+
+	msg, err, status := services.RemoveDeveloperService(adminUser.ID, adminOrgID, targetUserID)
+	if err != nil {
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 2. Verify the target user actually belongs to this admin's organization
-	var targetUser models.User
-	if err := database.DB.Where("id = ? AND org_id = ?", targetUserID, adminOrgID).First(&targetUser).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Developer not found in your team."})
-		return
-	}
-
-	// 3. Security Wipe: Delete all explicit repository assignments for this user
-	if err := database.DB.Where("user_id = ?", targetUserID).Delete(&models.ProjectAssignment{}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to revoke workflow assignments."})
-		return
-	}
-
-	// 4. Detach from Organization (Sets org_id to blank, returning them to a solo state)
-	if err := database.DB.Model(&targetUser).Update("org_id", "").Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove developer from team."})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Developer successfully removed from the team."})
+	c.JSON(status, gin.H{"message": msg})
 }
 
 // ==========================================
@@ -346,20 +114,9 @@ func LinkRepository(c *gin.Context) {
 		return
 	}
 
-	mappingJSON, _ := json.Marshal(body.Mapping)
-	commJSON, _ := json.Marshal(body.CommunicationConfig)
-
-	repo := models.Repository{
-		OrgID:               body.OrgID,
-		RepoName:            body.RepoName,
-		PMProvider:          body.PMProvider,
-		PMProjectID:         body.PMProjectID,
-		Mapping:             datatypes.JSON(mappingJSON),
-		CommunicationConfig: datatypes.JSON(commJSON),
-	}
-
-	if err := database.DB.Save(&repo).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save repository configuration"})
+	err := services.LinkRepositoryService(body.OrgID, body.RepoName, body.PMProvider, body.PMProjectID, body.Mapping, body.CommunicationConfig)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Repository linked successfully."})
@@ -371,45 +128,10 @@ func LinkRepository(c *gin.Context) {
 func GetBasecampProjects(c *gin.Context) {
 	orgID := c.GetString("orgId")
 
-	var integration models.Integration
-	if err := database.DB.Where("provider = ? AND org_id = ?", "basecamp", orgID).First(&integration).Error; err != nil {
+	projects, err := services.FetchBasecampProjects(orgID)
+	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"projects": []interface{}{}})
 		return
-	}
-
-	decryptedJSON, _ := services.GetDecryptedSecret(*integration.SecretID)
-	var creds map[string]string
-	json.Unmarshal([]byte(decryptedJSON), &creds)
-
-	url := fmt.Sprintf("https://3.basecampapi.com/%s/projects.json", creds["accountId"])
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("Authorization", "Bearer "+creds["accessToken"])
-	req.Header.Set("User-Agent", "TRON-V3-Engine (admin@tron.local)")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode >= 400 {
-		c.JSON(http.StatusOK, gin.H{"projects": []interface{}{}})
-		return
-	}
-	defer resp.Body.Close()
-
-	var rawProjects []map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&rawProjects)
-
-	var projects []map[string]interface{}
-	for _, p := range rawProjects {
-		// 🌟 FIX: Safely cast the float64 to a solid integer string to prevent scientific notation
-		idStr := fmt.Sprintf("%v", p["id"])
-		if fVal, ok := p["id"].(float64); ok {
-			idStr = fmt.Sprintf("%.0f", fVal)
-		}
-
-		projects = append(projects, map[string]interface{}{
-			"id":       idStr,
-			"name":     p["name"],
-			"provider": "basecamp",
-		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"projects": projects})
@@ -421,67 +143,13 @@ func GetBasecampProjects(c *gin.Context) {
 func GetDiscordStatus(c *gin.Context) {
 	orgID := c.GetString("orgId")
 
-	var integration models.Integration
-	err := database.DB.Where("org_id = ? AND provider IN ?", orgID, []string{"discord", "discord_bot"}).First(&integration).Error
-	if err != nil || integration.SecretID == nil {
+	channels, err := services.FetchDiscordStatus(orgID)
+	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"channels": []interface{}{}})
 		return
 	}
 
-	decryptedSecret, _ := services.GetDecryptedSecret(*integration.SecretID)
-	actualToken := decryptedSecret
-
-	var creds map[string]interface{}
-	if parseErr := json.Unmarshal([]byte(decryptedSecret), &creds); parseErr == nil {
-		if val, ok := creds["botToken"].(string); ok {
-			actualToken = val
-		} else if val, ok := creds["bot_token"].(string); ok {
-			actualToken = val
-		}
-	}
-
-	req, _ := http.NewRequest("GET", "https://discord.com/api/v10/users/@me/guilds", nil)
-	req.Header.Set("Authorization", "Bot "+actualToken)
-	client := &http.Client{Timeout: 5 * time.Second}
-	guildsRes, err := client.Do(req)
-
-	if err != nil || guildsRes.StatusCode >= 400 {
-		c.JSON(http.StatusOK, gin.H{"channels": []interface{}{}})
-		return
-	}
-	defer guildsRes.Body.Close()
-
-	var guilds []map[string]interface{}
-	json.NewDecoder(guildsRes.Body).Decode(&guilds)
-	if len(guilds) == 0 {
-		c.JSON(http.StatusOK, gin.H{"channels": []interface{}{}})
-		return
-	}
-
-	guildID := fmt.Sprintf("%v", guilds[0]["id"])
-
-	req2, _ := http.NewRequest("GET", fmt.Sprintf("https://discord.com/api/v10/guilds/%s/channels", guildID), nil)
-	req2.Header.Set("Authorization", "Bot "+actualToken)
-	channelsRes, err := client.Do(req2)
-	if err != nil || channelsRes.StatusCode >= 400 {
-		c.JSON(http.StatusOK, gin.H{"channels": []interface{}{}})
-		return
-	}
-	defer channelsRes.Body.Close()
-
-	var allChannels []map[string]interface{}
-	json.NewDecoder(channelsRes.Body).Decode(&allChannels)
-
-	var textChannels []map[string]interface{}
-	for _, ch := range allChannels {
-		if fmt.Sprintf("%v", ch["type"]) == "0" {
-			textChannels = append(textChannels, map[string]interface{}{
-				"id":   ch["id"],
-				"name": ch["name"],
-			})
-		}
-	}
-	c.JSON(http.StatusOK, gin.H{"channels": textChannels})
+	c.JSON(http.StatusOK, gin.H{"channels": channels})
 }
 
 // ==========================================
@@ -497,162 +165,13 @@ func GetBasecampColumns(c *gin.Context) {
 		return
 	}
 
-	fmt.Printf("\n🔍 [BASECAMP] Fetching Columns for Project: %s (Org: %s)\n", body.ProjectID, body.OrgID)
-
-	var integration models.Integration
-	if err := database.DB.Where("provider = ? AND org_id = ?", "basecamp", body.OrgID).First(&integration).Error; err != nil {
-		fmt.Printf("❌ [BASECAMP] Integration not found in DB\n")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Basecamp not connected"})
-		return
-	}
-
-	decryptedJSON, err := services.GetDecryptedSecret(*integration.SecretID)
+	columns, err, status := services.FetchBasecampColumns(body.OrgID, body.ProjectID)
 	if err != nil {
-		fmt.Printf("❌ [BASECAMP] Failed to decrypt Vault secret: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Vault decryption failed"})
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 
-	var creds map[string]string
-	json.Unmarshal([]byte(decryptedJSON), &creds)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	makeRequest := func(url string) (*http.Response, error) {
-		req, _ := http.NewRequest("GET", url, nil)
-		req.Header.Set("Authorization", "Bearer "+creds["accessToken"])
-		req.Header.Set("User-Agent", "TRON-V3-Engine (admin@tron.local)")
-		return client.Do(req)
-	}
-
-	dockURL := fmt.Sprintf("https://3.basecampapi.com/%s/projects/%s.json", creds["accountId"], body.ProjectID)
-	fmt.Printf("🔍 [BASECAMP] Requesting Dock metadata from: %s\n", dockURL)
-
-	resp, err := makeRequest(dockURL)
-	if err != nil || resp.StatusCode >= 400 {
-		if resp != nil {
-			errBody, _ := io.ReadAll(resp.Body)
-			fmt.Printf("❌ [BASECAMP] Dock API Error (%d): %s\n", resp.StatusCode, string(errBody))
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch project dock"})
-		return
-	}
-	defer resp.Body.Close()
-
-	var projectRes struct {
-		Dock []struct {
-			Name  string `json:"name"`
-			Title string `json:"title"`
-			URL   string `json:"url"`
-		} `json:"dock"`
-	}
-	json.NewDecoder(resp.Body).Decode(&projectRes)
-
-	var toolURL string
-	for _, t := range projectRes.Dock {
-		name := strings.ToLower(t.Name)
-		title := strings.ToLower(t.Title)
-		if strings.Contains(name, "card") || strings.Contains(title, "card") ||
-			strings.Contains(name, "kanban") || strings.Contains(title, "kanban") {
-			toolURL = t.URL
-			fmt.Printf("✅ [BASECAMP] Found Kanban Tool! URL: %s\n", toolURL)
-			break
-		}
-	}
-
-	if toolURL == "" {
-		for _, t := range projectRes.Dock {
-			name := strings.ToLower(t.Name)
-			title := strings.ToLower(t.Title)
-			if strings.Contains(name, "todoset") || strings.Contains(title, "todo") || strings.Contains(title, "to-do") {
-				toolURL = t.URL
-				fmt.Printf("✅ [BASECAMP] Found To-Do Tool (Fallback)! URL: %s\n", toolURL)
-				break
-			}
-		}
-	}
-
-	if toolURL == "" {
-		fmt.Printf("❌ [BASECAMP] No Card Table or To-Do list found in dock payload.\n")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No Card Table or To-Do list found."})
-		return
-	}
-
-	fmt.Printf("🔍 [BASECAMP] Requesting Columns metadata from: %s\n", toolURL)
-	toolResp, err := makeRequest(toolURL)
-	if err != nil || toolResp.StatusCode >= 400 {
-		if toolResp != nil {
-			errBody, _ := io.ReadAll(toolResp.Body)
-			fmt.Printf("❌ [BASECAMP] Columns API Error (%d): %s\n", toolResp.StatusCode, string(errBody))
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tool metadata"})
-		return
-	}
-	defer toolResp.Body.Close()
-
-	var toolData map[string]interface{}
-	json.NewDecoder(toolResp.Body).Decode(&toolData)
-
-	var rawLists []interface{}
-	if lists, ok := toolData["lists"].([]interface{}); ok {
-		rawLists = lists
-	}
-	if columns, ok := toolData["columns"].([]interface{}); ok && rawLists == nil {
-		rawLists = columns
-	}
-	if todos, ok := toolData["todolists"].([]interface{}); ok && rawLists == nil {
-		rawLists = todos
-	}
-
-	targetURL := ""
-	if url, ok := toolData["lists_url"].(string); ok {
-		targetURL = url
-	}
-	if url, ok := toolData["todolists_url"].(string); ok && targetURL == "" {
-		targetURL = url
-	}
-
-	if rawLists == nil && targetURL != "" {
-		fmt.Printf("🔍 [BASECAMP] Following pagination lists_url: %s\n", targetURL)
-		listsResp, err := makeRequest(targetURL)
-		if err == nil && listsResp.StatusCode < 400 {
-			defer listsResp.Body.Close()
-			json.NewDecoder(listsResp.Body).Decode(&rawLists)
-		} else if listsResp != nil {
-			errBody, _ := io.ReadAll(listsResp.Body)
-			fmt.Printf("❌ [BASECAMP] Pagination API Error (%d): %s\n", listsResp.StatusCode, string(errBody))
-		}
-	}
-
-	if rawLists == nil {
-		rawLists = make([]interface{}, 0)
-	}
-
-	var columns []map[string]interface{}
-	for _, item := range rawLists {
-		listMap, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		name := listMap["title"]
-		if name == nil {
-			name = listMap["name"]
-		}
-
-		// 🌟 FIX: Safely cast the Column ID float64 to a solid integer string
-		idStr := fmt.Sprintf("%v", listMap["id"])
-		if fVal, ok := listMap["id"].(float64); ok {
-			idStr = fmt.Sprintf("%.0f", fVal)
-		}
-
-		columns = append(columns, map[string]interface{}{
-			"id":   idStr,
-			"name": name,
-		})
-	}
-
-	fmt.Printf("🎉 [BASECAMP] Successfully returning %d columns!\n\n", len(columns))
-	c.JSON(http.StatusOK, gin.H{"columns": columns})
+	c.JSON(status, gin.H{"columns": columns})
 }
 
 // ==========================================
@@ -665,63 +184,11 @@ func UninstallGitHubApp(c *gin.Context) {
 		return
 	}
 
-	fmt.Printf("🐛 [GITHUB UNINSTALL] Initiating cleanup for Org: %s\n", orgID)
-
-	var integration models.Integration
-	if err := database.DB.Where("org_id = ? AND provider = ?", orgID, "github").First(&integration).Error; err != nil {
-		fmt.Printf("✅ [GITHUB UNINSTALL] No integration found in DB. Already clean.\n")
-		c.JSON(http.StatusOK, gin.H{"success": true})
-		return
-	}
-
-	// 🌟 FIX 1: Check both Token (Plaintext) and SecretID (Vault)
-	installationID := integration.Token
-	if installationID == "" && integration.SecretID != nil {
-		installationID, _ = services.GetDecryptedSecret(*integration.SecretID)
-	}
-
-	if installationID == "" {
-		fmt.Printf("⚠️ [GITHUB UNINSTALL] No Installation ID found. Wiping local DB record.\n")
-		database.DB.Delete(&integration)
-		c.JSON(http.StatusOK, gin.H{"success": true})
-		return
-	}
-
-	appJWT, err := services.GenerateAppJWT()
+	err, status := services.UninstallGitHubAppService(orgID)
 	if err != nil {
-		fmt.Printf("❌ [GITHUB UNINSTALL] Failed to generate App JWT: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate App JWT"})
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 
-	url := fmt.Sprintf("https://api.github.com/app/installations/%s", installationID)
-	req, _ := http.NewRequest("DELETE", url, nil)
-	req.Header.Set("Authorization", "Bearer "+appJWT)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-
-	if err != nil {
-		fmt.Printf("❌ [GITHUB UNINSTALL] API Request Failed: %v\n", err)
-	} else if resp.StatusCode >= 400 && resp.StatusCode != http.StatusNotFound {
-		// 🌟 FIX 2: Ignore 404s! If it's a 404, it means it's already uninstalled on GitHub.
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		fmt.Printf("❌ [GITHUB UNINSTALL] API Error (%d): %s\n", resp.StatusCode, string(bodyBytes))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to uninstall from GitHub API"})
-		return
-	}
-
-	if resp != nil {
-		defer resp.Body.Close()
-	}
-
-	// Clean up Vault and Database
-	if integration.SecretID != nil {
-		services.DeleteSecret(*integration.SecretID)
-	}
-	database.DB.Delete(&integration)
-
-	fmt.Printf("🎉 [GITHUB UNINSTALL] Successfully wiped Integration for Org: %s\n", orgID)
-	c.JSON(http.StatusOK, gin.H{"success": true})
+	c.JSON(status, gin.H{"success": true})
 }
