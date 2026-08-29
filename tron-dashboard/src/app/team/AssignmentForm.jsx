@@ -35,13 +35,13 @@ export default function AssignmentForm({ developers = [], workflows = [], onSucc
     };
 
     return (
-        <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden mb-8">
-            <div className="p-6 sm:p-8 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+        <div className="bg-white border-4 border-black shadow-brutal-lg flex flex-col mb-8">
+            <div className="p-6 border-b-4 border-black bg-brutal-orange flex items-center justify-between">
                 <div>
-                    <h2 className="text-xl font-bold text-gray-900">Assign to Workflow</h2>
-                    <p className="text-sm text-gray-500 mt-1">Grant a developer access to a specific repository and PM board.</p>
+                    <h2 className="text-3xl font-black uppercase text-black">Assign to Workflow</h2>
+                    <p className="font-mono font-bold text-black mt-1">Grant a developer access to a specific repository and PM board.</p>
                 </div>
-                <div className="hidden sm:flex h-12 w-12 bg-purple-50 rounded-full items-center justify-center text-purple-600">
+                <div className="hidden sm:flex h-16 w-16 bg-white border-4 border-black items-center justify-center text-black shadow-brutal">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                     </svg>
@@ -53,11 +53,11 @@ export default function AssignmentForm({ developers = [], workflows = [], onSucc
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                         {/* Developer Dropdown */}
                         <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-2">Select Developer</label>
+                            <label className="block font-black text-xl mb-2 uppercase text-black">Select Developer</label>
                             <select 
                                 name="userId" 
                                 required
-                                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm"
+                                className="input-brutal text-black"
                             >
                                 <option value="" disabled selected>-- Choose a team member --</option>
                                 {availableDevs.map(dev => (
@@ -68,11 +68,11 @@ export default function AssignmentForm({ developers = [], workflows = [], onSucc
 
                         {/* Workflow Dropdown */}
                         <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-2">Select Target Workflow</label>
+                            <label className="block font-black text-xl mb-2 uppercase text-black">Select Target Workflow</label>
                             <select 
                                 name="repositoryId" 
                                 required
-                                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm"
+                                className="input-brutal text-black"
                             >
                                 <option value="" disabled selected>-- Choose a mapped repository --</option>
                                 {workflows.map(wf => (
@@ -85,15 +85,15 @@ export default function AssignmentForm({ developers = [], workflows = [], onSucc
                     </div>
 
                     {status.message && (
-                        <div className={`p-4 rounded-xl text-sm flex items-start ${status.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' : 'bg-red-50 text-red-800 border border-red-100'}`}>
-                            <span className="font-medium">{status.message}</span>
+                        <div className={`mb-6 p-4 border-4 border-black font-black uppercase text-center shadow-brutal text-black ${status.type === 'success' ? 'bg-brutal-green' : 'bg-brutal-pink'}`}>
+                            <span className="font-mono font-bold">{status.message}</span>
                         </div>
                     )}
 
                     <button 
                         type="submit" 
                         disabled={loading || availableDevs.length === 0 || workflows.length === 0}
-                        className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-sm font-semibold rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-sm transition-all duration-200 disabled:opacity-60"
+                        className="btn-brutal bg-brutal-blue text-black px-6 py-4 text-xl mt-4 disabled:opacity-50"
                     >
                         {loading ? 'Assigning...' : 'Grant Access'}
                     </button>

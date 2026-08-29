@@ -32,14 +32,14 @@ export default async function RootLayout({ children }) {
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="bg-chrome-bg text-gray-900 min-h-screen">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <body className="bg-brutal-bg text-black min-h-screen font-sans">
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
           <div className="flex min-h-screen">
             <ConditionalHeader>
               <Sidebar currentOrg={currentOrg} />
             </ConditionalHeader>
 
-            <main className="flex-grow w-full overflow-y-auto bg-gray-50 dark:bg-gray-800">
+            <main className="flex-grow w-full overflow-y-auto">
               {children}
             </main>
           </div>

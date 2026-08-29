@@ -146,21 +146,21 @@ export default function ClientForm({ connectedProviders = [] }) {
          {/* Source Section */}
         <div className="space-y-4">
             {/* FIX: Added htmlFor */}
-            <label htmlFor="repoName" className="block text-sm font-semibold text-gray-900">Source Repository</label>
+            <label htmlFor="repoName" className="block font-black text-xl mb-2 uppercase text-black">Source Repository</label>
             {isLoadingRepos ? (
-                <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-400 text-sm animate-pulse">Loading repositories...</div>
+                <div className="w-full p-4 border-4 border-black bg-white text-black font-mono font-bold shadow-brutal animate-pulse">Loading repositories...</div>
             ) : !isGithubConnected ? (
-                <div className="w-full px-4 py-3 border border-red-200 rounded-xl bg-red-50 text-red-700 text-sm flex justify-between items-center">
+                <div className="w-full p-4 border-4 border-black bg-brutal-pink text-black font-mono font-bold shadow-brutal flex justify-between items-center">
                     <span className="font-medium">GitHub not connected.</span>
-                    <button type="button" onClick={() => router.push('/integrations')} className="font-bold underline hover:text-red-900">Connect</button>
+                    <button type="button" onClick={() => router.push('/integrations')} className="btn-brutal bg-white px-4 py-2 text-black">Connect</button>
                 </div>
             ) : githubRepos.length === 0 ? (
                 // FIX: Inline error box instead of hiding it inside the select menu
-                <div className="w-full px-4 py-3 border border-red-200 rounded-xl bg-red-50 text-red-700 text-sm font-medium">
+                <div className="w-full p-4 border-4 border-black bg-brutal-pink text-black font-mono font-bold shadow-brutal">
                     No repositories found. Ensure your GitHub App has access to your repositories.
                 </div>
             ) : (
-                <select id="repoName" required value={formData.repoName} onChange={(e) => setFormData({ ...formData, repoName: e.target.value })} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm">
+                <select id="repoName" required value={formData.repoName} onChange={(e) => setFormData({ ...formData, repoName: e.target.value })} className="input-brutal text-black">
                     <option value="" disabled>Select a repository...</option>
                     {githubRepos.map((repo) => <option key={repo.id} value={repo.full_name}>{repo.full_name}</option>)}
                 </select>
@@ -169,18 +169,18 @@ export default function ClientForm({ connectedProviders = [] }) {
 
         {/* PM Section */}
         <div className="space-y-4">
-            <label htmlFor="pmProvider" className="block text-sm font-semibold text-gray-900">Target Project</label>
+            <label htmlFor="pmProvider" className="block font-black text-xl mb-2 uppercase text-black">Target Project</label>
             
             {!isBcConnected && !isJiraConnected && !isLinearConnected ? (
-                <div className="w-full px-4 py-3 border border-red-200 rounded-xl bg-red-50 text-red-700 text-sm flex justify-between items-center">
+                <div className="w-full p-4 border-4 border-black bg-brutal-pink text-black font-mono font-bold shadow-brutal flex justify-between items-center">
                     <span className="font-medium">No Project Management tools connected.</span>
-                    <button type="button" onClick={() => router.push('/integrations')} className="font-bold underline hover:text-red-900">Connect a Tool</button>
+                    <button type="button" onClick={() => router.push('/integrations')} className="btn-brutal bg-white px-4 py-2 text-black">Connect a Tool</button>
                 </div>
             ) : (
                 <div className="flex flex-col sm:flex-row gap-3">
                     <select 
                         id="pmProvider"
-                        className="w-full sm:w-1/3 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm" 
+                        className="input-brutal text-black" 
                         value={formData.pmProvider} 
                         onChange={(e) => {
                             setFormData({ ...formData, pmProvider: e.target.value, pmProjectId: '', teamKey: '', todoCol: '', branchCol: '', prCol: '', doneCol: '' });
@@ -197,14 +197,14 @@ export default function ClientForm({ connectedProviders = [] }) {
                         {formData.pmProvider === 'basecamp' && (
                             <>
                                 {isLoadingBcProjects ? (
-                                    <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-400 text-sm animate-pulse">Loading projects...</div>
+                                    <div className="w-full p-4 border-4 border-black bg-white text-black font-mono font-bold shadow-brutal animate-pulse">Loading projects...</div>
                                 ) : basecampProjects.length === 0 ? (
                                     // FIX: Error box for empty Basecamp projects
-                                    <div className="w-full px-4 py-3 border border-red-200 rounded-xl bg-red-50 text-red-700 text-sm font-medium">
+                                    <div className="w-full p-4 border-4 border-black bg-brutal-pink text-black font-mono font-bold shadow-brutal">
                                         No Basecamp projects found.
                                     </div>
                                 ) : (
-                                    <select id="pmProjectId" aria-label="Basecamp Project" required value={formData.pmProjectId} onChange={(e) => setFormData({ ...formData, pmProjectId: e.target.value })} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm">
+                                    <select id="pmProjectId" aria-label="Basecamp Project" required value={formData.pmProjectId} onChange={(e) => setFormData({ ...formData, pmProjectId: e.target.value })} className="input-brutal text-black">
                                         <option value="" disabled>Select a project...</option>
                                         {basecampProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                                     </select>
@@ -234,7 +234,7 @@ export default function ClientForm({ connectedProviders = [] }) {
         {/* JIRA PROJECT KEY INPUT */}
         {formData.pmProvider === 'jira' && (
             <div className="space-y-4">
-                <label htmlFor="jiraKey" className="block text-sm font-semibold text-gray-900">Jira Project Key</label>
+                <label htmlFor="jiraKey" className="block font-black text-xl mb-2 uppercase text-black">Jira Project Key</label>
                 <input 
                     id="jiraKey"
                     type="text" 
@@ -309,11 +309,11 @@ export default function ClientForm({ connectedProviders = [] }) {
 
         {/* Broadcast Section */}
         <div className="space-y-4">
-            <label htmlFor="broadcastProvider" className="block text-sm font-semibold text-gray-900">Broadcast Channel</label>
+            <label htmlFor="broadcastProvider" className="block font-black text-xl mb-2 uppercase text-black">Broadcast Channel</label>
             
             <select 
                 id="broadcastProvider"
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm"
+                className="input-brutal text-black"
                 value={broadcastProvider}
                 onChange={(e) => {
                     setBroadcastProvider(e.target.value);
@@ -339,7 +339,7 @@ export default function ClientForm({ connectedProviders = [] }) {
             {broadcastProvider === 'discord' && (
                 <div className="animate-fade-in-up space-y-2">
                     {checkingDiscord ? (
-                         <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-400 text-sm animate-pulse">Loading Discord channels...</div>
+                         <div className="w-full p-4 border-4 border-black bg-white text-black font-mono font-bold shadow-brutal animate-pulse">Loading Discord channels...</div>
                     ) : channels.length > 0 ? (
                         <select 
                             required
@@ -352,7 +352,7 @@ export default function ClientForm({ connectedProviders = [] }) {
                             {channels.map(channel => <option key={channel.id} value={channel.id}># {channel.name}</option>)}
                         </select>
                     ) : (
-                        <div className="w-full px-4 py-3 border border-red-200 rounded-xl bg-red-50 text-red-700 text-sm font-medium">
+                        <div className="w-full p-4 border-4 border-black bg-brutal-pink text-black font-mono font-bold shadow-brutal">
                             Failed to resolve active channels. Verify bot server deployment permissions.
                         </div>
                     )}

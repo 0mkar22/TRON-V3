@@ -140,20 +140,20 @@ export default function TeamManagementPage() {
     };
 
     return (
-        <div className="max-w-5xl mx-auto p-6 lg:p-8 font-sans">
-            <div className="mb-10">
-                <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Team Management</h1>
-                <p className="text-gray-500 mt-2 text-lg">Build your engineering team and configure their access.</p>
+        <div className="max-w-7xl mx-auto p-8 font-sans">
+            <div className="mb-8 border-b-8 border-black pb-4">
+                <h1 className="text-5xl font-black uppercase text-black tracking-tight">Team Management</h1>
+                <p className="font-mono text-xl font-bold text-black mt-2">Build your engineering team and configure their access.</p>
             </div>
 
             {/* CARD 1: Invite Form */}
-            <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden mb-8">
-                <div className="p-6 sm:p-8 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+            <div className="bg-white border-4 border-black shadow-brutal-lg flex flex-col mb-8">
+                <div className="p-6 border-b-4 border-black bg-brutal-pink flex items-center justify-between">
                     <div>
-                        <h2 className="text-xl font-bold text-gray-900">Invite New Developer</h2>
-                        <p className="text-sm text-gray-500 mt-1">They will receive an email to join your workspace.</p>
+                        <h2 className="text-3xl font-black uppercase text-black">Invite New Developer</h2>
+                        <p className="font-mono font-bold text-black mt-1">They will receive an email to join your workspace.</p>
                     </div>
-                    <div className="hidden sm:flex h-12 w-12 bg-indigo-50 rounded-full items-center justify-center text-indigo-600">
+                    <div className="hidden sm:flex h-16 w-16 bg-white border-4 border-black items-center justify-center text-black shadow-brutal">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
                         </svg>
@@ -163,7 +163,7 @@ export default function TeamManagementPage() {
                 <div className="p-6 sm:p-8">
                     <form onSubmit={handleInvite} className="max-w-2xl">
                         <div className="mb-6">
-                            <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
+                            <label className="block font-black text-xl mb-2 uppercase text-black">Email Address</label>
                             <div className="relative">
                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                     <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -176,7 +176,7 @@ export default function TeamManagementPage() {
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     placeholder="developer@yourcompany.com"
-                                    className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200"
+                                    className="input-brutal pl-11 text-black"
                                 />
                             </div>
                         </div>
@@ -185,14 +185,14 @@ export default function TeamManagementPage() {
                             <div className={`mb-6 p-4 rounded-xl text-sm flex items-start ${
                                 status.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' : 'bg-red-50 text-red-800 border border-red-100'
                             }`}>
-                                <span className="font-medium">{status.message}</span>
+                                <span className="font-mono font-bold">{status.message}</span>
                             </div>
                         )}
 
                         <button 
                             type="submit" 
                             disabled={loading || !email}
-                            className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-sm font-semibold rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-sm transition-all duration-200 disabled:opacity-60"
+                            className="btn-brutal bg-brutal-blue text-black px-6 py-4 text-xl mt-4 disabled:opacity-50 w-full md:w-auto"
                         >
                             {loading ? 'Sending Invite...' : 'Send Invitation'}
                         </button>
@@ -210,13 +210,13 @@ export default function TeamManagementPage() {
             </div>
 
             {/* CARD 3: Active Workflow Assignments */}
-            <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden mb-8">
-                <div className="p-6 sm:p-8 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+            <div className="bg-white border-4 border-black shadow-brutal-lg flex flex-col mb-8">
+                <div className="p-6 border-b-4 border-black bg-brutal-pink flex items-center justify-between">
                     <div>
-                        <h2 className="text-xl font-bold text-gray-900">Active Workflow Assignments</h2>
-                        <p className="text-sm text-gray-500 mt-1">Developers with explicit access to specific mapped repositories.</p>
+                        <h2 className="text-3xl font-black uppercase text-black">Active Workflow Assignments</h2>
+                        <p className="font-mono font-bold text-black mt-1">Developers with explicit access to specific mapped repositories.</p>
                     </div>
-                    <div className="hidden sm:flex h-12 w-12 bg-sky-50 rounded-full items-center justify-center text-sky-600">
+                    <div className="hidden sm:flex h-16 w-16 bg-white border-4 border-black items-center justify-center text-black shadow-brutal">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 00Dec-5.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                         </svg>
@@ -229,25 +229,25 @@ export default function TeamManagementPage() {
                     ) : assignments.length === 0 ? (
                         <div className="p-12 text-center text-gray-500">No developers have been assigned to workflows yet.</div>
                     ) : (
-                        <ul className="divide-y divide-gray-100">
+                        <ul className="divide-y-4 divide-black">
                             {assignments.map((assignment) => {
                                 const dev = teamMembers.find(m => m.id === assignment.user_id);
                                 const repo = workflows.find(r => r.id === assignment.repository_id);
                                 
                                 return (
-                                    <li key={assignment.id} className="p-6 sm:p-8 hover:bg-gray-50/50 transition-colors">
+                                    <li key={assignment.id} className="p-6 sm:p-8 bg-white hover:bg-brutal-orange transition-colors">
                                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                             <div className="flex items-center gap-3">
-                                                <div className="h-10 w-10 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-sm shrink-0">
+                                                <div className="h-12 w-12 border-4 border-black bg-black text-white flex items-center justify-center font-black text-xl shrink-0">
                                                     {(dev?.full_name || dev?.email || '?').charAt(0).toUpperCase()}
                                                 </div>
                                                 <div>
-                                                    <p className="text-sm font-bold text-gray-900">
+                                                    <p className="text-2xl font-black uppercase text-black">
                                                         {dev?.full_name || dev?.email || 'Unknown Developer'}
                                                     </p>
-                                                    <div className="flex items-center gap-2 mt-1 text-xs font-medium text-gray-500">
+                                                    <div className="flex items-center gap-2 mt-2 text-sm font-mono font-bold text-black">
                                                         <span>Assigned to:</span>
-                                                        <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
+                                                        <span className="text-black bg-brutal-blue border-2 border-black px-2 py-1 shadow-brutal uppercase">
                                                             {repo?.repo_name || 'Unknown Repository'}
                                                         </span>
                                                     </div>
@@ -256,9 +256,9 @@ export default function TeamManagementPage() {
                                             
                                             <button 
                                                 onClick={() => handleRevoke(assignment.id)}
-                                                className="inline-flex items-center justify-center px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 rounded-lg text-sm font-bold transition-colors"
+                                                className="btn-brutal bg-brutal-pink text-black px-6 py-3 w-full sm:w-auto"
                                             >
-                                                Revoke Access
+                                                REVOKE
                                             </button>
                                         </div>
                                     </li>
@@ -270,67 +270,58 @@ export default function TeamManagementPage() {
             </div>
 
             {/* CARD 4: Active Team Roster */}
-            <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
-                <div className="p-6 sm:p-8 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+            <div className="bg-white border-4 border-black shadow-brutal-lg flex flex-col">
+                <div className="p-6 border-b-4 border-black bg-brutal-green flex items-center justify-between">
                     <div>
-                        <h2 className="text-xl font-bold text-gray-900">Active Team Members</h2>
-                        <p className="text-sm text-gray-500 mt-1">Manage your organization&apos;s roster and statuses.</p>
-                    </div>
-                    <div className="hidden sm:flex h-12 w-12 bg-emerald-50 rounded-full items-center justify-center text-emerald-600">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                        </svg>
+                        <h2 className="text-3xl font-black uppercase text-black">Active Team Members</h2>
+                        <p className="font-mono font-bold text-black mt-1">Manage your organization&apos;s roster and statuses.</p>
                     </div>
                 </div>
                 
                 <div className="p-0">
                     {loadingData ? (
-                        <div className="p-12 text-center text-gray-500 flex flex-col items-center">
-                            <svg className="animate-spin h-8 w-8 text-indigo-500 mb-4" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
+                        <div className="p-12 text-center text-black font-mono font-bold text-xl uppercase">
                             Loading team roster...
                         </div>
                     ) : teamMembers.length === 0 ? (
-                        <div className="p-12 text-center text-gray-500">No team members found.</div>
+                        <div className="p-12 text-center text-black font-mono font-bold text-xl uppercase">No team members found.</div>
                     ) : (
-                        <ul className="divide-y divide-gray-100">
+                        <ul className="divide-y-4 divide-black">
                             {teamMembers.map((member) => (
-                                <li key={member.id} className="p-6 sm:p-8 hover:bg-gray-50/50 transition-colors">
-                                    <div className="flex items-center justify-between">
+                                <li key={member.id} className="p-6 sm:p-8 bg-white hover:bg-brutal-pink transition-colors">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                         <div className="flex items-center">
-                                            <div className="h-12 w-12 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-lg shrink-0">
+                                            <div className="h-16 w-16 border-4 border-black bg-black text-white flex items-center justify-center font-black text-2xl shrink-0">
                                                 {member.full_name ? member.full_name.charAt(0).toUpperCase() : member.email.charAt(0).toUpperCase()}
                                             </div>
                                             <div className="ml-4">
-                                                <p className="text-sm font-bold text-gray-900">
-                                                    {member.full_name || 'Pending Developer...'}
+                                                <p className="text-2xl font-black uppercase text-black">
+                                                    {member.full_name || 'PENDING...'}
                                                 </p>
-                                                <p className="text-sm text-gray-500 mt-0.5">{member.email}</p>
+                                                <p className="text-lg font-mono font-bold text-black mt-1">{member.email}</p>
                                             </div>
                                         </div>
 
-                                        <div className="flex items-center gap-2 sm:gap-4">
-                                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                                                member.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                                        <div className="flex flex-wrap items-center gap-4">
+                                            <span className={`inline-flex items-center border-2 border-black px-4 py-2 text-sm font-black uppercase shadow-brutal ${
+                                                member.role === 'admin' ? 'bg-brutal-blue text-black' : 'bg-brutal-orange text-black'
                                             }`}>
-                                                {member.role === 'admin' ? 'Admin' : 'Developer'}
+                                                {member.role === 'admin' ? 'ADMIN' : 'DEVELOPER'}
                                             </span>
                                             
-                                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                                                member.full_name ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                                            <span className={`inline-flex items-center border-2 border-black px-4 py-2 text-sm font-black uppercase shadow-brutal ${
+                                                member.full_name ? 'bg-brutal-green text-black' : 'bg-gray-300 text-black'
                                             }`}>
-                                                {member.full_name ? 'Active' : 'Pending'}
+                                                {member.full_name ? 'ACTIVE' : 'PENDING'}
                                             </span>
 
                                             {/* 🌟 THE REMOVE DEVELOPER BUTTON */}
                                             {member.role !== 'admin' && (
                                                 <button
                                                     onClick={() => handleRemoveDeveloper(member.id, member.email)}
-                                                    className="ml-2 inline-flex items-center justify-center px-3 py-1 border border-red-200 bg-white text-red-600 hover:bg-red-50 rounded-lg text-xs font-bold transition-all duration-150 shadow-sm"
+                                                    className="btn-brutal bg-white text-black px-4 py-2"
                                                 >
-                                                    Remove
+                                                    REMOVE
                                                 </button>
                                             )}
                                         </div>

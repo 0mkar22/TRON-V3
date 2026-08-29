@@ -1,29 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700;900&family=IBM+Plex+Mono:wght@400;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-chrome-bg: #f8fafc;
-  --color-chrome-border: #e2e8f0;
-  --color-terminal-bg: #020617;
-  --color-terminal-text: #34d399;
-  --color-brand-slack: #4A154B;
-  --color-brand-discord: #5865F2;
-  --color-brand-github: #24292e;
-  --color-brand-jira: #0052CC;
-  
-  --animate-data-flow: flow 2s linear infinite;
+  --color-brutal-bg: #f4f4f0;
+  --color-brutal-green: #c7f284;
+  --color-brutal-orange: #ff9c66;
+  --color-brutal-pink: #ff6b6b;
+  --color-brutal-blue: #6b9fff;
 
-  @keyframes flow {
-    0% { stroke-dashoffset: 24; }
-    100% { stroke-dashoffset: 0; }
-  }
-}
+  --shadow-brutal: 4px 4px 0px 0px rgba(0,0,0,1);
+  --shadow-brutal-lg: 8px 8px 0px 0px rgba(0,0,0,1);
 
-:root {
-  --background: #f9fafb; /* Tailwind gray-50 */
-  --foreground: #111827; /* Tailwind gray-900 */
+  --font-sans: 'Space Grotesk', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background-color: var(--color-brutal-bg);
+  color: #000000;
+  font-family: var(--font-sans);
+}
+
+@layer components {
+  /* Global Brutalist Button Utility */
+  .btn-brutal {
+    @apply border-4 border-black shadow-brutal font-black uppercase transition-all duration-75 
+           hover:-translate-y-1 hover:shadow-brutal-lg 
+           active:translate-x-[4px] active:translate-y-[4px] active:shadow-none;
+  }
+  /* Global Brutalist Input Utility */
+  .input-brutal {
+    @apply w-full border-4 border-black p-3 font-mono font-bold focus:outline-none focus:bg-brutal-green transition-colors;
+  }
 }

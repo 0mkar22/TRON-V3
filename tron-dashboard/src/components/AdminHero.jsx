@@ -2,26 +2,26 @@ import React from 'react';
 
 export default function AdminHero({ companyName, fullName, user, handleLogout }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-sm p-6 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center relative">
-      <div className="text-left">
-        <div className="flex items-center gap-3 mb-2">
-          <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-mono uppercase tracking-widest rounded-sm border border-gray-200">
+    <div className="bg-brutal-orange border-4 border-black shadow-brutal-lg p-8 flex flex-col md:flex-row justify-between items-start md:items-center relative overflow-hidden">
+      <div className="text-left relative z-10">
+        <div className="flex items-center gap-4 mb-4">
+          <span className="px-3 py-1 bg-white text-black font-black uppercase tracking-widest border-2 border-black shadow-brutal">
             {companyName}
           </span>
-          <span className="flex items-center gap-1.5 text-xs font-mono text-emerald-600">
-            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-            System Online
+          <span className="flex items-center gap-2 text-sm font-black font-mono bg-black text-brutal-green px-3 py-1 border-2 border-black">
+            <span className="w-2 h-2 bg-brutal-green rounded-full animate-pulse"></span>
+            SYS_ONLINE
           </span>
         </div>
-        <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Dashboard Overview</h1>
-        <p className="text-sm text-gray-500 mt-1 font-mono">
-          {user?.email} <span className="text-gray-400">|</span> <span className="text-gray-900">Admin Privileges</span>
+        <h1 className="text-5xl font-black text-black tracking-tight uppercase">Dashboard</h1>
+        <p className="font-mono text-xl font-bold bg-white border-2 border-black inline-block px-3 py-1 mt-4 shadow-brutal text-black">
+          ID: {user?.email} | ROLE: ADMIN
         </p>
       </div>
-      <div className="mt-4 md:mt-0 flex gap-3">
+      <div className="mt-8 md:mt-0 flex gap-4 relative z-10">
           <form action={handleLogout}>
-            <button type="submit" className="text-xs px-3 py-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 border border-transparent hover:border-gray-200 rounded-sm transition-colors font-mono uppercase tracking-wider">
-              Terminate Session
+            <button type="submit" className="btn-brutal bg-white text-black px-6 py-4 text-xl hover:bg-brutal-pink">
+              TERMINATE SESSION
             </button>
           </form>
       </div>

@@ -37,91 +37,72 @@ export default async function RepositoriesPage() {
     ]);
 
     return (
-        <div className="max-w-6xl mx-auto p-6 lg:p-8 font-sans">
-            <div className="mb-10">
-                <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Workflow Mapping</h1>
-                <p className="text-gray-500 mt-2 text-lg">Map your GitHub repositories to your Project Management boards.</p>
+        <div className="p-8 max-w-7xl mx-auto font-sans">
+            <div className="mb-8 border-b-8 border-black pb-4">
+                <h1 className="text-5xl font-black uppercase text-black">Workflow Mapping</h1>
+                <p className="font-mono text-xl font-bold text-black mt-2">Map GitHub Repositories to Project Management Boards</p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
                 
                 {/* Form Side */}
-                <div className="lg:col-span-7">
-                    <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
-                        <div className="p-6 sm:p-8 border-b border-gray-100 bg-gray-50/50">
-                            <h2 className="text-xl font-bold text-gray-900">Create Mapping</h2>
-                            <p className="text-sm text-gray-500 mt-1">Configure automation rules for a repository.</p>
+                <div className="xl:col-span-5">
+                    <div className="bg-brutal-orange border-4 border-black shadow-brutal-lg flex flex-col h-full">
+                        <div className="p-6 border-b-4 border-black bg-white">
+                            <h2 className="text-3xl font-black uppercase text-black">Create Mapping</h2>
                         </div>
-                        <div className="p-6 sm:p-8">
+                        <div className="p-6 bg-white flex-grow">
                             <ClientForm connectedProviders={connectedProviders} />
                         </div>
                     </div>
                 </div>
 
                 {/* Active Mappings Side */}
-                <div className="lg:col-span-5">
-                    <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden h-full">
-                        <div className="p-6 sm:p-8 border-b border-gray-100 bg-gray-50/50">
-                            <h2 className="text-xl font-bold text-gray-900">Active Mappings</h2>
-                            <p className="text-sm text-gray-500 mt-1">Currently syncing repositories.</p>
+                <div className="xl:col-span-7">
+                    <div className="bg-brutal-green border-4 border-black shadow-brutal-lg flex flex-col h-full">
+                        <div className="p-6 border-b-4 border-black bg-white flex justify-between items-center">
+                            <h2 className="text-3xl font-black uppercase text-black">Active Mappings</h2>
                         </div>
                         
-                        <div className="p-6 sm:p-8 space-y-4">
+                        <div className="p-6 bg-white flex-grow space-y-4">
                             {repositories?.length === 0 ? (
-                                <div className="text-center py-12">
-                                    <span className="text-4xl block mb-3 opacity-50">📭</span>
-                                    <h3 className="text-gray-900 font-bold">No mappings found</h3>
-                                    <p className="text-gray-500 text-sm mt-1">Create your first workflow mapping.</p>
+                                <div className="text-center py-12 border-4 border-black border-dashed">
+                                    <span className="font-mono text-2xl font-bold uppercase text-black">NO MAPPINGS FOUND</span>
                                 </div>
                             ) : (
                                 repositories?.map((repo) => {
-                                    // 🌟 Parse mapping securely to get the clean Team Key
                                     let parsedMapping = {};
-                                    try { 
-                                        parsedMapping = typeof repo.mapping === 'string' ? JSON.parse(repo.mapping) : (repo.mapping || {}); 
-                                    } catch(e) {}
-
-                                    // Determine the display name (Basecamp Name -> Linear Key -> Jira Key)
-                                    const projectName = basecampProjects?.find(p => p.id.toString() === repo.pm_project_id)?.name 
-                                        || parsedMapping.team_key 
-                                        || repo.pm_project_id;
-                                        
+                                    try { parsedMapping = typeof repo.mapping === 'string' ? JSON.parse(repo.mapping) : (repo.mapping || {}); } catch(e) {}
+                                    const projectName = basecampProjects?.find(p => p.id.toString() === repo.pm_project_id)?.name || parsedMapping.team_key || repo.pm_project_id;
                                     const channelName = discordChannels?.find(c => c.id === repo.communication_config?.channel_id)?.name || repo.communication_config?.channel_id;
 
-                                    // 🌟 DYNAMIC UI ICONS
-                                    const isJira = repo.pm_provider === 'jira';
-                                    const isLinear = repo.pm_provider === 'linear';
-                                    const pmIcon = isJira ? '📊' : (isLinear ? '⧓' : '⛺');
-                                    const iconColor = isJira ? 'bg-sky-50 text-sky-700' : (isLinear ? 'bg-purple-50 text-purple-700' : 'bg-indigo-50 text-indigo-700');
-
                                     return (
-                                        <div key={repo.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-4 hover:border-indigo-300 hover:shadow-md transition-all">
-                                            <div className="flex items-center space-x-3 border-b border-gray-100 pb-3">
-                                                <span className="text-2xl">🐙</span>
-                                                <span className="font-bold text-gray-900">{repo.repo_name}</span>
+                                        <div key={repo.id} className="bg-white p-6 border-4 border-black shadow-brutal flex flex-col gap-4">
+                                            <div className="flex items-center space-x-3 border-b-4 border-black pb-4">
+                                                <span className="text-3xl font-black uppercase text-black">{repo.repo_name}</span>
                                             </div>
                                             
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                {/* 🌟 UPGRADED BADGE */}
-                                                <span className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold ${iconColor} capitalize`}>
-                                                    <span className="mr-1.5">{pmIcon}</span> {repo.pm_provider}: {projectName || 'N/A'}
+                                            <div className="flex flex-wrap items-center gap-4">
+                                                <span className="inline-flex items-center px-4 py-2 border-2 border-black bg-brutal-blue text-black font-mono font-bold uppercase shadow-brutal">
+                                                    {repo.pm_provider}: {projectName || 'N/A'}
                                                 </span>
 
-                                                {/* NEW SLACK BADGE */}
                                                 {repo.communication_config?.provider === 'slack' && (
-                                                <span className="inline-flex items-center px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-100">
-                                                        💬 Slack Enabled
+                                                <span className="inline-flex items-center px-4 py-2 border-2 border-black bg-brutal-pink text-black font-mono font-bold uppercase shadow-brutal">
+                                                    SLACK ENABLED
                                                 </span>
                                                 )}
                                                 
                                                 {repo.communication_config?.channel_id && (
-                                                    <span className="inline-flex items-center px-3 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold">
-                                                        🎮 #{channelName}
+                                                    <span className="inline-flex items-center px-4 py-2 border-2 border-black bg-brutal-orange text-black font-mono font-bold uppercase shadow-brutal">
+                                                        DISCORD: #{channelName}
                                                     </span>
                                                 )}
                                             </div>
                                             
-                                            <DeleteButton workflowId={repo.id} />
+                                            <div className="mt-2">
+                                                <DeleteButton workflowId={repo.id} />
+                                            </div>
                                         </div>
                                     );
                                 })

@@ -64,7 +64,7 @@ export default async function Home() {
   // ==========================================
   if (isAdmin) {
       return (
-        <div className="max-w-7xl mx-auto p-6 lg:p-8 space-y-6 pb-16">
+        <div className="max-w-7xl mx-auto p-6 lg:p-12 space-y-6 pb-16 font-sans">
           <AdminHero companyName={companyName} fullName={fullName} user={user} handleLogout={handleLogout} />
           <AdminQuickActions />
           <AdminTable workflows={workflows} />

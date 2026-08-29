@@ -23,34 +23,40 @@ export default async function SignupPage({ searchParams }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-xl shadow-md border border-gray-100">
+    <div className="min-h-screen flex items-center justify-center bg-brutal-bg p-4 font-sans">
+      <div className="max-w-md w-full bg-white border-4 border-black shadow-brutal-lg p-10 flex flex-col space-y-8">
         
-        <div className="text-center">
-          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Create an Account</h2>
-          <p className="mt-2 text-sm text-gray-600">Start automating your workflows today</p>
+        <div className="text-center border-b-4 border-black pb-6">
+          <h2 className="text-5xl font-black uppercase tracking-tight text-black">New System</h2>
+          <p className="mt-4 text-sm font-bold font-mono text-black">INITIALIZE WORKSPACE</p>
         </div>
 
         {resolvedParams?.message && (
-          <div className={`p-3 rounded-md text-sm text-center font-medium ${resolvedParams.message.includes('Check your email') ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>
+          <div className={`border-4 border-black text-black font-black uppercase p-3 text-center shadow-brutal ${resolvedParams.message.includes('Check your email') ? 'bg-brutal-green' : 'bg-brutal-pink'}`}>
             {resolvedParams.message}
           </div>
         )}
 
-        <form className="mt-8 space-y-6" action={signup}>
-          <div className="rounded-md shadow-sm space-y-4">
-            <input name="email" type="email" required placeholder="Email address" className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
-            <input name="password" type="password" required minLength="6" placeholder="Create a Password" className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+        <form className="space-y-6" action={signup}>
+          <div className="space-y-6">
+            <div>
+              <label className="block font-black text-xl mb-2 uppercase text-black">Identity (Email)</label>
+              <input name="email" type="email" required placeholder="admin@acmecorp.com" className="input-brutal" />
+            </div>
+            <div>
+              <label className="block font-black text-xl mb-2 uppercase text-black">Passphrase</label>
+              <input name="password" type="password" required minLength="6" placeholder="••••••••" className="input-brutal" />
+            </div>
           </div>
 
-          <button type="submit" className="group relative w-full flex justify-center py-2.5 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none transition-colors shadow-sm">
-            Continue ➔
+          <button type="submit" className="btn-brutal w-full py-4 bg-brutal-blue text-2xl mt-4 text-black">
+            INITIALIZE &rarr;
           </button>
         </form>
 
         <div className="text-center mt-4">
-          <Link href="/login" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
-            Already have an account? Sign in
+          <Link href="/login" className="text-lg font-black uppercase text-black hover:text-brutal-pink underline decoration-4 underline-offset-4 transition-colors">
+            EXISTING WORKSPACE
           </Link>
         </div>
 

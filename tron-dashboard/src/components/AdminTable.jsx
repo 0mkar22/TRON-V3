@@ -3,58 +3,53 @@ import React from 'react';
 
 export default function AdminTable({ workflows }) {
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-gray-900 tracking-tight">Active Workflows</h2>
-          <Link href="/workflows" className="text-[10px] font-mono font-bold text-gray-600 hover:text-gray-900 uppercase transition-colors">Configure Mappings →</Link>
+    <div className="mt-12">
+      <div className="flex items-center justify-between mb-6 border-b-4 border-black pb-4">
+          <h2 className="text-4xl font-black uppercase text-black">Active Workflows</h2>
+          <Link href="/repositories" className="btn-brutal bg-white px-4 py-2 text-black">Configure Mappings &rarr;</Link>
       </div>
       {workflows.length === 0 ? (
-          <div className="bg-white p-8 border border-gray-200 rounded-sm text-center">
-              <span className="font-mono text-xs text-gray-400">NO REPOSITORIES CONNECTED</span>
+          <div className="bg-white p-12 border-4 border-black shadow-brutal text-center">
+              <span className="font-mono text-xl font-bold uppercase text-black">NO REPOSITORIES CONNECTED</span>
           </div>
       ) : (
-          <div className="bg-white border border-gray-200 rounded-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-100">
-                      <thead className="bg-gray-50 border-b border-gray-200">
-                          <tr>
-                              <th className="px-4 py-2 text-left text-[10px] font-mono text-gray-500 uppercase tracking-widest">Repository</th>
-                              <th className="px-4 py-2 text-left text-[10px] font-mono text-gray-500 uppercase tracking-widest">PM Tool</th>
-                              <th className="px-4 py-2 text-left text-[10px] font-mono text-gray-500 uppercase tracking-widest">Broadcast Channel</th>
-                              <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-widest">Status</th>
+          <div className="bg-white border-4 border-black shadow-brutal-lg overflow-x-auto">
+              <table className="w-full">
+                  <thead className="bg-black text-white">
+                      <tr>
+                          <th className="px-6 py-4 text-left text-lg font-black uppercase">Repository</th>
+                          <th className="px-6 py-4 text-left text-lg font-black uppercase">PM Tool</th>
+                          <th className="px-6 py-4 text-left text-lg font-black uppercase">Broadcast Channel</th>
+                          <th className="px-6 py-4 text-right text-lg font-black uppercase">Status</th>
+                      </tr>
+                  </thead>
+                  <tbody className="divide-y-4 divide-black">
+                      {workflows.map((workflow) => (
+                          <tr key={workflow.id} className="hover:bg-brutal-green transition-colors">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="text-xl font-bold font-mono text-black">{workflow.repo_name}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                  <span className="text-lg font-mono font-bold text-black uppercase bg-white px-3 py-1 border-2 border-black shadow-brutal">{workflow.pm_provider}</span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                  {workflow.communication_config?.provider === 'slack' ? (
+                                      <span className="text-lg font-mono font-bold text-black uppercase bg-brutal-pink px-3 py-1 border-2 border-black shadow-brutal">slack</span>
+                                  ) : workflow.communication_config?.channel_id ? (
+                                      <span className="text-lg font-mono font-bold text-black uppercase bg-brutal-blue px-3 py-1 border-2 border-black shadow-brutal">discord</span>
+                                  ) : (
+                                      <span className="text-lg font-mono font-bold text-black uppercase bg-gray-200 px-3 py-1 border-2 border-black shadow-brutal">muted</span>
+                                  )}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-right">
+                                  <span className="inline-flex items-center text-lg font-mono font-black px-3 py-1 bg-brutal-green text-black border-2 border-black shadow-brutal uppercase">
+                                      ACTIVE
+                                  </span>
+                              </td>
                           </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-100">
-                          {workflows.map((workflow) => (
-                              <tr key={workflow.id} className="hover:bg-gray-50 transition-colors">
-                                  <td className="px-4 py-2 whitespace-nowrap">
-                                      <div className="flex items-center gap-2">
-                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                          <div className="text-[13px] font-medium text-gray-900">{workflow.repo_name}</div>
-                                      </div>
-                                  </td>
-                                  <td className="px-4 py-2 whitespace-nowrap">
-                                      <span className="text-[11px] font-mono font-medium text-gray-700 capitalize bg-gray-100 px-2 py-0.5 rounded-sm border border-gray-200">{workflow.pm_provider}</span>
-                                  </td>
-                                  <td className="px-4 py-2 whitespace-nowrap">
-                                      {workflow.communication_config?.provider === 'slack' ? (
-                                          <span className="text-[11px] font-mono font-medium text-brand-slack capitalize bg-purple-50 px-2 py-0.5 rounded-sm border border-purple-100">slack</span>
-                                      ) : workflow.communication_config?.channel_id ? (
-                                          <span className="text-[11px] font-mono font-medium text-brand-discord capitalize bg-indigo-50 px-2 py-0.5 rounded-sm border border-indigo-100">discord</span>
-                                      ) : (
-                                          <span className="text-[11px] font-mono font-medium text-gray-400 capitalize bg-gray-50 px-2 py-0.5 rounded-sm border border-gray-100">muted</span>
-                                      )}
-                                  </td>
-                                  <td className="px-4 py-2 whitespace-nowrap text-right">
-                                      <span className="inline-flex items-center text-[10px] font-mono font-bold px-2 py-0.5 rounded-sm bg-emerald-50 text-emerald-600 border border-emerald-200">
-                                          ACTIVE
-                                      </span>
-                                  </td>
-                              </tr>
-                          ))}
-                      </tbody>
-                  </table>
-              </div>
+                      ))}
+                  </tbody>
+              </table>
           </div>
       )}
     </div>

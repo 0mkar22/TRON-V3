@@ -50,50 +50,55 @@ export default async function OnboardingPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-xl shadow-lg border border-gray-100">
+    <div className="min-h-screen flex items-center justify-center bg-brutal-bg p-4 font-sans">
+      <div className="max-w-md w-full bg-white border-4 border-black shadow-brutal-lg p-10 flex flex-col space-y-8">
         
-        <div className="text-center">
-          <div className="mx-auto h-12 w-12 bg-green-100 rounded-full flex items-center justify-center mb-4">
-            <span className="text-2xl">🚀</span>
+        <div className="text-center border-b-4 border-black pb-6">
+          <div className="mx-auto h-16 w-16 bg-brutal-green border-4 border-black flex items-center justify-center mb-6 shadow-brutal hover:-translate-y-1 transition-transform">
+            <span className="text-3xl font-black">!</span>
           </div>
-          <h2 className="text-3xl font-extrabold text-gray-900">Welcome to TRON</h2>
-          <p className="mt-2 text-sm text-gray-600">Let&apos;s get your workspace set up.</p>
+          <h2 className="text-4xl font-black uppercase tracking-tight text-black">Workspace Init</h2>
+          <p className="mt-4 text-sm font-bold font-mono text-black">CONFIGURE YOUR ENVIRONMENT</p>
         </div>
 
-        <form className="mt-8 space-y-6" action={completeSetup}>
-          <div className="space-y-5">
-            
+        <form className="space-y-6" action={completeSetup}>
+          
+          <div className="space-y-6">
             <div>
-              <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">What should we call you?</label>
+              <label htmlFor="companyName" className="block font-black text-xl mb-2 uppercase text-black">
+                Organization Name
+              </label>
               <input 
-                name="fullName" 
-                type="text" 
-                required 
-                placeholder="e.g. Jane Doe" 
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm" 
-              />
-            </div>
-            
-            <div>
-              <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-1">Company / Organization Name</label>
-              <input 
+                id="companyName" 
                 name="companyName" 
                 type="text" 
                 required 
-                placeholder="e.g. Acme Corp" 
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm" 
+                placeholder="Acme Corp" 
+                className="input-brutal"
               />
-              <p className="mt-1 text-xs text-gray-500">You can invite your team to this workspace later.</p>
+              <p className="mt-2 text-xs font-mono font-bold text-gray-500">This will be your workspace identifier.</p>
             </div>
 
+            <div>
+              <label htmlFor="fullName" className="block font-black text-xl mb-2 uppercase text-black">
+                Your Name
+              </label>
+              <input 
+                id="fullName" 
+                name="fullName" 
+                type="text" 
+                required 
+                placeholder="Jane Doe" 
+                className="input-brutal"
+              />
+            </div>
           </div>
 
           <button 
             type="submit" 
-            className="group relative w-full flex justify-center py-2.5 px-4 border border-transparent text-sm font-bold rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors shadow-sm"
+            className="btn-brutal w-full py-4 bg-brutal-green text-2xl mt-4 text-black"
           >
-            Go to Dashboard ➔
+            ENTER SYSTEM &rarr;
           </button>
         </form>
 
