@@ -3,29 +3,35 @@ import React from 'react';
 
 export default function AdminQuickActions() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       <Link href="/integrations" className="block group h-full">
-        <div className="bg-white p-8 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 hover:border-indigo-300 hover:shadow-md transition-all duration-200 h-full flex flex-col">
-          <div className="flex items-center justify-center w-14 h-14 bg-indigo-50 rounded-xl mb-6 text-2xl group-hover:scale-110 transition-transform">🔌</div>
-          <h3 className="text-xl font-bold text-gray-900 mb-2">Integrations</h3>
-          <p className="text-gray-500 text-sm leading-relaxed flex-grow">Connect your PM tools (Basecamp, Jira) and link your communication channels.</p>
-          <span className="text-indigo-600 font-bold text-sm mt-6 inline-block group-hover:underline">Configure Tools →</span>
+        <div className="bg-white p-5 rounded-sm shadow-sm border border-gray-200 hover:border-gray-400 transition-colors h-full flex flex-col">
+          <div className="flex items-center gap-3 mb-3">
+             <div className="font-mono text-gray-400">01</div>
+             <h3 className="text-sm font-semibold text-gray-900 tracking-tight">Integrations Hub</h3>
+          </div>
+          <p className="text-gray-500 text-xs flex-grow">Manage webhooks, Slack bindings, and Jira credentials.</p>
+          <span className="text-gray-900 font-mono text-[10px] uppercase mt-4 opacity-0 group-hover:opacity-100 transition-opacity">Configure →</span>
         </div>
       </Link>
-      <Link href="/repositories" className="block group h-full">
-        <div className="bg-white p-8 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 hover:border-emerald-300 hover:shadow-md transition-all duration-200 h-full flex flex-col">
-          <div className="flex items-center justify-center w-14 h-14 bg-emerald-50 rounded-xl mb-6 text-2xl group-hover:scale-110 transition-transform">📦</div>
-          <h3 className="text-xl font-bold text-gray-900 mb-2">Workflow Mapping</h3>
-          <p className="text-gray-500 text-sm leading-relaxed flex-grow">Map your GitHub repositories to your PM boards and configure automated columns.</p>
-          <span className="text-emerald-600 font-bold text-sm mt-6 inline-block group-hover:underline">Map Repositories →</span>
+      <Link href="/workflows" className="block group h-full">
+        <div className="bg-white p-5 rounded-sm shadow-sm border border-gray-200 hover:border-gray-400 transition-colors h-full flex flex-col">
+          <div className="flex items-center gap-3 mb-3">
+             <div className="font-mono text-gray-400">02</div>
+             <h3 className="text-sm font-semibold text-gray-900 tracking-tight">Orchestrator</h3>
+          </div>
+          <p className="text-gray-500 text-xs flex-grow">Map GitHub events to PM board transitions.</p>
+          <span className="text-gray-900 font-mono text-[10px] uppercase mt-4 opacity-0 group-hover:opacity-100 transition-opacity">Map Workflows →</span>
         </div>
       </Link>
-      <Link href="/activity" className="block group h-full">
-        <div className="bg-white p-8 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 hover:border-blue-300 hover:shadow-md transition-all duration-200 h-full flex flex-col">
-          <div className="flex items-center justify-center w-14 h-14 bg-blue-50 rounded-xl mb-6 text-2xl group-hover:scale-110 transition-transform">🚀</div>
-          <h3 className="text-xl font-bold text-gray-900 mb-2">Mission Control</h3>
-          <p className="text-gray-500 text-sm leading-relaxed flex-grow">Monitor live AI code reviews, Git webhook deliveries, and the background worker queue.</p>
-          <span className="text-blue-600 font-bold text-sm mt-6 inline-block group-hover:underline">View Activity →</span>
+      <Link href="/mission-control" className="block group h-full">
+        <div className="bg-white p-5 rounded-sm shadow-sm border border-gray-200 hover:border-gray-400 transition-colors h-full flex flex-col">
+          <div className="flex items-center gap-3 mb-3">
+             <div className="font-mono text-gray-400">03</div>
+             <h3 className="text-sm font-semibold text-gray-900 tracking-tight">Mission Control</h3>
+          </div>
+          <p className="text-gray-500 text-xs flex-grow">View real-time telemetry and execution logs.</p>
+          <span className="text-gray-900 font-mono text-[10px] uppercase mt-4 opacity-0 group-hover:opacity-100 transition-opacity">View Logs →</span>
         </div>
       </Link>
     </div>
